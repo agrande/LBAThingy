@@ -1,0 +1,5 @@
+#include "LBA2Runtime.h"
+
+DEFINE_LOG_CATEGORY(LogLBA2);
+
+IMPLEMENT_MODULE(FLBA2RuntimeModule, LBA2Runtime)

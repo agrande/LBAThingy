@@ -1,0 +1,112 @@
+#pragma once
+
+#include "Engine/DeveloperSettings.h"
+#include "LBA2ImporterSettings.generated.h"
+
+/** How faces that the isometric camera never showed (back and bottom of bricks) are dressed. */
+UENUM()
+enum class ELBABackFaceMode : uint8
+{
+	/** Leave them open (original look from the iso angle only). */
+	None,
+	/** Reuse the opposite face of the same brick. */
+	SameBrick,
+	/**
+	 * Walls get the art of the opposite side of the wall (found by walking through its thickness);
+	 * other bricks get a flat fill of their average color.
+	 */
+	Smart,
+};
+
+UENUM()
+enum class ELBAImportLayer : uint8
+{
+	Islands,
+	Interiors,
+	Characters,
+	Objects,
+	Scenes,
+	Text,
+	Audio,
+};
+
+/**
+ * Per-user importer options. Edited from the LBA2 Importer panel (Tools > LBA2 Importer) or
+ * Editor Preferences > Plugins > LBA2 Importer.
+ */
+UCLASS(Config = EditorPerProjectUserSettings, meta = (DisplayName = "LBA2 Importer"))
+class ULBA2ImporterSettings : public UDeveloperSettings
+{
+	GENERATED_BODY()
+
+public:
+	virtual FName GetCategoryName() const override { return TEXT("Plugins"); }
+
+	/**
+	 * Folder of an installed copy of Little Big Adventure 2 (Steam, GOG or CD). The folder that contains
+	 * LBA_BKG.HQR is found automatically, e.g. the Steam "Common" subfolder.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Source")
+	FDirectoryPath GameDirectory;
+
+	/** Content folder that receives every imported asset. */
+	UPROPERTY(Config, EditAnywhere, Category = "Destination", meta = (ContentDir))
+	FDirectoryPath ContentRoot;
+
+	/** Point sampling keeps the crisp look of the original 256x256 textures. */
+	UPROPERTY(Config, EditAnywhere, Category = "Look")
+	bool bPixelArtFiltering = true;
+
+	/** Islands to import (file names such as CITABAU). Empty imports all of them. */
+	UPROPERTY(Config, EditAnywhere, Category = "Islands")
+	TArray<FString> IslandFilter;
+
+	/** Also create a playable level per island. */
+	UPROPERTY(Config, EditAnywhere, Category = "Islands")
+	bool bCreateIslandLevels = true;
+
+	/** Grid indices to import. Empty imports all of them. */
+	UPROPERTY(Config, EditAnywhere, Category = "Interiors")
+	TArray<int32> GridFilter;
+
+	/** Also create a playable level per interior grid. */
+	UPROPERTY(Config, EditAnywhere, Category = "Interiors")
+	bool bCreateInteriorLevels = true;
+
+	/** How to dress brick faces the original isometric camera never showed. */
+	UPROPERTY(Config, EditAnywhere, Category = "Interiors")
+	ELBABackFaceMode BackFaces = ELBABackFaceMode::Smart;
+
+	/** Create a reusable static mesh for every library layout (kit pieces for building new interiors). */
+	UPROPERTY(Config, EditAnywhere, Category = "Interiors")
+	bool bCreateLayoutKitMeshes = true;
+
+	/** Entity indices (RESS.HQR table) to import. Empty imports all characters. 0-4 are Twinsen's behaviours. */
+	UPROPERTY(Config, EditAnywhere, Category = "Characters")
+	TArray<int32> EntityFilter;
+
+	/**
+	 * Optional local checkout of https://github.com/LBALab/lba2remake (MIT). When set, its hand-made 3D
+	 * models replace isometric layouts in interiors and are imported as reusable static meshes.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Community 3D Models")
+	FDirectoryPath RemakeDirectory;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Community 3D Models")
+	bool bUseRemakeModels = true;
+
+	/** Text language (EN, FR, DE, SP, IT). */
+	UPROPERTY(Config, EditAnywhere, Category = "Text and Audio")
+	FString Language = TEXT("EN");
+
+	/** Returns the folder holding the HQR files, or empty when nothing was found. */
+	FString ResolveDataDirectory() const;
+
+	/** Returns the destination content path, e.g. /Game/LBA2. */
+	FString GetContentRoot() const;
+
+	/** Fills GameDirectory with a known Steam/GOG install when it is empty. */
+	void AutoDetectGameDirectory();
+
+	static FString FindDataDirectoryIn(const FString& Directory);
+};

@@ -1,0 +1,42 @@
+#pragma once
+
+#include "Subsystems/GameInstanceSubsystem.h"
+#include "Containers/Ticker.h"
+#include "LBA2SnapshotSubsystem.generated.h"
+
+/**
+ * Development helper for automated visual checks. Inactive unless the game is started with
+ *   -LBA2Shots=auto                       frame all imported meshes from a few angles
+ *   -LBA2Shots="x,y,z,pitch,yaw;..."      explicit camera poses (Unreal units/degrees)
+ *   -LBA2ShotDir=<folder>                 where to write PNGs (default Saved/LBA2Shots)
+ * It takes the screenshots once the level has settled, then quits.
+ */
+UCLASS()
+class ULBA2SnapshotSubsystem : public UGameInstanceSubsystem
+{
+	GENERATED_BODY()
+
+public:
+	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
+
+private:
+	bool Tick(float DeltaTime);
+	void BuildAutoPoses(UWorld* World);
+
+	struct FPose
+	{
+		FVector Location;
+		FRotator Rotation;
+	};
+	TArray<FPose> Poses;
+	FString ShotDirectory;
+	bool bAuto = false;
+	int32 NextPose = 0;
+	double Elapsed = 0.0;
+	double PoseStart = 0.0;
+	bool bPosesReady = false;
+	FTSTicker::FDelegateHandle TickHandle;
+	TWeakObjectPtr<AActor> Camera;
+};

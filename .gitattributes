@@ -1,0 +1,16 @@
+* text=auto
+
+# Unreal binary assets
+*.uasset binary
+*.umap binary
+*.ubulk binary
+*.uexp binary
+
+# Media
+*.png binary
+*.jpg binary
+*.tga binary
+*.wav binary
+*.ogg binary
+*.fbx binary
+*.glb binary

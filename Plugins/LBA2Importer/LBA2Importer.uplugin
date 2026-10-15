@@ -1,0 +1,29 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "LBA2 Importer",
+	"Description": "Imports Little Big Adventure 2 game data (HQR, ILE, OBL files) from an installed copy of the game into native Unreal assets: islands, isometric interiors, characters, animations, scenes, zones, text and audio.",
+	"Category": "Importers",
+	"CreatedBy": "LBA community",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "LBA2Runtime",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "LBA2Editor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

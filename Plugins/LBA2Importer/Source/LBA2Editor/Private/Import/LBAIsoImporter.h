@@ -1,0 +1,63 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Formats/LBAIso.h"
+
+class FLBAImportContext;
+class FLBAMeshBuilder;
+class UMaterialInterface;
+class UStaticMesh;
+class UTexture2D;
+
+/**
+ * Isometric interiors (LBA_BKG.HQR).
+ *
+ * The original interiors are pre-rendered 48x38 isometric brick sprites stacked on a 64x25x64 grid.
+ * There is no 3D source, so every brick becomes a cube whose visible faces (top, +X, +Z) are UV-mapped
+ * straight onto the sprite (pixel exact from the original camera angle). Faces the iso camera never
+ * sees reuse the opposite face's art. Collision comes from the per-brick shapes (full blocks, ramps,
+ * diagonal half ramps) exactly as the original engine resolves them.
+ *
+ * Output layout under <Root>/Interiors/:
+ *   Libraries/Lib_NN/   T_LibNN_Bricks atlas, material, SM_LibNN_Layout_MMM kit pieces
+ *   Grids/              SM_Grid_NNN (+ _Collision), L_Grid_NNN_<SceneName> levels
+ */
+class FLBAIsoImporter
+{
+public:
+	explicit FLBAIsoImporter(FLBAImportContext& InContext);
+	~FLBAIsoImporter();
+
+	int32 ImportAll();
+
+	/** Brick atlas of one library: texture plus the atlas cell of every used brick. */
+	struct FAtlas
+	{
+		UTexture2D* Texture = nullptr;
+		UMaterialInterface* Material = nullptr;
+		TMap<int32, FIntPoint> Cells;
+		/** Average color of the top, +X and +Z faces of every brick (used to fill hidden faces). */
+		TMap<int32, TStaticArray<FColor, 3>> FaceColors;
+		/** Fraction (0..1) of opaque pixels on the top, +X and +Z faces of every brick. */
+		TMap<int32, TStaticArray<float, 3>> FaceCoverage;
+		int32 Width = 0;
+		int32 Height = 0;
+		UMaterialInterface* FillMaterial = nullptr;
+	};
+
+private:
+	bool LoadHeader();
+	const FLBALibrary* GetLibrary(int32 LibraryIndex);
+	const FAtlas* GetAtlas(int32 LibraryIndex);
+	void BuildKitMeshes(int32 LibraryIndex);
+	bool ImportGrid(int32 GridIndex);
+	FString GetGridLevelName(int32 GridIndex) const;
+
+	FLBAImportContext& Context;
+	const FLBAHqrFile* Bkg = nullptr;
+	FLBABkgHeader Header;
+	TArray<FLBASceneMapEntry> SceneMap;
+	TMap<int32, TUniquePtr<FLBALibrary>> Libraries;
+	TMap<int32, TUniquePtr<FAtlas>> Atlases;
+	TUniquePtr<class FLBARemakeAssets> Remake;
+};
