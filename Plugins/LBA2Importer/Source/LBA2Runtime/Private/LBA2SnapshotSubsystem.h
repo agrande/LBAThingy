@@ -23,7 +23,13 @@ public:
 
 private:
 	bool Tick(float DeltaTime);
+	bool TickHero(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
+
+	/** -LBA2Shots=hero: drives the player's ALBACharacter through a scripted test and screenshots each step. */
+	bool bHero = false;
+	int32 HeroStep = -1;
+	double HeroStepStart = 0.0;
 
 	struct FPose
 	{

@@ -35,6 +35,25 @@ World scale lives in **Project Settings > Plugins > LBA2** (default 0.125 cm per
 | Characters | `RESS.HQR` (entities), `BODY.HQR`, `ANIM.HQR` | One skeleton per character family, skeletal meshes per body, animation sequences with root motion and notifies (footsteps, hits, sounds, throws), `ULBAEntityAsset` per entity, `L_CharacterGallery` |
 | Audio | `SAMPLES.HQR` | Sound waves (converted to 16-bit PCM) |
 
+## Playing as Twinsen
+
+Generated levels use `LBAGameMode` (toggle with *Play As Twinsen* in the importer settings), so
+pressing Play spawns `ALBACharacter`. Any other map can do the same with a GameMode override.
+
+| Key | Authentic mode (default) |
+|---|---|
+| Up/W, Down/S | Walk forward / backward (movement comes from the animation's root motion) |
+| Left/A, Right/D | Turn in place (turn animations), or steer while walking |
+| Space | Behaviour action: Normal search, Athletic jump (running jump when moving), Aggressive punch/kick, Discreet crouch |
+| F5-F8 or 1-4 | Normal, Athletic, Aggressive, Discreet |
+| Mouse | Orbit the camera (it recenters behind Twinsen when he walks) |
+| Tab | Toggle the experimental Modern mode (camera-relative movement, in-place animations) |
+
+`ALBACharacter` loads its behaviour entities from **Project Settings > Plugins > LBA2 > Hero** and can be
+subclassed in Blueprint. `SetMoveInput` and `DoBehaviourAction` let AI or scripts drive it.
+`ULBAAnimInstance` plays LBA animations natively (crossfades, LBA loop frames, root motion) without
+an Animation Blueprint.
+
 ## Conventions
 
 - LBA space (right-handed, Y up) maps to Unreal as `(x, z, y) * scale`; LBA yaw `beta` becomes `-beta`.
@@ -51,9 +70,10 @@ World scale lives in **Project Settings > Plugins > LBA2** (default 0.125 cm per
 - [x] L1 Islands: terrain, decor, levels, environment presets
 - [x] L2 Interiors: brick projection, kit pieces, collision, smart backfaces, remake 3D models
 - [x] L3 Characters: skeletons, skinned meshes, animations with root motion, notifies, entity assets
-- [ ] L3b Playable LBA character (behaviour modes driven by the entity animations)
+- [x] L3b Playable Twinsen, authentic controls (root motion, behaviours, actions)
+- [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
-- [ ] L5 Scripts: life/move scripts (approach to be decided)
+- [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)
 - [ ] L6 Text (String Tables), voices, music, sprites, inventory objects, holomap, screens
 - [ ] Procedural wall/pattern builder using interior kit pieces
 - [ ] Light-only remake GLBs as point lights

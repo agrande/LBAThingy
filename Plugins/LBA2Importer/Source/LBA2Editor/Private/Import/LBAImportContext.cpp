@@ -13,6 +13,8 @@
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
+#include "LBACharacter.h"
+#include "GameFramework/WorldSettings.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "Misc/ScopedSlowTask.h"
@@ -475,6 +477,10 @@ UWorld* FLBAImportContext::BeginLevel(const FString& Folder, const FString& Name
 		}
 		World->SetFlags(RF_Public | RF_Standalone);
 		FAssetRegistryModule::AssetCreated(World);
+	}
+	if (AWorldSettings* WorldSettings = World->GetWorldSettings())
+	{
+		WorldSettings->DefaultGameMode = Settings.bPlayAsTwinsen ? ALBAGameMode::StaticClass() : nullptr;
 	}
 	OwnedWorlds.Add(World);
 	return World;

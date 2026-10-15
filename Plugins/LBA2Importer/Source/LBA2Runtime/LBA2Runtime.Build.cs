@@ -13,6 +13,8 @@ public class LBA2Runtime : ModuleRules
 			"Engine",
 			"DeveloperSettings",
 			"AnimGraphRuntime",
+			"InputCore",
+			"EnhancedInput",
 		});
 	}
 }

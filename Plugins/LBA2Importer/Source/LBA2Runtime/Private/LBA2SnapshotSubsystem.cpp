@@ -13,6 +13,10 @@
 #include "GameFramework/PlayerStart.h"
 #include "HAL/PlatformMisc.h"
 #include "LBA2Runtime.h"
+#include "Animation/AnimSequence.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "LBAAnimInstance.h"
+#include "LBACharacter.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
@@ -37,6 +41,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	if (Spec.Equals(TEXT("auto"), ESearchCase::IgnoreCase))
 	{
 		bAuto = true;
+	}
+	else if (Spec.Equals(TEXT("hero"), ESearchCase::IgnoreCase))
+	{
+		bHero = true;
+		bPosesReady = true;
 	}
 	else
 	{
@@ -102,6 +111,98 @@ void ULBA2SnapshotSubsystem::BuildAutoPoses(UWorld* World)
 	bPosesReady = true;
 }
 
+bool ULBA2SnapshotSubsystem::TickHero(UWorld* World, float DeltaTime)
+{
+	struct FStep
+	{
+		const TCHAR* Name;
+		float Duration;
+		FVector2D Input;
+		int32 Behaviour;
+		bool bAction;
+	};
+	static const FStep Steps[] =
+	{
+		{ TEXT("idle"), 1.0f, { 0, 0 }, 0, false },
+		{ TEXT("walk"), 2.0f, { 0, 1 }, -1, false },
+		{ TEXT("turn_right_in_place"), 1.5f, { 1, 0 }, -1, false },
+		{ TEXT("steer_left_walking"), 2.0f, { -1, 1 }, -1, false },
+		{ TEXT("walk_back"), 1.5f, { 0, -1 }, -1, false },
+		{ TEXT("athletic_run"), 2.0f, { 0, 1 }, 1, false },
+		{ TEXT("athletic_jump"), 0.5f, { 0, 1 }, -1, true },
+		{ TEXT("aggressive_attack"), 0.6f, { 0, 0 }, 2, true },
+		{ TEXT("discreet_walk"), 2.0f, { 0, 1 }, 3, false },
+	};
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	ALBACharacter* Hero = PC ? Cast<ALBACharacter>(PC->GetPawn()) : nullptr;
+	if (!Hero)
+	{
+		if (Elapsed > 15.0)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots hero: the player pawn is not an ALBACharacter (use ?game=/Script/LBA2Runtime.LBAGameMode)"));
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+
+	auto Report = [&](const TCHAR* Label)
+	{
+		const UAnimSequence* Anim = Hero->GetLBAAnimInstance() ? Hero->GetLBAAnimInstance()->GetCurrentAnimation() : nullptr;
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots hero %s: location %s yaw %.1f speed %.1f anim %s falling %d"), Label,
+			*Hero->GetActorLocation().ToString(), Hero->GetActorRotation().Yaw, Hero->GetVelocity().Size2D(),
+			Anim ? *Anim->GetName() : TEXT("none"), Hero->GetCharacterMovement()->IsFalling() ? 1 : 0);
+	};
+
+	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+	if (HeroStep >= NumSteps)
+	{
+		// Give the last screenshot time to be written.
+		if (Elapsed - HeroStepStart > 1.0)
+		{
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+
+	const bool bStepDone = HeroStep >= 0 && Elapsed - HeroStepStart >= Steps[HeroStep].Duration;
+	if (HeroStep < 0 || bStepDone)
+	{
+		if (HeroStep >= 0)
+		{
+			Report(Steps[HeroStep].Name);
+			const FString File = ShotDirectory / FString::Printf(TEXT("Hero_%02d_%s.png"), HeroStep, Steps[HeroStep].Name);
+			FScreenshotRequest::RequestScreenshot(File, false, false);
+		}
+		else
+		{
+			// Only the script drives the hero during the test.
+			Hero->DisableInput(PC);
+			Report(TEXT("start"));
+		}
+		++HeroStep;
+		HeroStepStart = Elapsed;
+		if (HeroStep >= NumSteps)
+		{
+			Hero->SetMoveInput(FVector2D::ZeroVector);
+			return true;
+		}
+		const FStep& Step = Steps[HeroStep];
+		if (Step.Behaviour >= 0)
+		{
+			Hero->SetBehaviour(ELBABehaviour(Step.Behaviour));
+		}
+		Hero->SetMoveInput(Step.Input);
+		if (Step.bAction)
+		{
+			Hero->DoBehaviourAction();
+		}
+	}
+	return true;
+}
+
 bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
@@ -113,6 +214,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (Elapsed < 4.0)
 	{
 		return true;
+	}
+	if (bHero)
+	{
+		return TickHero(World, DeltaTime);
 	}
 	if (!bPosesReady)
 	{

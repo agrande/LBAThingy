@@ -53,6 +53,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Destination", meta = (ContentDir))
 	FDirectoryPath ContentRoot;
 
+	/** Generated levels override their game mode with LBAGameMode, so Play spawns Twinsen. */
+	UPROPERTY(Config, EditAnywhere, Category = "Destination")
+	bool bPlayAsTwinsen = true;
+
 	/** Point sampling keeps the crisp look of the original 256x256 textures. */
 	UPROPERTY(Config, EditAnywhere, Category = "Look")
 	bool bPixelArtFiltering = true;
