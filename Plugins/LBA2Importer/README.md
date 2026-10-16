@@ -54,10 +54,13 @@ subclassed in Blueprint. `SetMoveInput` and `DoBehaviourAction` let AI or script
 `ULBAAnimInstance` plays LBA animations natively (crossfades, LBA loop frames, root motion) without
 an Animation Blueprint.
 
-## Original look
+## Look
 
 Generated levels render with Unreal's lighting (Lumen GI, shadows) and then put LBA2's palette back
-on top, through an `OriginalLook` post-process volume:
+on top, through a `Look` post-process volume. It holds two looks, both instances of the same
+post-process material: **Original**, close to the original's pixels, and **Enhanced**, a graded
+take with deeper shadows, bolder dots and more color. *Look Mode* in the importer settings picks the
+one levels start with; `lba.Look.Mode 0|1` switches live (values in between blend them).
 
 - **Palette shading** (`M_LBA_PaletteShading`, `Shaders/Private/LBAPaletteShading.ush`). Every island
   palette ships a shade table that says, for each of its 256 colors, which color it becomes in each
@@ -67,12 +70,22 @@ on top, through an `OriginalLook` post-process volume:
   base color luminance) picks a shade row linearly, like the original's Gouraud intensity, and the
   light's color is kept as a tint. It runs before TSR, in linear HDR, which the volume makes equal
   to the displayed colors: manual exposure 1 and no tone curve.
-- **World-space dither** between neighbouring shade rows: Rune Skovbo Johansen's Surface-Stable Fractal
-  Dithering. `Shaders/Private/LBADither3D.ush` and `Source/LBA2Editor/Private/Import/LBADither3DTextures.*`
-  are ports of Dither3D and stay under the Mozilla Public License 2.0
-  (`Resources/ThirdParty/Dither3D/LICENSE.md`). The dots stick to surfaces as the camera moves and keep
-  the same size on screen. Characters are marked with a custom stencil (`LBA::MovingObjectStencil`,
-  needs `r.CustomDepth=3`) and get smooth shading instead, since world dots would slide over them.
+- **World-space dither** between shade rows, in two patterns (`DotPattern`, or `lba.Look.Pattern 0|1`):
+  - *Fractal dots*: Rune Skovbo Johansen's Surface-Stable Fractal Dithering.
+    `Shaders/Private/LBADither3D.ush` and `Source/LBA2Editor/Private/Import/LBADither3DTextures.*`
+    are ports of Dither3D and stay under the Mozilla Public License 2.0
+    (`Resources/ThirdParty/Dither3D/LICENSE.md`).
+  - *Halftone*: a 45 degree screen of round dots growing into a checkerboard, like printed comics
+    (`Shaders/Private/LBAHalftone.ush`).
+
+  The dots stick to surfaces as the camera moves and keep about the same size on screen. Characters
+  are marked with a custom stencil (`LBA::MovingObjectStencil`, needs `r.CustomDepth=3`) and get smooth
+  shading instead, since world dots would slide over them.
+- **Grade** (enhanced look): a contrast curve on the received light that keeps the island's sunlit
+  ground where the original has it (`ContrastPivot`, from the terrain data) and pushes shade down and
+  sun-facing slopes up; shade rows mixed two apart (`RowStep`) with bigger dots, so the dither reads as
+  a comic screen; shadows tinted with the island's sky color and highlights warm; exposure, contrast
+  and saturation over the whole image.
 - **Fog**: the original's linear distance fog towards the palette's fog color, from each section's fog
   distances (scaled by *Fog Distance Scale* in the importer settings), applied after shading like the
   original's fog tables.
@@ -82,10 +95,19 @@ on top, through an `OriginalLook` post-process volume:
 - **Lights**: islands are lit so that sunlit ground lands on the shade rows the original's baked
   terrain lighting uses (from the island's terrain data), with the sun at the original's angle.
 
-Tuning: `MI_LBA_PaletteShading_<Palette>` (all levels using a palette) or the level's
-`MI_<Level>_OriginalLook` (fog): *Strength* (0 = Unreal's image), *NeutralLight* / *ShadeContrast*
-(light to shade row), *KeepLuminance* (keep Unreal's brightness, use only the ramps' hue),
-*DitherAmount*, *DotSpacing* (pixels), *LightTint*. Console variables compare live:
+Customizing (material instances in `<Root>/Rendering`, children inherit what they don't override):
+
+| Instance | Scope | Kept on reimport |
+|---|---|---|
+| `MI_LBA_Look_Enhanced`, `MI_LBA_Look_Original` | every level | yes, unless a newer importer changes their defaults |
+| `MI_LBA_Enhanced_<Palette>` | levels using that palette (per island tweaks) | yes, same rule |
+| `MI_LBA_Original_<Palette>`, level `MI_<Level>_<Look>Look` (fog, contrast pivot) | generated | no |
+
+Main parameters: *LightContrast*, *RowStep*, *Exposure*, *Contrast*, *Saturation*, *ShadowTint* /
+*HighlightTint* and their amounts (Grade); *DotPattern*, *DotSpacing* (pixels), *DotContrast*,
+*DitherAmount* (Dither); *Strength* (0 = Unreal's image), *KeepLuminance* (keep Unreal's brightness,
+use only the ramps' hue), *LightTint* (Palette). To try values live, `lba.Look.Set <Parameter> <Value>`
+(or `R G B` for colors; no value removes the override). Other console variables:
 `lba.Look.Palette 0|1`, `lba.Look.Dither 0|1`, `lba.Look.Debug 1|2|3` (base color, matched palette
 color, shade row / light).
 
@@ -113,8 +135,9 @@ color, shade row / light).
 - [x] L3b Playable Twinsen, authentic controls (root motion, behaviours, actions)
 - [x] Original look: island palettes, palette shading post-process, world-space dither, original fog,
   sky and sea, calibrated lights
-- [ ] Original look, next: rain and lightning for the Citadel storm, animated sea strips, fog levels
-  through the palette's fog tables, sprites (lamps, effects) and their light
+- [x] Enhanced look: graded palette shading, bolder fractal or halftone dots, live look switch
+- [ ] Look, next: light balance and volumetric fog, sea with Unreal's Water plugin, Citadel storm
+  (lamppost lights, rain, lightning), cloud shadows, interior lights, sprites
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)

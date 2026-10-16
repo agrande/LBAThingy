@@ -18,6 +18,16 @@ enum class ELBABackFaceMode : uint8
 	Smart,
 };
 
+/** Look of generated levels. Both are in every level's post-process volume; lba.Look.Mode switches live. */
+UENUM()
+enum class ELBALookMode : uint8
+{
+	/** Close to the original's pixels: palette shade rows picked like its Gouraud shading, fine dither. */
+	Original,
+	/** Graded: deeper shadows, bolder dots, split toning and more color (MI_LBA_Look_Enhanced). */
+	Enhanced,
+};
+
 UENUM()
 enum class ELBAImportLayer : uint8
 {
@@ -60,6 +70,10 @@ public:
 	/** Point sampling keeps the crisp look of the original 256x256 textures. */
 	UPROPERTY(Config, EditAnywhere, Category = "Look")
 	bool bPixelArtFiltering = true;
+
+	/** Look generated levels start with. */
+	UPROPERTY(Config, EditAnywhere, Category = "Look")
+	ELBALookMode LookMode = ELBALookMode::Enhanced;
 
 	/**
 	 * Island fog distances relative to the original's (which stops drawing a few dozen meters away). 1 is the

@@ -139,29 +139,42 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 		Context.SpawnGeneratedActor<ASkyAtmosphere>(World, FTransform::Identity, TEXT("SkyAtmosphere"), Folder);
 	}
 
-	// Original look: palette shading with world-space dither, manual exposure and a neutral tonemapper so palette
-	// colors come out as they are. Turn the volume (or its blendable) off to compare with Unreal's plain rendering.
-	// The palette shading also applies the original's linear distance fog, after shading like its fog tables: fog
-	// added before it would read as extra light. The level gets its own instance for its fog distances.
-	UMaterialInterface* PaletteShading = Xpl ? Context.GetRendering().GetPaletteShading(*Xpl) : nullptr;
-	if (PaletteShading && Preset.FogEnd > Preset.FogStart)
+	// Palette look: palette shading with world-space dither, manual exposure and a neutral tonemapper so palette
+	// colors come out as they are (the enhanced look grades them itself). Both looks are blendables of the volume,
+	// the inactive one at weight 0 (lba.Look.Mode switches live). Turn the volume off to compare with Unreal's plain
+	// rendering. The palette shading also applies the original's linear distance fog, after shading like its fog
+	// tables: fog added before it would read as extra light. The level gets its own instances for its fog distances,
+	// and for the light of its sunlit ground, around which the enhanced look's contrast curve turns.
+	const FString LevelPath = World->GetPackage()->GetName();
+	const float ContrastPivot = Preset.GroundRow > 0.f && Xpl ? Preset.GroundRow / float(Xpl->ShadeNormalLevel) : 1.f;
+	auto GetLevelLook = [&](ELBALookMode Look) -> UMaterialInterface*
 	{
-		const FString LevelPath = World->GetPackage()->GetName();
-		UMaterialInstanceConstant* LevelLook = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(FPackageName::GetLongPackagePath(LevelPath),
-			FString::Printf(TEXT("MI_%s_OriginalLook"), *FPackageName::GetShortName(LevelPath)));
-		if (LevelLook)
+		UMaterialInterface* PaletteShading = Xpl ? Context.GetRendering().GetPaletteShading(*Xpl, Look) : nullptr;
+		if (!PaletteShading)
 		{
-			UMaterialEditingLibrary::SetMaterialInstanceParent(LevelLook, PaletteShading);
-			UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(LevelLook);
+			return nullptr;
+		}
+		UMaterialInstanceConstant* LevelLook = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(FPackageName::GetLongPackagePath(LevelPath),
+			FString::Printf(TEXT("MI_%s_%sLook"), *FPackageName::GetShortName(LevelPath), Look == ELBALookMode::Enhanced ? TEXT("Enhanced") : TEXT("Original")));
+		if (!LevelLook)
+		{
+			return PaletteShading;
+		}
+		UMaterialEditingLibrary::SetMaterialInstanceParent(LevelLook, PaletteShading);
+		UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(LevelLook);
+		if (Preset.FogEnd > Preset.FogStart)
+		{
 			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(LevelLook, TEXT("FogColor"), Preset.FogColor);
 			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("FogStart"), Preset.FogStart);
 			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("FogEnd"), Preset.FogEnd);
-			UMaterialEditingLibrary::UpdateMaterialInstance(LevelLook);
-			Context.MarkForSave(LevelLook);
-			PaletteShading = LevelLook;
 		}
-	}
-	if (APostProcessVolume* Volume = Context.SpawnGeneratedActor<APostProcessVolume>(World, FTransform::Identity, TEXT("OriginalLook"), Folder))
+		UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("ContrastPivot"), ContrastPivot);
+		UMaterialEditingLibrary::UpdateMaterialInstance(LevelLook);
+		Context.MarkForSave(LevelLook);
+		return LevelLook;
+	};
+	const ELBALookMode ActiveLook = Context.GetSettings().LookMode;
+	if (APostProcessVolume* Volume = Context.SpawnGeneratedActor<APostProcessVolume>(World, FTransform::Identity, TEXT("Look"), Folder))
 	{
 		Volume->bUnbound = true;
 		FPostProcessSettings& Settings = Volume->Settings;
@@ -186,9 +199,12 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 		Settings.bOverride_VignetteIntensity = true;
 		Settings.VignetteIntensity = 0.f;
 
-		if (PaletteShading)
+		for (const ELBALookMode Look : { ELBALookMode::Original, ELBALookMode::Enhanced })
 		{
-			Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, PaletteShading));
+			if (UMaterialInterface* LevelLook = GetLevelLook(Look))
+			{
+				Settings.WeightedBlendables.Array.Add(FWeightedBlendable(Look == ActiveLook ? 1.f : 0.f, LevelLook));
+			}
 		}
 	}
 }
