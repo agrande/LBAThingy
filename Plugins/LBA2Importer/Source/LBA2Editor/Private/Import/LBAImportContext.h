@@ -12,6 +12,8 @@ class UTexture2D;
 class UWorld;
 class AActor;
 class FLBAMaterialLibrary;
+class FLBARenderingAssets;
+struct FLBAXpl;
 struct FScopedSlowTask;
 
 /** Collision options for imported static meshes. */
@@ -56,10 +58,20 @@ public:
 	const FLBAHqrFile* GetHqr(const FString& FileName);
 	FString GetGameFilePath(const FString& FileName) const;
 
+	/**
+	 * Active palette for colors and textures. Each island has its own palette (FLBAXpl); interiors and characters
+	 * use the Citadel (Citabau) one, like the original.
+	 */
 	const TArray<FColor>& GetPalette() const { return Palette; }
 	FColor GetPaletteColor(int32 Index) const { return Palette.IsValidIndex(Index) ? Palette[Index] : FColor::Magenta; }
 
+	/** Switches the active palette to an island palette (RESS.HQR entry, see FLBAXpl). Returns it, or null. */
+	const FLBAXpl* UsePalette(int32 XplEntry);
+	const FLBAXpl* GetXpl(int32 XplEntry);
+	const FLBAXpl* GetActiveXpl() const { return ActiveXpl; }
+
 	FLBAMaterialLibrary& GetMaterials();
+	FLBARenderingAssets& GetRendering();
 
 	/** Optional community-authored names (MIT, from the lba2remake project). May be null. */
 	TSharedPtr<FJsonObject> GetCommunityNames() const { return CommunityNames; }
@@ -148,7 +160,10 @@ private:
 
 	TMap<FString, TUniquePtr<FLBAHqrFile>> HqrCache;
 	TArray<FColor> Palette;
+	TMap<int32, TUniquePtr<FLBAXpl>> XplCache;
+	const FLBAXpl* ActiveXpl = nullptr;
 	TUniquePtr<FLBAMaterialLibrary> Materials;
+	TUniquePtr<FLBARenderingAssets> Rendering;
 	TSharedPtr<FJsonObject> CommunityNames;
 
 	TArray<TWeakObjectPtr<UObject>> PendingSaves;

@@ -54,13 +54,53 @@ subclassed in Blueprint. `SetMoveInput` and `DoBehaviourAction` let AI or script
 `ULBAAnimInstance` plays LBA animations natively (crossfades, LBA loop frames, root motion) without
 an Animation Blueprint.
 
+## Original look
+
+Generated levels render with Unreal's lighting (Lumen GI, shadows) and then put LBA2's palette back
+on top, through an `OriginalLook` post-process volume:
+
+- **Palette shading** (`M_LBA_PaletteShading`, `Shaders/Private/LBAPaletteShading.ush`). Every island
+  palette ships a shade table that says, for each of its 256 colors, which color it becomes in each
+  of 16 shade rows (row 12 is the unshaded color). Those rows mostly move inside a 16-color ramp,
+  which is what gives the original its painted shadows and highlights. For each pixel, the palette
+  color is found from the G-buffer base color, the light the surface receives (scene luminance /
+  base color luminance) picks a shade row linearly, like the original's Gouraud intensity, and the
+  light's color is kept as a tint. It runs before TSR, in linear HDR, which the volume makes equal
+  to the displayed colors: manual exposure 1 and no tone curve.
+- **World-space dither** between neighbouring shade rows: Rune Skovbo Johansen's Surface-Stable Fractal
+  Dithering. `Shaders/Private/LBADither3D.ush` and `Source/LBA2Editor/Private/Import/LBADither3DTextures.*`
+  are ports of Dither3D and stay under the Mozilla Public License 2.0
+  (`Resources/ThirdParty/Dither3D/LICENSE.md`). The dots stick to surfaces as the camera moves and keep
+  the same size on screen. Characters are marked with a custom stencil (`LBA::MovingObjectStencil`,
+  needs `r.CustomDepth=3`) and get smooth shading instead, since world dots would slide over them.
+- **Fog**: the original's linear distance fog towards the palette's fog color, from each section's fog
+  distances (scaled by *Fog Distance Scale* in the importer settings), applied after shading like the
+  original's fog tables.
+- **Sky and sea**: a sky dome shows the island's cloud texture on a plane at the original's sky height
+  fading into the fog color (`M_LBA_Sky`, an "Is Sky" material, so Lumen's sky light captures it), and
+  the sea is the island's opaque sea texture.
+- **Lights**: islands are lit so that sunlit ground lands on the shade rows the original's baked
+  terrain lighting uses (from the island's terrain data), with the sun at the original's angle.
+
+Tuning: `MI_LBA_PaletteShading_<Palette>` (all levels using a palette) or the level's
+`MI_<Level>_OriginalLook` (fog): *Strength* (0 = Unreal's image), *NeutralLight* / *ShadeContrast*
+(light to shade row), *KeepLuminance* (keep Unreal's brightness, use only the ramps' hue),
+*DitherAmount*, *DotSpacing* (pixels), *LightTint*. Console variables compare live:
+`lba.Look.Palette 0|1`, `lba.Look.Dither 0|1`, `lba.Look.Debug 1|2|3` (base color, matched palette
+color, shade row / light).
+
 ## Conventions
 
 - LBA space (right-handed, Y up) maps to Unreal as `(x, z, y) * scale`; LBA yaw `beta` becomes `-beta`.
 - Characters face +Y like Unreal mannequins, so put them in an `ACharacter` with the usual -90 yaw.
-- Vertex color carries the palette albedo; vertex alpha carries the original baked shading. The
-  `BakedShading` parameter on the `M_LBA_*` masters blends between modern lighting (0) and the
-  original look (1).
+- Vertex color carries the palette albedo (stored sRGB by Unreal's mesh build, decoded in the
+  materials); vertex alpha carries the original baked shade row / 24. The `BakedShading` parameter
+  on the `M_LBA_*` masters multiplies it back in (off by default: Unreal lights the scene and the
+  palette shading needs the exact palette color as base color).
+- Islands use their own palette (RESS.HQR XPL entries); interiors and characters use the Citadel
+  (Citabau) palette, like the original.
+- Generated master materials carry a version stamp (a comment node): a newer importer rebuilds
+  them in place, otherwise your edits are kept.
 - Community names (scene, entity, actor and zone names) come from lba2remake's metadata, bundled in
   `Resources/CommunityMetadata` with its MIT license.
 
@@ -71,6 +111,10 @@ an Animation Blueprint.
 - [x] L2 Interiors: brick projection, kit pieces, collision, smart backfaces, remake 3D models
 - [x] L3 Characters: skeletons, skinned meshes, animations with root motion, notifies, entity assets
 - [x] L3b Playable Twinsen, authentic controls (root motion, behaviours, actions)
+- [x] Original look: island palettes, palette shading post-process, world-space dither, original fog,
+  sky and sea, calibrated lights
+- [ ] Original look, next: rain and lightning for the Citadel storm, animated sea strips, fog levels
+  through the palette's fog tables, sprites (lamps, effects) and their light
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)

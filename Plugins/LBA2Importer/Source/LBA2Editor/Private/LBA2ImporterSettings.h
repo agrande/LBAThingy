@@ -61,6 +61,13 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Look")
 	bool bPixelArtFiltering = true;
 
+	/**
+	 * Island fog distances relative to the original's (which stops drawing a few dozen meters away). 1 is the
+	 * original's view distance; larger values let you see further while keeping its fog color.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Look", meta = (ClampMin = "0.25", UIMax = "8"))
+	float FogDistanceScale = 1.5f;
+
 	/** Islands to import (file names such as CITABAU). Empty imports all of them. */
 	UPROPERTY(Config, EditAnywhere, Category = "Islands")
 	TArray<FString> IslandFilter;

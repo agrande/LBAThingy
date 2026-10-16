@@ -1,0 +1,112 @@
+/*
+ * Copyright (c) 2025 Rune Skovbo Johansen
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+// LBADither3D.ush
+//
+// Surface-Stable Fractal Dithering, ported from Dither3DInclude.cginc (https://github.com/runevision/Dither3D), by way
+// of the Unreal port in the Zeboulon IllustrativeStyle plugin.
+//
+// Changes from the original:
+//  - HLSL for Unreal: Texture3D / Texture2D objects and explicit samplers, settings passed in a struct instead of
+//    material properties, `fixed` replaced by `float`.
+//  - The surface coordinates are a double-float (FDFVector2). The UV of the chosen fractal level is taken with
+//    DFFracDemote(DFDivideByPow2(...)), so the pattern stays precise far from the world origin.
+//  - The caller always supplies the screen-space UV derivatives (no ddx / ddy inside), and the radial compensation,
+//    layer quantization and debug outputs were left out.
+//  - The textures are importer-generated assets (see LBADither3DTextures.cpp), so the ramp is a 2D texture one texel
+//    high and the dot pattern a volume texture.
+
+#pragma once
+
+#include "/Engine/Private/DoubleFloat.ush"
+
+struct FLBADither3DSettings
+{
+	// Bayer dots per pattern side: 2, 4 or 8. The 3D texture is 16 * DotsPerSide texels wide and high and
+	// DotsPerSide^2 layers deep; its ramp texture is as wide as the 3D texture.
+	float DotsPerSide;
+	// exp2 of the original _Scale property. Dots end up about ScaleExp / 8 pixels apart.
+	float ScaleExp;
+	// 0: dots keep the same size and lower brightness is made with fewer dots. 1: dots shrink instead.
+	float SizeVariability;
+	// Dot edge contrast. 1 gives roughly one pixel of anti-aliasing around dots.
+	float Contrast;
+	// How much dots seen at grazing angles are blurred along the stretched direction to avoid aliasing.
+	float StretchSmoothness;
+};
+
+// UV:     surface coordinates.
+// DUVDX:  change of UV along the screen X axis (per pixel).
+// DUVDY:  change of UV along the screen Y axis (per pixel).
+// Returns the dithered brightness: 0 or 1, with anti-aliased dot edges.
+float LBAGetDither3D(
+	Texture3D DitherTexture, SamplerState DitherSampler,
+	Texture2D RampTexture, SamplerState RampSampler,
+	FDFVector2 UV, float2 DUVDX, float2 DUVDY, float Brightness, FLBADither3DSettings S)
+{
+	const float XRes = 16.0 * S.DotsPerSide;
+	const float InvXRes = 1.0 / XRes;
+	const float DotsTotal = S.DotsPerSide * S.DotsPerSide;	// also the Z resolution
+	const float InvZRes = 1.0 / DotsTotal;
+
+	// Lookup brightness to make dither output have correct output brightness at different input brightness values.
+	const float BrightnessCurve = RampTexture.SampleLevel(RampSampler, float2(0.5 * InvXRes + (1.0 - InvXRes) * Brightness, 0.5), 0).r;
+
+	// Get the minimum and maximum rate of change of the UV coordinates on the screen, with a subset of singular value
+	// decomposition. fwidth would be biased towards the axes and only give one value.
+	const float Q = dot(DUVDX, DUVDX) + dot(DUVDY, DUVDY);
+	const float R = DUVDX.x * DUVDY.y - DUVDX.y * DUVDY.x;	// determinant
+	const float Discriminant = sqrt(max(0.0, Q * Q - 4.0 * R * R));
+	// (max freq, min freq). Something smaller on screen has a larger rate of change of its UV from pixel to pixel.
+	const float2 Freq = sqrt(max(float2(Q + Discriminant, Q - Discriminant) * 0.5, 1e-24));
+
+	// The spacing correlates linearly with the average distance between dots. It uses the smaller frequency (the
+	// largest amount of stretching), so dots seen at an angle are compressed in one direction rather than enlarged.
+	float Spacing = Freq.y;
+	Spacing *= S.ScaleExp;
+	// Keep the spacing the same whether the pattern has more or fewer dots in it.
+	Spacing *= S.DotsPerSide * 0.125;
+
+	// Higher brightness makes dots larger relative to the pattern (via the threshold further down). Dividing the
+	// spacing by the brightness instead keeps dot sizes constant and only changes the space between them.
+	// SizeVariability blends between the two. "* 2" keeps the mid-size dots constant, "+ 0.001" avoids division by 0.
+	const float BrightnessSpacingMultiplier = pow(BrightnessCurve * 2.0 + 0.001, -(1.0 - S.SizeVariability));
+	Spacing *= BrightnessSpacingMultiplier;
+
+	// Find the power-of-two (fractal) level that corresponds to the dot spacing.
+	const float SpacingLog = log2(Spacing);
+	const float PatternScaleLevel = clamp(floor(SpacingLog), -40.0, 40.0);
+	const float F = saturate(SpacingLog - PatternScaleLevel);	// fractional part
+
+	// UV in the current fractal level. The pattern wraps, so only the fractional part matters.
+	const float2 LevelUV = DFFracDemote(DFDivideByPow2(UV, exp2(PatternScaleLevel).xx));
+
+	// Each layer along the 3rd dimension of the texture has one more dot. The first layer used has 1/4 of the dots,
+	// the last one all of them.
+	float SubLayer = lerp(0.25 * DotsTotal, DotsTotal, 1.0 - F);
+	// Texels are half a texel offset from the texture border; also normalize to the 0-1 range.
+	SubLayer = (SubLayer - 0.5) * InvZRes;
+
+	// The dots in the pattern are radial gradients.
+	const float Pattern = DitherTexture.SampleLevel(DitherSampler, float3(LevelUV, SubLayer), 0).r;
+
+	// Sharp dots from the radial gradients, by increasing the contrast.
+	float Contrast = S.Contrast * S.ScaleExp * BrightnessSpacingMultiplier * 0.1;
+	// The spacing is derived from the lowest frequency, but the contrast must be based on the highest frequency to
+	// avoid aliasing.
+	Contrast *= pow(Freq.y / Freq.x, S.StretchSmoothness);
+
+	// Scale the contrast around 0.5 normally, but towards the original brightness the blurrier the pattern is, so a
+	// very blurred pattern doesn't turn everything grey.
+	const float BaseVal = lerp(0.5, Brightness, saturate(1.05 / (1.0 + Contrast)));
+
+	// The brighter the output, the lower the threshold, which makes the dots larger relative to the pattern.
+	const float Threshold = 1.0 - BrightnessCurve;
+
+	return saturate((Pattern - Threshold) * Contrast + BaseVal);
+}

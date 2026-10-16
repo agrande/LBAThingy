@@ -8,7 +8,9 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
+#include "Formats/LBAXpl.h"
 #include "Import/LBAMaterialLibrary.h"
+#include "Import/LBARenderingAssets.h"
 #include "Interfaces/IPluginManager.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
@@ -53,8 +55,10 @@ bool FLBAImportContext::Initialize(FString& OutError)
 	{
 		return false;
 	}
+	UsePalette(FLBAXpl::InteriorEntry);
 	LoadCommunityNames();
 	Materials = MakeUnique<FLBAMaterialLibrary>(*this);
+	Rendering = MakeUnique<FLBARenderingAssets>(*this);
 	UE_LOG(LogLBA2, Display, TEXT("LBA2 import: data in %s, content in %s, scale %.4f cm/unit"), *DataDirectory, *ContentRoot, Scale);
 	return true;
 }
@@ -146,6 +150,44 @@ FLBAMaterialLibrary& FLBAImportContext::GetMaterials()
 {
 	check(Materials.IsValid());
 	return *Materials;
+}
+
+FLBARenderingAssets& FLBAImportContext::GetRendering()
+{
+	check(Rendering.IsValid());
+	return *Rendering;
+}
+
+const FLBAXpl* FLBAImportContext::GetXpl(int32 XplEntry)
+{
+	if (TUniquePtr<FLBAXpl>* Found = XplCache.Find(XplEntry))
+	{
+		return Found->Get();
+	}
+	TUniquePtr<FLBAXpl> Xpl = MakeUnique<FLBAXpl>();
+	const FLBAHqrFile* Ress = GetHqr(TEXT("RESS.HQR"));
+	if (!Ress || !Xpl->Load(*Ress, XplEntry))
+	{
+		Xpl.Reset();
+	}
+	const FLBAXpl* Result = Xpl.Get();
+	XplCache.Add(XplEntry, MoveTemp(Xpl));
+	return Result;
+}
+
+const FLBAXpl* FLBAImportContext::UsePalette(int32 XplEntry)
+{
+	// The RESS palette loaded at startup (menus) stays active if the island palette is missing.
+	if (const FLBAXpl* Xpl = GetXpl(XplEntry))
+	{
+		ActiveXpl = Xpl;
+		Palette = Xpl->Palette;
+	}
+	else
+	{
+		Warn(FString::Printf(TEXT("RESS.HQR has no island palette %d, keeping the current palette"), XplEntry));
+	}
+	return ActiveXpl;
 }
 
 FString FLBAImportContext::SanitizeName(const FString& In)

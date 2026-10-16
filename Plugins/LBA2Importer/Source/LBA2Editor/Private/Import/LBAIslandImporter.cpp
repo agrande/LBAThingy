@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "Formats/LBABody.h"
 #include "Formats/LBAIsland.h"
+#include "Formats/LBAXpl.h"
 #include "GameFramework/PlayerStart.h"
 #include "HAL/FileManager.h"
 #include "Import/LBABodyConverter.h"
@@ -26,6 +27,41 @@
 namespace
 {
 	constexpr int32 CellsPerCube = 64;
+
+	/**
+	 * Shade row that sunlit ground should get, from the island's baked terrain lighting: halfway between the most
+	 * common row of land vertices (flat ground) and their 90th percentile (slopes facing the sun), which matched
+	 * screenshots of the original best. 0 when the island has no land.
+	 */
+	float GetSunlitGroundRow(const FLBAIsland& Island)
+	{
+		int32 RowCounts[16] = {};
+		for (const FLBAIslandSection& Section : Island.Sections)
+		{
+			for (int32 Z = 0; Z < 65; ++Z)
+			{
+				for (int32 X = 0; X < 65; ++X)
+				{
+					if (Section.GetHeight(X, Z) > 0)
+					{
+						++RowCounts[Section.GetShadeRow(X, Z)];
+					}
+				}
+			}
+		}
+		int32 MostCommonRow = 0;
+		int32 Total = 0;
+		for (int32 Row = 0; Row < 16; ++Row)
+		{
+			MostCommonRow = RowCounts[Row] > RowCounts[MostCommonRow] ? Row : MostCommonRow;
+			Total += RowCounts[Row];
+		}
+		int32 Row90 = 0;
+		for (int32 Count = RowCounts[0]; Row90 < 15 && Count < Total * 9 / 10; Count += RowCounts[++Row90])
+		{
+		}
+		return Total > 0 ? 0.5f * float(MostCommonRow + Row90) : 0.f;
+	}
 
 	int32 FloorDiv(int32 A, int32 B)
 	{
@@ -102,6 +138,13 @@ bool FLBAIslandImporter::ImportIsland(const FString& IslandName)
 		Context.Warn(FString::Printf(TEXT("Island %s: could not parse"), *IslandName));
 		return false;
 	}
+
+	// Colors and textures of the island use its own palette; other layers use the interior one.
+	Context.UsePalette(FLBAXpl::GetEntryForIsland(Island.Name));
+	ON_SCOPE_EXIT
+	{
+		Context.UsePalette(FLBAXpl::InteriorEntry);
+	};
 
 	const FString IslandFolder = Context.GetContentPath(TEXT("Islands") / Island.Name);
 	const FString TextureFolder = IslandFolder / TEXT("Textures");
@@ -235,7 +278,8 @@ UStaticMesh* FLBAIslandImporter::BuildGroundMesh(const FLBAIsland& Island, const
 					bSeaLevel &= Height == 0;
 					V[K].Position = FVector3f(LBA::ToUnreal(VX * LBA::BrickSizeXZ, Height, VZ * LBA::BrickSizeXZ, Scale));
 					V[K].Normal = VertexNormal(VX, VZ);
-					const float Light = FMath::Clamp(Section.GetIntensity(VX, VZ) / 24.f, 0.f, 1.f);
+					// Vertex alpha: baked shade row / 24, so the unshaded row 12 is 0.5.
+					const float Light = Section.GetShadeRow(VX, VZ) / 24.f;
 					const FColor Albedo = Tri.IsColored() ? Palette[Tri.Bank() * 16 + 11] : FColor::Black;
 					V[K].Color = LBABodyConverter::ToVertexColor(Albedo, Light);
 				}
@@ -334,8 +378,57 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		}
 	}
 
-	// Sea: a large translucent plane at LBA height 0, plus an invisible floor just below so the player can wade.
-	const FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::ForIsland(Island.Name);
+	// Sky and sea textures, fog: from the island's palette, sky/sea texture page and first section (the original
+	// sets them per section, but they hardly vary within an island).
+	FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::ForIsland(Island.Name);
+	const FLBAIslandSection& FirstSection = Island.Sections[0];
+	const FLBAXpl* Xpl = Context.GetActiveXpl();
+	if (Xpl)
+	{
+		Preset.PaletteEntry = Xpl->Entry;
+		Preset.FogColor = FLinearColor::FromSRGBColor(Xpl->Palette[Xpl->FogColor]);
+	}
+	Preset.GroundRow = GetSunlitGroundRow(Island);
+
+	const float FogDistanceScale = Context.GetSettings().FogDistanceScale;
+	Preset.FogStart = FirstSection.FogStart * Scale * FogDistanceScale;
+	Preset.FogEnd = FirstSection.ClipFar * Scale * FogDistanceScale;
+
+	const FString TextureFolder = IslandFolder / TEXT("Textures");
+	const FString MaterialFolder = IslandFolder / TEXT("Materials");
+	const FLBAHqrFile* Ress = Context.GetHqr(TEXT("RESS.HQR"));
+	const TArray<uint8> SkySea = Xpl && Ress ? Ress->GetEntry(FLBAXpl::GetSkySeaEntry(Xpl->Entry)) : TArray<uint8>();
+	UTexture2D* SeaTexture = nullptr;
+	UTexture2D* CloudTexture = nullptr;
+	if (SkySea.Num() >= 256 * 128)
+	{
+		SeaTexture = Context.CreatePaletteTexture(TextureFolder, FString::Printf(TEXT("T_%s_Sea"), *Island.Name), 128, 128,
+			[&SkySea](int32 X, int32 Y) { return SkySea[Y * 256 + X]; }, false, true);
+		CloudTexture = Context.CreatePaletteTexture(TextureFolder, FString::Printf(TEXT("T_%s_Clouds"), *Island.Name), 128, 128,
+			[&SkySea](int32 X, int32 Y) { return SkySea[Y * 256 + 128 + X]; }, false, true);
+	}
+
+	if (CloudTexture)
+	{
+		if (UMaterialInstanceConstant* SkyMaterial = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(MaterialFolder,
+			FString::Printf(TEXT("MI_%s_Sky"), *Island.Name)))
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceParent(SkyMaterial, Context.GetMaterials().GetMaster(ELBAMaterial::Sky));
+			UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(SkyMaterial);
+			UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(SkyMaterial, TEXT("Clouds"), CloudTexture);
+			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(SkyMaterial, TEXT("FogColor"), Preset.FogColor);
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(SkyMaterial, TEXT("CloudHeight"), FirstSection.SkyY * Scale);
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(SkyMaterial, TEXT("FogStart"), Preset.FogStart);
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(SkyMaterial, TEXT("FogEnd"), Preset.FogEnd);
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(SkyMaterial, TEXT("Brightness"), FMath::Pow(2.f, -Preset.ExposureBias));
+			UMaterialEditingLibrary::UpdateMaterialInstance(SkyMaterial);
+			Context.MarkForSave(SkyMaterial);
+			Preset.SkyMaterial = SkyMaterial;
+		}
+	}
+
+	// Sea: a large opaque plane at LBA height 0 with the island's sea texture, plus an invisible floor just below so
+	// the player can wade.
 	if (UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))
 	{
 		const FBox SeaBounds = IslandBounds.ExpandBy(FVector(LBA::IslandCubeSize * Scale * 6.0, LBA::IslandCubeSize * Scale * 6.0, 0.0));
@@ -343,12 +436,21 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		const FVector Size = SeaBounds.GetSize();
 		const FVector PlaneScale(Size.X / 100.0, Size.Y / 100.0, 1.0);
 
-		UMaterialInstanceConstant* WaterMaterial = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(IslandFolder / TEXT("Materials"),
+		UMaterialInstanceConstant* WaterMaterial = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(MaterialFolder,
 			FString::Printf(TEXT("MI_%s_Water"), *Island.Name));
 		if (WaterMaterial)
 		{
 			UMaterialEditingLibrary::SetMaterialInstanceParent(WaterMaterial, Context.GetMaterials().GetMaster(ELBAMaterial::Water));
-			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(WaterMaterial, TEXT("WaterColor"), Preset.WaterColor);
+			UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(WaterMaterial);
+			if (SeaTexture)
+			{
+				UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(WaterMaterial, TEXT("Texture"), SeaTexture);
+			}
+			else
+			{
+				UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(WaterMaterial, TEXT("WaterColor"), Preset.FogColor);
+			}
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(WaterMaterial, TEXT("TileSize"), 8192.f * Scale);
 			UMaterialEditingLibrary::UpdateMaterialInstance(WaterMaterial);
 			Context.MarkForSave(WaterMaterial);
 		}
@@ -373,7 +475,6 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		}
 	}
 
-	const FLBAIslandSection& FirstSection = Island.Sections[0];
 	LBAEnvironment::Spawn(Context, World, Preset, LBAEnvironment::SunRotationFromLbaAngles(FirstSection.LightAlpha, FirstSection.LightBeta));
 
 	// Player start: highest ground point of the section closest to the island center.

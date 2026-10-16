@@ -29,14 +29,29 @@ enum class ELBAMaterial : uint8
 	Ground,
 	/** Isometric brick sprites projected on cubes. */
 	Brick,
-	/** Sea. */
+	/** Sea: the island's sea texture tiled in world space (opaque, like the original). */
 	Water,
 	/** Invisible helper (collision-only geometry). */
 	Invisible,
 	/** Translucent texture * vertex color (remake glass, water...). */
 	TexturedTranslucent,
+	/** Sky dome: the original's cloud plane fading into the fog color (Shaders/Private/LBASky.ush). */
+	Sky,
 	Count
 };
+
+/**
+ * Generated materials carry a version stamp (a comment node) so a newer importer can rebuild their graph in place.
+ * Materials stamped with the current version are left alone, which keeps user edits between imports.
+ */
+namespace LBAMaterials
+{
+	bool IsGeneratedVersion(const UMaterial* Material, int32 Version);
+	/** Clears the graph and stamps the version. */
+	void BeginRebuild(UMaterial* Material, int32 Version);
+	/** Sets usages, recompiles and marks the material for saving. */
+	UMaterial* EndRebuild(FLBAImportContext& Context, UMaterial* Material);
+}
 
 class FLBAMaterialLibrary
 {

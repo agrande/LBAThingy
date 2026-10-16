@@ -17,6 +17,7 @@
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
 #include "LBAAnimInstance.h"
+#include "LBATypes.h"
 
 namespace
 {
@@ -62,6 +63,9 @@ ALBACharacter::ALBACharacter()
 	GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
 	GetMesh()->SetAnimInstanceClass(ULBAAnimInstance::StaticClass());
 	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	// Moving: the palette shading post-process shades it smoothly rather than with world-anchored dither dots.
+	GetMesh()->SetRenderCustomDepth(true);
+	GetMesh()->SetCustomDepthStencilValue(LBA::MovingObjectStencil);
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);

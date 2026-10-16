@@ -16,6 +16,11 @@
 	"Installed": false,
 	"Modules": [
 		{
+			"Name": "LBA2Shaders",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
+		},
+		{
 			"Name": "LBA2Runtime",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"

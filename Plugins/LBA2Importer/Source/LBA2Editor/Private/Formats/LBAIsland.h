@@ -70,7 +70,8 @@ struct FLBAIslandSection
 	TArray<uint8> Intensities;
 
 	int32 GetHeight(int32 X, int32 Z) const { return Heights.IsValidIndex(Z * 65 + X) ? Heights[Z * 65 + X] : 0; }
-	int32 GetIntensity(int32 X, int32 Z) const { return Intensities.IsValidIndex(Z * 65 + X) ? Intensities[Z * 65 + X] : 0; }
+	/** Baked Gouraud shade row (0-15, 12 = unshaded) of a ground vertex, as TERRAIN.CPP reads it: (value & 15) - 1. */
+	int32 GetShadeRow(int32 X, int32 Z) const { return Intensities.IsValidIndex(Z * 65 + X) ? FMath::Max((Intensities[Z * 65 + X] & 15) - 1, 0) : 0; }
 	FIntVector GetOrigin() const;
 };
 

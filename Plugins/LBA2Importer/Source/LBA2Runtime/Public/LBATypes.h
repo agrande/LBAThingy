@@ -20,6 +20,12 @@ namespace LBA
 	inline constexpr int32 IslandCubeSize = 0x8000;
 	inline constexpr int32 AngleFullTurn = 4096;
 
+	/**
+	 * Custom depth stencil value of moving objects (characters). The palette shading post-process shades them
+	 * smoothly instead of with world-space dither dots, which would slide over them.
+	 */
+	inline constexpr int32 MovingObjectStencil = 200;
+
 	/** Converts an LBA position (in LBA units) into Unreal centimeters. */
 	inline FVector ToUnreal(double X, double Y, double Z, double Scale)
 	{
