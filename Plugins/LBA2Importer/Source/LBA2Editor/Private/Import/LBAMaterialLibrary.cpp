@@ -5,11 +5,8 @@
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
-#include "Materials/MaterialExpressionCameraPositionWS.h"
-#include "Materials/MaterialExpressionCameraVectorWS.h"
 #include "Materials/MaterialExpressionComment.h"
 #include "Materials/MaterialExpressionCustom.h"
-#include "Materials/MaterialExpressionTextureObjectParameter.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionDivide.h"
@@ -36,7 +33,6 @@ namespace
 		TEXT("M_LBA_Water"),
 		TEXT("M_LBA_Invisible"),
 		TEXT("M_LBA_TexturedTranslucent"),
-		TEXT("M_LBA_Sky"),
 	};
 	static_assert(UE_ARRAY_COUNT(MasterNames) == uint8(ELBAMaterial::Count), "Keep MasterNames in sync");
 
@@ -225,7 +221,8 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	// Bump when a graph below changes. v2: BakedShading off by default, opaque textured sea, sky. v3: sky brightness.
 	// v4: vertex colors decoded from sRGB. v5: duller sea. v6: cloud clearance.
 	// v7: no specular on palette surfaces (the original has none, and it would read as light in the palette shading).
-	constexpr int32 Version = 7;
+	// v8: unshaded sea, like the original's.
+	constexpr int32 Version = 8;
 
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(Folder, Name, &bExisted);
@@ -314,8 +311,9 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	}
 	case ELBAMaterial::Water:
 	{
-		// The original sea is an opaque texture page tiled every 8192 units (1024 cm at the default scale), slowly
-		// drifting here to stand in for its animated wave strips.
+		// The original sea is an opaque, unshaded texture page tiled every 8192 units (1024 cm at the default scale),
+		// slowly drifting here to stand in for its animated wave strips.
+		Material->SetShadingModel(MSM_Unlit);
 		G.Column = -1200;
 		UMaterialExpressionWorldPosition* WorldPosition = G.Add<UMaterialExpressionWorldPosition>(0);
 		UMaterialExpressionComponentMask* XY = G.Add<UMaterialExpressionComponentMask>(100);
@@ -349,8 +347,7 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 		Tint->ParameterName = TEXT("WaterColor");
 		Tint->DefaultValue = FLinearColor::White;
 		G.Column = -250;
-		G.Out(G.Multiply(Tex, TEXT("RGB"), Tint, TEXT(""), 0), TEXT(""), MP_BaseColor);
-		G.Surface(0.6f, 0.25f);
+		G.Out(G.Multiply(Tex, TEXT("RGB"), Tint, TEXT(""), 0), TEXT(""), MP_EmissiveColor);
 		break;
 	}
 	case ELBAMaterial::TexturedTranslucent:
@@ -371,63 +368,6 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	{
 		Material->BlendMode = BLEND_Masked;
 		G.Out(G.Constant(0.f, 0), TEXT(""), MP_OpacityMask);
-		break;
-	}
-	case ELBAMaterial::Sky:
-	{
-		Material->SetShadingModel(MSM_Unlit);
-		Material->bIsSky = true;
-		Material->TwoSided = true;
-
-		G.Column = -900;
-		UMaterialExpressionCameraVectorWS* CameraVector = G.Add<UMaterialExpressionCameraVectorWS>(0);
-		UMaterialExpressionCameraPositionWS* CameraPosition = G.Add<UMaterialExpressionCameraPositionWS>(100);
-		UMaterialExpressionTime* Time = G.Add<UMaterialExpressionTime>(200);
-		UMaterialExpressionTextureObjectParameter* Clouds = G.Add<UMaterialExpressionTextureObjectParameter>(300);
-		Clouds->ParameterName = TEXT("Clouds");
-		Clouds->Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
-		Clouds->AutoSetSampleType();
-		UMaterialExpressionVectorParameter* FogColor = G.Add<UMaterialExpressionVectorParameter>(450);
-		FogColor->ParameterName = TEXT("FogColor");
-		FogColor->DefaultValue = FLinearColor(0.45f, 0.6f, 0.8f);
-		UMaterialExpressionVectorParameter* Drift = G.Add<UMaterialExpressionVectorParameter>(600);
-		Drift->ParameterName = TEXT("Drift");
-		Drift->DefaultValue = FLinearColor(0.004f, 0.002f, 0.f, 0.f);
-
-		G.Column = -250;
-		UMaterialExpressionCustom* Custom = G.Add<UMaterialExpressionCustom>(0);
-		Custom->Description = TEXT("LBA sky");
-		Custom->OutputType = CMOT_Float3;
-		Custom->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBASky.ush") };
-		Custom->Inputs.Reset();
-		G.Column = -600;
-		const TPair<const TCHAR*, UMaterialExpression*> Inputs[] =
-		{
-			{ TEXT("CameraVector"), CameraVector },
-			{ TEXT("CameraPosition"), CameraPosition },
-			{ TEXT("Time"), Time },
-			{ TEXT("Clouds"), Clouds },
-			{ TEXT("FogColor"), FogColor },
-			{ TEXT("Drift"), Drift },
-			// Height of the cloud plane above the world origin, and how far it fades into the fog (cm).
-			{ TEXT("CloudHeight"), G.Scalar(TEXT("CloudHeight"), 2500.f, 0) },
-			{ TEXT("MinClearance"), G.Scalar(TEXT("MinCloudClearance"), 400.f, 400) },
-			{ TEXT("TileSize"), G.Scalar(TEXT("TileSize"), 1024.f, 80) },
-			{ TEXT("FogStart"), G.Scalar(TEXT("FogStart"), 4000.f, 160) },
-			{ TEXT("FogEnd"), G.Scalar(TEXT("FogEnd"), 40000.f, 240) },
-			// 1 / exposure (2^-ExposureBias): shows the palette colors as they are with the levels' manual exposure.
-			{ TEXT("Brightness"), G.Scalar(TEXT("Brightness"), 1.f, 320) },
-		};
-		for (const TPair<const TCHAR*, UMaterialExpression*>& Input : Inputs)
-		{
-			FCustomInput& CustomInput = Custom->Inputs.AddDefaulted_GetRef();
-			CustomInput.InputName = Input.Key;
-			CustomInput.Input.Connect(0, Input.Value);
-		}
-		Custom->Code = TEXT(
-			"return Brightness * LBASkyColor(-normalize(CameraVector), CameraPosition, CloudHeight, MinClearance, TileSize, Time * Drift.xy,\n"
-			"    Clouds, CloudsSampler, FogColor.rgb, FogStart, FogEnd);");
-		G.Out(Custom, TEXT(""), MP_EmissiveColor);
 		break;
 	}
 	default:

@@ -35,8 +35,6 @@ enum class ELBAMaterial : uint8
 	Invisible,
 	/** Translucent texture * vertex color (remake glass, water...). */
 	TexturedTranslucent,
-	/** Sky dome: the original's cloud plane fading into the fog color (Shaders/Private/LBASky.ush). */
-	Sky,
 	Count
 };
 

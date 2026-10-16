@@ -80,7 +80,7 @@ bool LBAMaterials::ResetInstanceIfOutdated(UMaterialInstanceConstant* Instance, 
 UMaterialInterface* FLBARenderingAssets::GetLook(ELBALookMode Look)
 {
 	// Bump when the defaults below change: the looks are then reset, user edits are otherwise kept.
-	constexpr int32 Version = 3;
+	constexpr int32 Version = 7;
 
 	UMaterialInterface*& Cached = Looks[uint8(Look)];
 	if (Cached)
@@ -113,17 +113,18 @@ UMaterialInterface* FLBARenderingAssets::GetLook(ELBALookMode Look)
 		{
 			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Instance, Name, Value);
 		};
-		Scalar(TEXT("LightContrast"), 1.8f);
+		Scalar(TEXT("LightContrast"), 1.5f);
 		Scalar(TEXT("RowStep"), 2.f);
-		Scalar(TEXT("LightTint"), 0.6f);
+		Scalar(TEXT("LightTint"), 0.35f);
 		Scalar(TEXT("Exposure"), 0.f);
 		Scalar(TEXT("Contrast"), 1.15f);
 		Scalar(TEXT("Saturation"), 1.2f);
 		Vector(TEXT("ShadowTint"), FLinearColor(0.55f, 0.65f, 1.f));
 		Scalar(TEXT("ShadowTintAmount"), 0.25f);
 		Vector(TEXT("HighlightTint"), FLinearColor(1.f, 0.85f, 0.6f));
-		Scalar(TEXT("HighlightTintAmount"), 0.3f);
+		Scalar(TEXT("HighlightTintAmount"), 0.15f);
 		Scalar(TEXT("DotPattern"), 0.f);
+		Scalar(TEXT("HeightFogAmount"), 1.f);
 		Scalar(TEXT("DitherAmount"), 0.7f);
 		Scalar(TEXT("DotSpacing"), 4.f);
 		Scalar(TEXT("DotContrast"), 1.5f);
@@ -341,7 +342,7 @@ UMaterial* FLBARenderingAssets::GetMaster()
 UMaterial* FLBARenderingAssets::CreateMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 10;
+	constexpr int32 Version = 15;
 
 	CreateDitherTextures();
 	CreateHalftoneRamp();
@@ -449,6 +450,20 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("FogColor"), Vector(TEXT("FogColor"), FLinearColor(0.45f, 0.6f, 0.8f), TEXT("Fog")) },
 		{ TEXT("FogStart"), Scalar(TEXT("FogStart"), 0.f, TEXT("Fog")) },
 		{ TEXT("FogEnd"), Scalar(TEXT("FogEnd"), 0.f, TEXT("Fog")) },
+		{ TEXT("HeightFogAmount"), Scalar(TEXT("HeightFogAmount"), 0.f, TEXT("Fog")) },
+		// Copy of the level's height fog (FLBAHeightFogParameters), kept in sync with the fog actor during play.
+		{ TEXT("HeightFogDensity"), Scalar(TEXT("HeightFogDensity"), 0.f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogFalloff"), Scalar(TEXT("HeightFogFalloff"), 0.0002f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogHeight"), Scalar(TEXT("HeightFogHeight"), 0.f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogStart"), Scalar(TEXT("HeightFogStart"), 0.f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogMaxOpacity"), Scalar(TEXT("HeightFogMaxOpacity"), 1.f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogInscatter"), Vector(TEXT("HeightFogInscatter"), FLinearColor::Black, TEXT("Height Fog")) },
+		{ TEXT("HeightFogSun"), Vector(TEXT("HeightFogSun"), FLinearColor::Black, TEXT("Height Fog")) },
+		{ TEXT("HeightFogSunExponent"), Scalar(TEXT("HeightFogSunExponent"), 4.f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogSunStart"), Scalar(TEXT("HeightFogSunStart"), 10000.f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogVolumetricDistance"), Scalar(TEXT("HeightFogVolumetricDistance"), 0.f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogPhaseG"), Scalar(TEXT("HeightFogPhaseG"), 0.2f, TEXT("Height Fog")) },
+		{ TEXT("HeightFogVolumetricStart"), Scalar(TEXT("HeightFogVolumetricStart"), 0.f, TEXT("Height Fog")) },
 		{ TEXT("DebugView"), Scalar(TEXT("DebugView"), 0.f, TEXT("Debug")) },
 		// Not used by the shader: stamps generated instances (LBAMaterials::ResetInstanceIfOutdated).
 		{ TEXT("PresetVersion"), Scalar(TEXT("PresetVersion"), 0.f, TEXT("Debug")) },
@@ -486,6 +501,19 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.FogColor = FogColor.rgb;\n"
 		"S.FogStart = FogStart;\n"
 		"S.FogEnd = FogEnd;\n"
+		"S.HeightFogAmount = HeightFogAmount;\n"
+		"S.HeightFog.Density = HeightFogDensity;\n"
+		"S.HeightFog.HeightFalloff = HeightFogFalloff;\n"
+		"S.HeightFog.Height = HeightFogHeight;\n"
+		"S.HeightFog.StartDistance = HeightFogStart;\n"
+		"S.HeightFog.MaxOpacity = HeightFogMaxOpacity;\n"
+		"S.HeightFog.Inscattering = HeightFogInscatter.rgb;\n"
+		"S.HeightFog.SunInscattering = HeightFogSun.rgb;\n"
+		"S.HeightFog.SunExponent = HeightFogSunExponent;\n"
+		"S.HeightFog.SunStartDistance = HeightFogSunStart;\n"
+		"S.HeightFog.VolumetricStart = HeightFogVolumetricStart;\n"
+		"S.HeightFog.VolumetricDistance = HeightFogVolumetricDistance;\n"
+		"S.HeightFog.VolumetricPhaseG = HeightFogPhaseG;\n"
 		"S.Dither.DotsPerSide = %d;\n"
 		"S.Dither.ScaleExp = max(DotSpacing, 1.0) * 8.0;\n"
 		"S.Dither.SizeVariability = DotSizeVariability;\n"

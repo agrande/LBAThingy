@@ -86,14 +86,23 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   sun-facing slopes up; shade rows mixed two apart (`RowStep`) with bigger dots, so the dither reads as
   a comic screen; shadows tinted with the island's sky color and highlights warm; exposure, contrast
   and saturation over the whole image.
-- **Fog**: the original's linear distance fog towards the palette's fog color, from each section's fog
-  distances (scaled by *Fog Distance Scale* in the importer settings), applied after shading like the
-  original's fog tables.
-- **Sky and sea**: a sky dome shows the island's cloud texture on a plane at the original's sky height
-  fading into the fog color (`M_LBA_Sky`, an "Is Sky" material, so Lumen's sky light captures it), and
-  the sea is the island's opaque sea texture.
+- **Sky**: Unreal's sky atmosphere, tinted (*Sky Luminance Factor*) so its average matches the island's
+  original sky (the cloud half of its sky/sea texture page), with Unreal's volumetric clouds (coverage
+  and color per island, storm clouds over Citadel). The Emerald Moon has no atmosphere. The sea is the
+  island's sea texture, unshaded like the original's.
+- **Fog**: exponential height fog in the palette's fog color, with volumetric fog (light shafts),
+  starting at the original's fog distance so everything the original drew stays crisp, and fading the
+  rest of the island. Unreal fogs surfaces before any post-process runs, so the palette shading evaluates the
+  same fog again (height fog equations, and the volumetric fog lit with the height fog's colors, which
+  needs `r.Lumen.TranslucencyVolume.Enable=0`), takes it off, shades, and puts it back
+  (`lba.Look.Debug 4` shows surfaces without fog). Its copy of the fog settings follows the level's fog
+  actor during play. The original look replaces it with the original's linear distance fog, from each
+  section's fog distances (scaled by *Fog Distance Scale*), applied after shading like the original's
+  fog tables.
 - **Lights**: islands are lit so that sunlit ground lands on the shade rows the original's baked
-  terrain lighting uses (from the island's terrain data), with the sun at the original's angle.
+  terrain lighting uses (from the island's terrain data), with the sun at the original's angle, and
+  ground in the shade keeps about two thirds of that (the original has no cast shadows). The storm is
+  lit evenly by a uniform overcast sky.
 
 Customizing (material instances in `<Root>/Rendering`, children inherit what they don't override):
 
@@ -102,14 +111,15 @@ Customizing (material instances in `<Root>/Rendering`, children inherit what the
 | `MI_LBA_Look_Enhanced`, `MI_LBA_Look_Original` | every level | yes, unless a newer importer changes their defaults |
 | `MI_LBA_Enhanced_<Palette>` | levels using that palette (per island tweaks) | yes, same rule |
 | `MI_LBA_Original_<Palette>`, level `MI_<Level>_<Look>Look` (fog, contrast pivot) | generated | no |
+| level `MI_<Level>_Clouds` (child of Unreal's `m_SimpleVolumetricCloud_Inst`) | generated | no |
 
 Main parameters: *LightContrast*, *RowStep*, *Exposure*, *Contrast*, *Saturation*, *ShadowTint* /
 *HighlightTint* and their amounts (Grade); *DotPattern*, *DotSpacing* (pixels), *DotContrast*,
 *DitherAmount* (Dither); *Strength* (0 = Unreal's image), *KeepLuminance* (keep Unreal's brightness,
 use only the ramps' hue), *LightTint* (Palette). To try values live, `lba.Look.Set <Parameter> <Value>`
 (or `R G B` for colors; no value removes the override). Other console variables:
-`lba.Look.Palette 0|1`, `lba.Look.Dither 0|1`, `lba.Look.Debug 1|2|3` (base color, matched palette
-color, shade row / light).
+`lba.Look.Palette 0|1`, `lba.Look.Dither 0|1`, `lba.Look.Debug 1|2|3|4` (base color, matched palette
+color, shade row / light, surfaces without fog).
 
 ## Conventions
 
@@ -136,8 +146,10 @@ color, shade row / light).
 - [x] Original look: island palettes, palette shading post-process, world-space dither, original fog,
   sky and sea, calibrated lights
 - [x] Enhanced look: graded palette shading, bolder fractal or halftone dots, live look switch
-- [ ] Look, next: light balance and volumetric fog, sea with Unreal's Water plugin, Citadel storm
-  (lamppost lights, rain, lightning), cloud shadows, interior lights, sprites
+- [x] Unreal sky atmosphere and volumetric clouds per island mood, height and volumetric fog taken
+  into account by the palette shading, sun and sky light calibrated against them
+- [ ] Look, next: sea with Unreal's Water plugin, Citadel storm (lamppost lights, rain, lightning),
+  cloud shadows, interior lights, sprites
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)

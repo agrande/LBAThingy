@@ -1,18 +1,20 @@
 #include "Import/LBAEnvironment.h"
 
 #include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
-#include "Components/StaticMeshComponent.h"
+#include "Components/VolumetricCloudComponent.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/SkyLight.h"
-#include "Engine/StaticMesh.h"
-#include "Engine/StaticMeshActor.h"
+#include "Engine/TextureCube.h"
 #include "Formats/LBAXpl.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBARenderingAssets.h"
 #include "LBA2Runtime.h"
+#include "LBALookSubsystem.h"
 #include "LBATypes.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/MaterialInstanceConstant.h"
@@ -20,32 +22,65 @@
 
 namespace
 {
-	/** Far enough to enclose any island, close enough to stay well inside the far clip. */
-	constexpr double SkyDomeRadius = 500000.0;
+	/**
+	 * Average color of Unreal's default sky atmosphere 45 degrees above the horizon, with its clouds and fog, per lux
+	 * of sun (measured on Citabau, sun about 30 degrees high): the sky luminance factor that tints the sky towards an
+	 * island's sky divides by this.
+	 */
+	const FLinearColor DefaultSkyPerSunLux(0.031f, 0.037f, 0.064f);
+
+	/**
+	 * Measured with lba.Look.Debug 3 on Citabau (two sun / sky light balances, solved for both): the light flat ground
+	 * gets per lux of sun, and per unit of sky light intensity, relative to what the light model predicts. The sun
+	 * gains from Lumen's bounce light; the sky light loses to its dimmer horizon and sky occlusion.
+	 */
+	constexpr float MeasuredSunGain = 1.39f;
+	constexpr float MeasuredSkyGain = 0.6f;
+
+	/** Effective luminance of the gray cubemap of uniform sky lights (measured with lba.Look.Debug 3 on Citadel). */
+	constexpr float UniformSkyLuminance = 0.6f;
+
+	/** Height fog: density halves every 20 m above sea level (FogHeightFalloff in 1/1000 of 1/cm), so the sky clears quickly above the horizon. */
+	constexpr float FogHeightFalloff = 0.5f;
+	/** Volumetric fog reach (cm): light shafts around the player. */
+	constexpr float VolumetricFogDistance = 20000.f;
+
+	bool IsZeelichUnderGas(const FString& Name)
+	{
+		return Name == TEXT("MOSQUIBE") || Name == TEXT("PLATFORM") || Name == TEXT("SOUSCELB");
+	}
 }
 
 FLBAEnvironmentPreset FLBAEnvironmentPreset::ForIsland(const FString& IslandName)
 {
-	// Intensities come from the island's terrain data (GroundRow, set by the island importer); only the sun's tint
-	// is set per island.
+	// Intensities come from the island's terrain data (GroundRow), sky and fog colors from its palette and sky texture
+	// (set by the island importer); the mood (sun tint, clouds) is set per island here.
 	FLBAEnvironmentPreset Preset;
 	Preset.PaletteEntry = FLBAXpl::GetEntryForIsland(IslandName);
+	Preset.bClouds = true;
 	const FString Name = IslandName.ToUpper();
 	if (Name == TEXT("CITADEL"))
 	{
-		// Twinsun hidden by the storm.
+		// Twinsun hidden by the storm: the original lights it evenly, without shadows, under a black sky.
 		Preset.SunColor = FLinearColor(0.7f, 0.75f, 0.9f);
+		Preset.CloudCoverage = 1.f;
+		Preset.bStormClouds = true;
+		Preset.bOvercast = true;
+		Preset.AmbientLight = 1.f;
+		Preset.MaxAmbientFraction = 0.9f;
 	}
 	else if (Name == TEXT("EMERAUDE") || Name == TEXT("MOON"))
 	{
 		// Emerald moon: no atmosphere.
 		Preset.SunColor = FLinearColor(0.9f, 0.95f, 1.f);
 		Preset.bAtmosphere = false;
+		Preset.bClouds = false;
 	}
-	else if (Name == TEXT("MOSQUIBE") || Name == TEXT("PLATFORM") || Name == TEXT("SOUSCELB"))
+	else if (IsZeelichUnderGas(Name))
 	{
 		// Zeelich, under the gas layer.
 		Preset.SunColor = FLinearColor(1.f, 0.7f, 0.6f);
+		Preset.CloudCoverage = 0.6f;
 	}
 	return Preset;
 }
@@ -71,81 +106,136 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 {
 	const FName Folder(TEXT("Environment"));
 	const FLBAXpl* Xpl = Context.GetXpl(Preset.PaletteEntry);
+	const FString LevelPath = World->GetPackage()->GetName();
+	const FString LevelFolder = FPackageName::GetLongPackagePath(LevelPath);
+	const FString LevelName = FPackageName::GetShortName(LevelPath);
+	const bool bTintedSky = Preset.bAtmosphere && Preset.SkyColor.GetLuminance() > 0.f;
+	// Without atmosphere (space) or under an overcast sky, the sky light is a uniform gray sky: even light, like the
+	// original's, and independent of what the sky looks like.
+	const bool bUniformSkyLight = !Preset.bAtmosphere || Preset.bOvercast;
+	const FLinearColor SkyLightColor = !Preset.bAtmosphere ? Preset.SunColor : Preset.SkyLightColor;
 
 	// With the manual exposure at 1 and a neutral tonemapper, a Lambert surface under a sun of E lux receives a
-	// light of E * sin(elevation) / pi (1 = shows its base color), and under a uniform sky dome of luminance L, a
-	// light of L * sky light intensity. The palette shading turns that light into a shade row.
+	// light of E * sin(elevation) / pi (1 = shows its base color), and under a uniform sky of luminance L, a light of
+	// L * sky light intensity. The palette shading turns that light into a shade row.
 	float SunIntensity = Preset.SunIntensity;
 	float SkyLightIntensity = Preset.SkyLightIntensity;
 	if (Preset.GroundRow > 0.f)
 	{
 		const float NeutralRow = Xpl ? float(Xpl->ShadeNormalLevel) : 12.f;
 		const float GroundLight = Preset.GroundRow / NeutralRow;
-		const float Ambient = FMath::Min(Preset.AmbientLight, GroundLight * 0.6f);
+		const float Ambient = FMath::Min(Preset.AmbientLight, GroundLight * Preset.MaxAmbientFraction);
 		const float SinElevation = FMath::Max(FMath::Sin(FMath::DegreesToRadians(-SunRotation.Pitch)), 0.2f);
-		// Measured on Citabau and the desert (lba.Look.Debug 3): ground ends up about 1.5 times brighter than this
-		// model predicts, from Lumen's bounce light, the brighter clouds and slopes facing the sun.
-		constexpr float MeasuredLightGain = 1.5f;
-		SunIntensity = (GroundLight - Ambient) * UE_PI / (SinElevation * MeasuredLightGain);
-		SkyLightIntensity = Ambient / (MeasuredLightGain * FMath::Max(Preset.FogColor.GetLuminance(), 0.05f));
+		const float SkyLuminance = bUniformSkyLight ? UniformSkyLuminance * SkyLightColor.GetLuminance()
+			: bTintedSky ? Preset.SkyColor.GetLuminance() : Preset.FogColor.GetLuminance();
+		SunIntensity = (GroundLight - Ambient) * UE_PI / (SinElevation * MeasuredSunGain);
+		SkyLightIntensity = Ambient / (MeasuredSkyGain * FMath::Max(SkyLuminance, 0.05f));
 		UE_LOG(LogLBA2, Display, TEXT("LBA2 environment: ground row %.1f, sun pitch %.1f -> sun %.2f lux, sky light %.2f"), Preset.GroundRow, SunRotation.Pitch, SunIntensity, SkyLightIntensity);
 	}
 
-	ADirectionalLight* Sun = Context.SpawnGeneratedActor<ADirectionalLight>(World, FTransform(SunRotation, FVector(0, 0, 2000)), TEXT("Sun"), Folder);
-	if (Sun)
+	UDirectionalLightComponent* SunLight = nullptr;
+	if (ADirectionalLight* Sun = Context.SpawnGeneratedActor<ADirectionalLight>(World, FTransform(SunRotation, FVector(0, 0, 2000)), TEXT("Sun"), Folder))
 	{
-		UDirectionalLightComponent* Light = CastChecked<UDirectionalLightComponent>(Sun->GetLightComponent());
-		Light->SetMobility(EComponentMobility::Movable);
-		Light->SetIntensity(SunIntensity);
-		Light->SetLightColor(Preset.SunColor);
-		Light->SetAtmosphereSunLight(Preset.bAtmosphere && !Preset.SkyMaterial);
-		Light->SetDynamicShadowDistanceMovableLight(20000.f);
+		SunLight = CastChecked<UDirectionalLightComponent>(Sun->GetLightComponent());
+		SunLight->SetMobility(EComponentMobility::Movable);
+		SunLight->SetIntensity(SunIntensity);
+		SunLight->SetLightColor(Preset.SunColor);
+		SunLight->SetAtmosphereSunLight(Preset.bAtmosphere);
+		SunLight->SetDynamicShadowDistanceMovableLight(20000.f);
 	}
 
-	// The sky light captures the sky in real time: the original-style dome (an "Is Sky" material) or the atmosphere.
+	// The sky light captures the sky (atmosphere and clouds) in real time, or is a uniform gray sky.
 	if (ASkyLight* Sky = Context.SpawnGeneratedActor<ASkyLight>(World, FTransform(FVector(0, 0, 2200)), TEXT("SkyLight"), Folder))
 	{
 		USkyLightComponent* Light = Sky->GetLightComponent();
 		Light->SetMobility(EComponentMobility::Movable);
-		Light->bRealTimeCapture = true;
+		Light->bRealTimeCapture = !bUniformSkyLight;
 		Light->SetIntensity(SkyLightIntensity);
-		if (!Preset.bAtmosphere && !Preset.SkyMaterial)
+		if (bUniformSkyLight)
 		{
 			Light->SourceType = SLS_SpecifiedCubemap;
-			Light->SetLowerHemisphereColor(FLinearColor::Black);
+			Light->SetCubemap(LoadObject<UTextureCube>(nullptr, TEXT("/Engine/EngineResources/GrayTextureCube.GrayTextureCube")));
+			Light->SetLightColor(SkyLightColor);
 		}
 	}
 
-	if (Preset.SkyMaterial)
+	// Unreal's sky, tinted towards the island's original sky color. It neither lights the height fog (the fog has
+	// the palette's fog color) nor hazes nearby surfaces, which the palette shading would read as light.
+	if (Preset.bAtmosphere)
 	{
-		UStaticMesh* Dome = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/EngineSky/SM_SkySphere.SM_SkySphere"));
-		const double MeshRadius = Dome ? FMath::Max(Dome->GetBounds().SphereRadius, 1.0) : 1.0;
-		if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World,
-			FTransform(FRotator::ZeroRotator, FVector::ZeroVector, FVector(SkyDomeRadius / MeshRadius)), TEXT("SkyDome"), Folder))
+		if (ASkyAtmosphere* Atmosphere = Context.SpawnGeneratedActor<ASkyAtmosphere>(World, FTransform::Identity, TEXT("SkyAtmosphere"), Folder))
 		{
-			UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
-			Component->SetMobility(EComponentMobility::Static);
-			Component->SetStaticMesh(Dome);
-			Component->SetMaterial(0, Preset.SkyMaterial);
-			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Component->SetCastShadow(false);
-			Component->bAffectDistanceFieldLighting = false;
-			Component->bAffectDynamicIndirectLighting = false;
-			Component->bVisibleInRayTracing = false;
+			USkyAtmosphereComponent* Component = Atmosphere->GetComponent();
+			Component->SetHeightFogContribution(0.f);
+			Component->SetAerialPerspectiveStartDepth(2.f);
+			if (bTintedSky)
+			{
+				const FLinearColor DefaultSky = DefaultSkyPerSunLux * FMath::Max(SunIntensity, 0.01f);
+				const FLinearColor Factor(Preset.SkyColor.R / DefaultSky.R, Preset.SkyColor.G / DefaultSky.G, Preset.SkyColor.B / DefaultSky.B);
+				Component->SetSkyLuminanceFactor(Factor);
+			}
 		}
 	}
-	else if (Preset.bAtmosphere)
+
+	// Unreal's volumetric clouds (default cloud material), with the island's coverage and cloud color.
+	if (Preset.bClouds)
 	{
-		Context.SpawnGeneratedActor<ASkyAtmosphere>(World, FTransform::Identity, TEXT("SkyAtmosphere"), Folder);
+		UMaterialInterface* CloudBase = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst"));
+		UMaterialInstanceConstant* Clouds = CloudBase ? Context.CreateOrReuseAsset<UMaterialInstanceConstant>(LevelFolder, FString::Printf(TEXT("MI_%s_Clouds"), *LevelName)) : nullptr;
+		if (Clouds)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceParent(Clouds, CloudBase);
+			UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(Clouds);
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Clouds, TEXT("Cloud_GlobalCoverage"), Preset.CloudCoverage);
+			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Clouds, TEXT("Cloud_AlbedoColor"), Preset.CloudColor);
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Clouds, TEXT("StormClouds"), Preset.bStormClouds ? 1.f : 0.f);
+			if (Preset.bStormClouds)
+			{
+				UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Clouds, TEXT("Storm_AlbedoColor"), Preset.CloudColor * 0.35f);
+			}
+			UMaterialEditingLibrary::UpdateMaterialInstance(Clouds);
+			Context.MarkForSave(Clouds);
+		}
+		if (AVolumetricCloud* Cloud = Context.SpawnGeneratedActor<AVolumetricCloud>(World, FTransform::Identity, TEXT("VolumetricCloud"), Folder))
+		{
+			if (UVolumetricCloudComponent* Component = Cloud->FindComponentByClass<UVolumetricCloudComponent>())
+			{
+				Component->SetMaterial(Clouds ? static_cast<UMaterialInterface*>(Clouds) : CloudBase);
+			}
+		}
 	}
 
-	// Palette look: palette shading with world-space dither, manual exposure and a neutral tonemapper so palette
+	// Height fog in the palette's fog color, with volumetric fog near the camera lit by the same colors, so the
+	// palette shading can take it off surfaces exactly; only the light shafts differ.
+	UExponentialHeightFogComponent* FogComponent = nullptr;
+	if (Preset.FogVisibility > 0.f)
+	{
+		if (AExponentialHeightFog* Fog = Context.SpawnGeneratedActor<AExponentialHeightFog>(World, FTransform::Identity, TEXT("HeightFog"), Folder))
+		{
+			FogComponent = Fog->GetComponent();
+			// Transmittance at sea level is exp2(-Density * ln 2 * Distance), Density being FogDensity / 1000 per cm.
+			FogComponent->SetFogDensity(1000.f * FMath::Log2(20.f) / (UE_LN2 * Preset.FogVisibility));
+			FogComponent->SetFogHeightFalloff(FogHeightFalloff);
+			FogComponent->SetStartDistance(Preset.HeightFogStart);
+			FogComponent->SetFogInscatteringColor(Preset.FogColor);
+			FogComponent->SkyAtmosphereAmbientContributionColorScale = FLinearColor::Black;
+			FogComponent->SetDirectionalInscatteringColor(Preset.SunColor);
+			FogComponent->SetVolumetricFog(true);
+			FogComponent->SetVolumetricFogStartDistance(Preset.HeightFogStart);
+			FogComponent->SetVolumetricFogDistance(Preset.HeightFogStart + VolumetricFogDistance);
+			FogComponent->SetVolumetricFogScatteringDistribution(0.6f);
+			FogComponent->bOverrideLightColorsWithFogInscatteringColors = true;
+			FogComponent->MarkRenderStateDirty();
+		}
+	}
+	const FLBAHeightFogParameters HeightFog = FLBAHeightFogParameters::Make(FogComponent, SunLight);
+
+	// Palette looks: palette shading with world-space dither, manual exposure and a neutral tonemapper so palette
 	// colors come out as they are (the enhanced look grades them itself). Both looks are blendables of the volume,
 	// the inactive one at weight 0 (lba.Look.Mode switches live). Turn the volume off to compare with Unreal's plain
-	// rendering. The palette shading also applies the original's linear distance fog, after shading like its fog
-	// tables: fog added before it would read as extra light. The level gets its own instances for its fog distances,
-	// and for the light of its sunlit ground, around which the enhanced look's contrast curve turns.
-	const FString LevelPath = World->GetPackage()->GetName();
+	// rendering. The level gets its own instances: a copy of its height fog, the original look's linear distance fog
+	// (after shading, like the original's fog tables, instead of Unreal's), and the light of its sunlit ground,
+	// around which the enhanced look's contrast curve turns.
 	const float ContrastPivot = Preset.GroundRow > 0.f && Xpl ? Preset.GroundRow / float(Xpl->ShadeNormalLevel) : 1.f;
 	auto GetLevelLook = [&](ELBALookMode Look) -> UMaterialInterface*
 	{
@@ -154,19 +244,27 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 		{
 			return nullptr;
 		}
-		UMaterialInstanceConstant* LevelLook = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(FPackageName::GetLongPackagePath(LevelPath),
-			FString::Printf(TEXT("MI_%s_%sLook"), *FPackageName::GetShortName(LevelPath), Look == ELBALookMode::Enhanced ? TEXT("Enhanced") : TEXT("Original")));
+		UMaterialInstanceConstant* LevelLook = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(LevelFolder,
+			FString::Printf(TEXT("MI_%s_%sLook"), *LevelName, Look == ELBALookMode::Enhanced ? TEXT("Enhanced") : TEXT("Original")));
 		if (!LevelLook)
 		{
 			return PaletteShading;
 		}
 		UMaterialEditingLibrary::SetMaterialInstanceParent(LevelLook, PaletteShading);
 		UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(LevelLook);
-		if (Preset.FogEnd > Preset.FogStart)
+		if (Look == ELBALookMode::Original && Preset.FogEnd > Preset.FogStart)
 		{
 			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(LevelLook, TEXT("FogColor"), Preset.FogColor);
 			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("FogStart"), Preset.FogStart);
 			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("FogEnd"), Preset.FogEnd);
+		}
+		for (const TPair<FName, float>& Scalar : HeightFog.Scalars)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, Scalar.Key, Scalar.Value);
+		}
+		for (const TPair<FName, FLinearColor>& Vector : HeightFog.Vectors)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(LevelLook, Vector.Key, Vector.Value);
 		}
 		UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("ContrastPivot"), ContrastPivot);
 		UMaterialEditingLibrary::UpdateMaterialInstance(LevelLook);

@@ -1,5 +1,9 @@
 #include "LBALookSubsystem.h"
 
+#include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -52,6 +56,31 @@ namespace
 	}
 }
 
+FLBAHeightFogParameters FLBAHeightFogParameters::Make(const UExponentialHeightFogComponent* Fog, const UDirectionalLightComponent* Sun)
+{
+	// Same conversions as FExponentialHeightFogSceneInfo and FSceneRenderer::InitFogConstants.
+	FLBAHeightFogParameters Parameters;
+	const bool bFog = Fog && Fog->IsVisible() && Fog->FogDensity > 0.f;
+	Parameters.Scalars.Add({ TEXT("HeightFogDensity"), bFog ? Fog->FogDensity / 1000.f : 0.f });
+	if (!bFog)
+	{
+		return Parameters;
+	}
+	const float SunLuminance = Sun ? FLinearColor(Sun->LightColor).GetLuminance() * Sun->Intensity : 0.f;
+	Parameters.Scalars.Add({ TEXT("HeightFogFalloff"), Fog->FogHeightFalloff / 1000.f });
+	Parameters.Scalars.Add({ TEXT("HeightFogHeight"), float(Fog->GetComponentLocation().Z) });
+	Parameters.Scalars.Add({ TEXT("HeightFogStart"), Fog->StartDistance });
+	Parameters.Scalars.Add({ TEXT("HeightFogMaxOpacity"), Fog->FogMaxOpacity });
+	Parameters.Scalars.Add({ TEXT("HeightFogSunExponent"), FMath::Clamp(Fog->DirectionalInscatteringExponent, 0.000001f, 1000.f) });
+	Parameters.Scalars.Add({ TEXT("HeightFogSunStart"), FMath::Max(Fog->DirectionalInscatteringStartDistance, 0.f) });
+	Parameters.Scalars.Add({ TEXT("HeightFogVolumetricDistance"), Fog->bEnableVolumetricFog ? Fog->VolumetricFogDistance : 0.f });
+	Parameters.Scalars.Add({ TEXT("HeightFogVolumetricStart"), Fog->VolumetricFogStartDistance });
+	Parameters.Scalars.Add({ TEXT("HeightFogPhaseG"), FMath::Clamp(Fog->VolumetricFogScatteringDistribution, -0.99f, 0.99f) });
+	Parameters.Vectors.Add({ TEXT("HeightFogInscatter"), Fog->FogInscatteringLuminance });
+	Parameters.Vectors.Add({ TEXT("HeightFogSun"), Fog->DirectionalInscatteringLuminance * SunLuminance });
+	return Parameters;
+}
+
 bool ULBALookSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
@@ -69,7 +98,7 @@ void ULBALookSubsystem::Tick(float DeltaTime)
 	const float Palette = CVarLookPalette.GetValueOnGameThread();
 	const float Dither = CVarLookDither.GetValueOnGameThread();
 	const int32 Debug = CVarLookDebug.GetValueOnGameThread();
-	if (Mode != AppliedMode || Pattern != AppliedPattern || Palette != AppliedPalette || Dither != AppliedDither || Debug != AppliedDebug)
+	if (!bInstancesCreated || Mode != AppliedMode || Pattern != AppliedPattern || Palette != AppliedPalette || Dither != AppliedDither || Debug != AppliedDebug)
 	{
 		AppliedMode = Mode;
 		AppliedPattern = Pattern;
@@ -77,6 +106,61 @@ void ULBALookSubsystem::Tick(float DeltaTime)
 		AppliedDither = Dither;
 		AppliedDebug = Debug;
 		ApplyControls();
+	}
+	SyncHeightFog();
+}
+
+void ULBALookSubsystem::SyncHeightFog()
+{
+	UWorld* World = GetWorld();
+	if (!World || Blendables.IsEmpty())
+	{
+		return;
+	}
+	const UExponentialHeightFogComponent* Fog = nullptr;
+	for (TActorIterator<AExponentialHeightFog> It(World); It && !Fog; ++It)
+	{
+		Fog = It->GetComponent();
+	}
+	const UDirectionalLightComponent* Sun = nullptr;
+	for (TActorIterator<ADirectionalLight> It(World); It && !Sun; ++It)
+	{
+		const UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(It->GetLightComponent());
+		if (Light && Light->IsUsedAsAtmosphereSunLight() && Light->GetAtmosphereSunLightIndex() == 0)
+		{
+			Sun = Light;
+		}
+	}
+
+	const FLBAHeightFogParameters Parameters = FLBAHeightFogParameters::Make(Fog, Sun);
+	uint32 Hash = 0;
+	for (const TPair<FName, float>& Scalar : Parameters.Scalars)
+	{
+		Hash = HashCombineFast(Hash, GetTypeHash(Scalar.Value));
+	}
+	for (const TPair<FName, FLinearColor>& Vector : Parameters.Vectors)
+	{
+		Hash = HashCombineFast(Hash, GetTypeHash(Vector.Value));
+	}
+	if (Hash == AppliedFogHash)
+	{
+		return;
+	}
+	AppliedFogHash = Hash;
+	for (const FLookBlendable& Look : Blendables)
+	{
+		if (UMaterialInstanceDynamic* Instance = Look.Instance.Get())
+		{
+			for (const TPair<FName, float>& Scalar : Parameters.Scalars)
+			{
+				Instance->SetScalarParameterValue(Scalar.Key, Scalar.Value);
+			}
+			for (const TPair<FName, FLinearColor>& Vector : Parameters.Vectors)
+			{
+				Instance->SetVectorParameterValue(Vector.Key, Vector.Value);
+			}
+			ApplyOverrides(Instance);
+		}
 	}
 }
 
@@ -136,17 +220,22 @@ void ULBALookSubsystem::ApplyControls()
 		Apply(TEXT("Strength"), AppliedPalette);
 		Apply(TEXT("DitherAmount"), AppliedDither);
 		Instance->SetScalarParameterValue(TEXT("DebugView"), float(AppliedDebug));
-		for (const TPair<FName, TArray<float>>& Override : ParameterOverrides)
+		ApplyOverrides(Instance);
+	}
+}
+
+void ULBALookSubsystem::ApplyOverrides(UMaterialInstanceDynamic* Instance) const
+{
+	for (const TPair<FName, TArray<float>>& Override : ParameterOverrides)
+	{
+		const TArray<float>& V = Override.Value;
+		if (V.Num() >= 3)
 		{
-			const TArray<float>& V = Override.Value;
-			if (V.Num() >= 3)
-			{
-				Instance->SetVectorParameterValue(Override.Key, FLinearColor(V[0], V[1], V[2], V.Num() > 3 ? V[3] : 1.f));
-			}
-			else
-			{
-				Instance->SetScalarParameterValue(Override.Key, V[0]);
-			}
+			Instance->SetVectorParameterValue(Override.Key, FLinearColor(V[0], V[1], V[2], V.Num() > 3 ? V[3] : 1.f));
+		}
+		else
+		{
+			Instance->SetScalarParameterValue(Override.Key, V[0]);
 		}
 	}
 }
@@ -156,6 +245,7 @@ void ULBALookSubsystem::SetParameterOverride(FName Name, const TArray<float>& Va
 	if (Value.IsEmpty())
 	{
 		ParameterOverrides.Remove(Name);
+		AppliedFogHash = 0;
 		// Back to the imported value.
 		for (const FLookBlendable& Look : Blendables)
 		{

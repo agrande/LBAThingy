@@ -31,6 +31,13 @@ namespace ELBAPolyType
 		TextureIncrustGouraud = 14,
 		TextureIncrustDither = 15,
 		TextureZ = 16,
+		TextureZFlat = 17,
+		TextureZGouraud = 18,
+		TextureZDither = 19,
+		TextureZIncrust = 20,
+		TextureZIncrustFlat = 21,
+		TextureZIncrustGouraud = 22,
+		TextureZIncrustDither = 23,
 		TextureZFog = 24,
 	};
 }
@@ -67,10 +74,19 @@ struct FLBABodyPoly
 	{
 		return Type == ELBAPolyType::Solid || Type == ELBAPolyType::Flat || Type == ELBAPolyType::Trans
 			|| Type == ELBAPolyType::Trame || Type == ELBAPolyType::TextureFlat || Type == ELBAPolyType::TextureIncrustFlat
-			|| Type == ELBAPolyType::Texture || Type == ELBAPolyType::TextureIncrust;
+			|| Type == ELBAPolyType::Texture || Type == ELBAPolyType::TextureIncrust
+			|| Type == ELBAPolyType::TextureZ || Type == ELBAPolyType::TextureZFlat
+			|| Type == ELBAPolyType::TextureZIncrust || Type == ELBAPolyType::TextureZIncrustFlat;
 	}
-	/** Incrust textures use palette index 0 as a transparent color key. */
-	bool UsesColorKey() const { return Type >= ELBAPolyType::TextureIncrust && Type <= ELBAPolyType::TextureIncrustDither; }
+	/**
+	 * Incrust textures use palette index 0 as a transparent color key, with affine (12-15) or perspective-correct
+	 * (20-23, "Z") mapping.
+	 */
+	bool UsesColorKey() const
+	{
+		return (Type >= ELBAPolyType::TextureIncrust && Type <= ELBAPolyType::TextureIncrustDither)
+			|| (Type >= ELBAPolyType::TextureZIncrust && Type <= ELBAPolyType::TextureZIncrustDither);
+	}
 };
 
 struct FLBABodyLine

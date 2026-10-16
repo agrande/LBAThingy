@@ -399,33 +399,50 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 	const FLBAHqrFile* Ress = Context.GetHqr(TEXT("RESS.HQR"));
 	const TArray<uint8> SkySea = Xpl && Ress ? Ress->GetEntry(FLBAXpl::GetSkySeaEntry(Xpl->Entry)) : TArray<uint8>();
 	UTexture2D* SeaTexture = nullptr;
-	UTexture2D* CloudTexture = nullptr;
 	if (SkySea.Num() >= 256 * 128)
 	{
 		SeaTexture = Context.CreatePaletteTexture(TextureFolder, FString::Printf(TEXT("T_%s_Sea"), *Island.Name), 128, 128,
 			[&SkySea](int32 X, int32 Y) { return SkySea[Y * 256 + X]; }, false, true);
-		CloudTexture = Context.CreatePaletteTexture(TextureFolder, FString::Printf(TEXT("T_%s_Clouds"), *Island.Name), 128, 128,
-			[&SkySea](int32 X, int32 Y) { return SkySea[Y * 256 + 128 + X]; }, false, true);
+
+		// The original's sky is the cloud half of this page tiled over the fog color: its average color tints
+		// Unreal's sky, and its brightest texels give the clouds' color.
+		TArray<FLinearColor> Sky;
+		Sky.Reserve(128 * 128);
+		FLinearColor Sum = FLinearColor::Black;
+		for (int32 Y = 0; Y < 128; ++Y)
+		{
+			for (int32 X = 0; X < 128; ++X)
+			{
+				Sky.Add(FLinearColor::FromSRGBColor(Xpl->Palette[SkySea[Y * 256 + 128 + X]]));
+				Sum += Sky.Last();
+			}
+		}
+		Preset.SkyColor = Sum / float(Sky.Num());
+		Sky.Sort([](const FLinearColor& A, const FLinearColor& B) { return A.GetLuminance() > B.GetLuminance(); });
+		FLinearColor Bright = FLinearColor::Black;
+		const int32 NumBright = Sky.Num() / 5;
+		for (int32 Index = 0; Index < NumBright; ++Index)
+		{
+			Bright += Sky[Index];
+		}
+		const float BrightMax = FMath::Max3(Bright.R, Bright.G, Bright.B);
+		Preset.CloudColor = FLinearColor(Bright.R, Bright.G, Bright.B) * (0.98f / FMath::Max(BrightMax, 1e-4f));
 	}
 
-	if (CloudTexture)
+	// Modern fog: the original drew everything crisp up to its fog distance and nothing beyond; the height fog keeps
+	// that range clear and lets you see the rest of the island fading into the palette's fog color. Overcast skies
+	// light the scene in the clouds' color.
+	if (Preset.bAtmosphere)
 	{
-		if (UMaterialInstanceConstant* SkyMaterial = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(MaterialFolder,
-			FString::Printf(TEXT("MI_%s_Sky"), *Island.Name)))
-		{
-			UMaterialEditingLibrary::SetMaterialInstanceParent(SkyMaterial, Context.GetMaterials().GetMaster(ELBAMaterial::Sky));
-			UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(SkyMaterial);
-			UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(SkyMaterial, TEXT("Clouds"), CloudTexture);
-			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(SkyMaterial, TEXT("FogColor"), Preset.FogColor);
-			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(SkyMaterial, TEXT("CloudHeight"), FirstSection.SkyY * Scale);
-			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(SkyMaterial, TEXT("FogStart"), Preset.FogStart);
-			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(SkyMaterial, TEXT("FogEnd"), Preset.FogEnd);
-			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(SkyMaterial, TEXT("Brightness"), FMath::Pow(2.f, -Preset.ExposureBias));
-			UMaterialEditingLibrary::UpdateMaterialInstance(SkyMaterial);
-			Context.MarkForSave(SkyMaterial);
-			Preset.SkyMaterial = SkyMaterial;
-		}
+		Preset.HeightFogStart = Preset.FogEnd;
+		Preset.FogVisibility = 8.f * FirstSection.ClipFar * Scale;
 	}
+	if (Preset.bOvercast)
+	{
+		Preset.SkyLightColor = Preset.CloudColor;
+	}
+	UE_LOG(LogLBA2, Display, TEXT("LBA2 environment %s: fog %.0f-%.0f cm, visibility %.0f cm, sky %s, clouds %s"), *Island.Name,
+		Preset.FogStart, Preset.FogEnd, Preset.FogVisibility, *Preset.SkyColor.ToString(), *Preset.CloudColor.ToString());
 
 	// Sea: a large opaque plane at LBA height 0 with the island's sea texture, plus an invisible floor just below so
 	// the player can wade.
@@ -463,6 +480,8 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 			Component->SetMaterial(0, WaterMaterial);
 			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Component->SetCastShadow(false);
+			// Unshaded, so it would light the island with its color through Lumen.
+			Component->bAffectDynamicIndirectLighting = false;
 		}
 		if (AStaticMeshActor* Floor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform(FRotator::ZeroRotator, FVector(Center.X, Center.Y, -60.0), PlaneScale),
 			TEXT("SeaFloor"), TEXT("Environment")))

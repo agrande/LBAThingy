@@ -134,6 +134,81 @@ FLBADitherFrame LBADitherSurfaceFrame(float2 ViewportUV, float Depth, float2 Pix
 	return Frame;
 }
 
+// Unreal's height fog ----------------------------------------------------------------------------------------------
+
+// Unreal fogs opaque surfaces before any post-process material runs, so the palette shading would read the fog as
+// light. The fog is evaluated again here from the level's fog settings to take it out before shading and put it back
+// after:
+//  - Beyond the volumetric fog distance, GetExponentialHeightFog (HeightFogCommon.ush) for one fog layer, without
+//    inscattering cubemap, sky light capture or sky atmosphere contribution, which generated levels don't use.
+//  - Closer, the volumetric fog (VolumetricFog.usf): the same density field halved (MatchHeightFogFactor), in
+//    natural exponents, lit with the height fog's colors (bOverrideLightColorsWithFogInscatteringColors, without
+//    Lumen's translucency volume): the fog color through a constant SH (SHAmbientFunction, 1 / (2 sqrt(pi))) and the
+//    sun with a Henyey-Greenstein phase. Its shadows, the light shafts, are the only difference left in the light.
+struct FLBAHeightFog
+{
+	float Density;			// FogDensity / 1000 (0: no fog)
+	float HeightFalloff;	// FogHeightFalloff / 1000
+	float Height;			// height of the fog actor (cm)
+	float StartDistance;
+	float MaxOpacity;
+	float3 Inscattering;	// FogInscatteringLuminance
+	float3 SunInscattering;	// DirectionalInscatteringLuminance * luminance of the sun's color and intensity
+	float SunExponent;
+	float SunStartDistance;
+	float VolumetricStart;		// VolumetricFogStartDistance
+	float VolumetricDistance;	// 0: no volumetric fog
+	float VolumetricPhaseG;		// VolumetricFogScatteringDistribution
+};
+
+// Integral of the fog density along a ray of RayLength from OriginHeight rising by RayDirectionZ, per unit length.
+float LBAHeightFogDensityIntegral(float OriginHeight, float RayDirectionZ, FLBAHeightFog F)
+{
+	const float OriginTerms = F.Density * exp2(-max(-127.0, F.HeightFalloff * (OriginHeight - F.Height)));
+	const float Falloff = max(-127.0, F.HeightFalloff * RayDirectionZ);
+	return OriginTerms * (abs(Falloff) > 1e-5 ? (1.0 - exp2(-Falloff)) / Falloff : log(2.0) - 0.5 * Pow2(log(2.0)) * Falloff);
+}
+
+// rgb: light scattered towards the camera, a: transmittance.
+float4 LBAHeightFog(float3 CameraToReceiver, float CameraHeight, float3 SunDirection, FLBAHeightFog F)
+{
+	if (F.Density <= 0.0)
+	{
+		return float4(0.0, 0.0, 0.0, 1.0);
+	}
+	const float Length = max(length(CameraToReceiver), 1e-3);
+	const float3 Direction = CameraToReceiver / Length;
+	const float SunCosine = dot(Direction, SunDirection);
+
+	// Volumetric fog, from its start distance.
+	float4 Near = float4(0.0, 0.0, 0.0, 1.0);
+	const float NearLength = min(F.VolumetricDistance, Length);
+	const float NearStart = min(F.VolumetricStart, NearLength);
+	if (NearLength > NearStart)
+	{
+		// The height fog's integral carries a factor ln 2 (its density is in base 2).
+		const float Segment = NearLength - NearStart;
+		const float Integral = LBAHeightFogDensityIntegral(CameraHeight + Direction.z * NearStart, Direction.z * Segment, F) * Segment / log(2.0);
+		Near.a = exp(-0.5 * Integral);
+		const float G = F.VolumetricPhaseG;
+		const float Phase = (1.0 - G * G) / (4.0 * PI * pow(max(1.0 + G * G - 2.0 * G * SunCosine, 1e-4), 1.5));
+		Near.rgb = (F.Inscattering * (0.5 / sqrt(PI)) + F.SunInscattering * Phase) * (1.0 - Near.a);
+	}
+
+	// Height fog, from the volumetric fog's end or the fog's start distance.
+	const float Exclude = min(max(NearLength, F.StartDistance) / Length, 1.0);
+	const float OriginHeight = CameraHeight + Exclude * CameraToReceiver.z;
+	const float RayLength = (1.0 - Exclude) * Length;
+	const float Shared = LBAHeightFogDensityIntegral(OriginHeight, (1.0 - Exclude) * CameraToReceiver.z, F);
+	const float Transmittance = max(saturate(exp2(-Shared * RayLength)), 1.0 - F.MaxOpacity);
+	const float SunTransmittance = saturate(exp2(-Shared * max(RayLength - F.SunStartDistance, 0.0)));
+	const float SunLobe = pow(saturate(SunCosine), F.SunExponent) / (4.0 * PI);
+	const float3 Far = F.Inscattering * (1.0 - Transmittance) + F.SunInscattering * SunLobe * (1.0 - SunTransmittance);
+
+	// CombineVolumetricFog (HeightFogCommon.ush).
+	return float4(Near.rgb + Far * Near.a, Near.a * Transmittance);
+}
+
 // Main entry -------------------------------------------------------------------------------------------------------
 
 struct FLBAPaletteShadingSettings
@@ -163,7 +238,10 @@ struct FLBAPaletteShadingSettings
 	float3 FogColor;		// the original's distance fog, applied after shading like its fog tables (linear color)
 	float FogStart;			// view depth (cm) where the fog starts, and where it is complete
 	float FogEnd;
-	float DebugView;		// 0: off, 1: G-buffer base color, 2: matched palette color, 3: position along the shade path
+	float HeightFogAmount;	// 0: Unreal's height fog is taken off shaded surfaces (the original fog replaces it), 1: kept
+	float DebugView;		// 0: off, 1: G-buffer base color, 2: matched palette color, 3: position along the shade path,
+							// 4: surfaces without Unreal's fog
+	FLBAHeightFog HeightFog;
 	FLBADither3DSettings Dither;
 	FLBAHalftoneSettings Halftone;
 };
@@ -197,12 +275,24 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 		return LBAGrade(SceneColor, S);
 	}
 
-	const float3 Display = SceneColor;
+	// Take Unreal's fog off the surface. Surfaces lost in it are left as they are.
+	const float2 ViewportUV = GetViewportUV(Parameters);
+	const float3 CameraToReceiver = LBATranslatedPositionAt(ViewportUV, Depth) - PrimaryView.TranslatedWorldCameraOrigin;
+	const float4 HeightFog = LBAHeightFog(CameraToReceiver, DFHackToFloat(PrimaryView.WorldCameraOrigin).z,
+		View.AtmosphereLightDirection[0].xyz, S.HeightFog);
+	BRANCH
+	if (HeightFog.a < 0.02)
+	{
+		return LBAGrade(SceneColor, S);
+	}
+	const float3 Display = max(SceneColor - HeightFog.rgb, 0.0) / HeightFog.a;
+
 	const float Fog = S.FogEnd > S.FogStart ? saturate((Depth - S.FogStart) / (S.FogEnd - S.FogStart)) : 0.0;
 	BRANCH
-	if (S.Strength <= 0.0 || Fog >= 1.0)
+	if (S.Strength <= 0.0 || Fog >= 1.0 || S.DebugView > 3.5)
 	{
-		return LBAGrade(lerp(Display, S.FogColor, Fog), S);
+		const float3 Unfogged = S.DebugView > 3.5 ? Display : lerp(Display, S.FogColor, Fog);
+		return LBAGrade(lerp(Unfogged, Unfogged * HeightFog.a + HeightFog.rgb, S.HeightFogAmount * (S.DebugView > 3.5 ? 0.0 : 1.0)), S);
 	}
 	const float Y = LBALuma(Display);
 	const uint Index = LBANearestPaletteIndex(Lut, BaseColor);
@@ -242,7 +332,6 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 	BRANCH
 	if (S.DitherAmount > 0.0 && !bExcluded && Fraction > 0.0 && Fraction < 1.0)
 	{
-		const float2 ViewportUV = GetViewportUV(Parameters);
 		const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, PostProcessOutput_ViewportSizeInverse);
 		float Dots;
 		BRANCH
@@ -281,5 +370,6 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 	const float TargetLuma = Y * Contrasted / max(Ratio, 1e-4);
 	Color *= lerp(1.0, TargetLuma / max(LBALuma(Color), 1e-5), S.KeepLuminance);
 
-	return LBAGrade(lerp(lerp(Display, Color, S.Strength), S.FogColor, Fog), S);
+	const float3 Shaded = lerp(lerp(Display, Color, S.Strength), S.FogColor, Fog);
+	return LBAGrade(lerp(Shaded, Shaded * HeightFog.a + HeightFog.rgb, S.HeightFogAmount), S);
 }

@@ -5,7 +5,19 @@
 #include "LBALookSubsystem.generated.h"
 
 class APostProcessVolume;
+class UDirectionalLightComponent;
+class UExponentialHeightFogComponent;
 class UMaterialInstanceDynamic;
+
+/** Parameters of the palette look material that describe a level's height fog (HeightFog* in LBAPaletteShading.ush). */
+struct LBA2RUNTIME_API FLBAHeightFogParameters
+{
+	TArray<TPair<FName, float>> Scalars;
+	TArray<TPair<FName, FLinearColor>> Vectors;
+
+	/** From a fog component and the sun that lights it (null: no fog). */
+	static FLBAHeightFogParameters Make(const UExponentialHeightFogComponent* Fog, const UDirectionalLightComponent* Sun);
+};
 
 /**
  * Live controls for the palette look post-process of generated levels (M_LBA_PaletteShading instances in their Look
@@ -20,7 +32,8 @@ class UMaterialInstanceDynamic;
  *                             looks; without a value, removes the override. To try settings before putting them in
  *                             MI_LBA_Look_Enhanced.
  *
- * The volume's blendables are swapped for dynamic instances the first time a control is used.
+ * The volume's blendables are swapped for dynamic instances when play starts. The look's copy of the height fog
+ * settings (which it needs to take the fog off surfaces before shading them) then follows the level's fog actor.
  */
 UCLASS()
 class LBA2RUNTIME_API ULBALookSubsystem : public UTickableWorldSubsystem
@@ -37,6 +50,8 @@ public:
 
 private:
 	void ApplyControls();
+	void SyncHeightFog();
+	void ApplyOverrides(UMaterialInstanceDynamic* Instance) const;
 
 	TMap<FName, TArray<float>> ParameterOverrides;
 
@@ -54,6 +69,7 @@ private:
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> Instances;
 
 	bool bInstancesCreated = false;
+	uint32 AppliedFogHash = 0;
 	float AppliedMode = -1.f;
 	float AppliedPattern = -1.f;
 	float AppliedPalette = -1.f;
