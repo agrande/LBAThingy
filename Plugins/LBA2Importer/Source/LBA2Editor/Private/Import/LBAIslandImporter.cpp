@@ -16,6 +16,7 @@
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBASeabed.h"
 #include "Import/LBAWater.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
@@ -79,6 +80,83 @@ namespace
 			return Section->GetHeight(GX - CX * CellsPerCube, GZ - CZ * CellsPerCube);
 		}
 		return 0;
+	}
+}
+
+namespace
+{
+	/**
+	 * Average color (linear) of the island's shores: the terrain triangles that come down to sea level, textured or
+	 * colored. The seabed takes it, so the shallows look like the beaches and rocks around them.
+	 */
+	FLinearColor GetShoreColor(const FLBAIsland& Island, const TArray<FColor>& Palette)
+	{
+		FLinearColor Sum = FLinearColor::Black;
+		int32 Count = 0;
+		for (const FLBAIslandSection& Section : Island.Sections)
+		{
+			for (int32 Z = 0; Z < CellsPerCube; ++Z)
+			{
+				for (int32 X = 0; X < CellsPerCube; ++X)
+				{
+					const int32 Cell = (Z * CellsPerCube + X) * 2;
+					for (int32 TriIndex = 0; TriIndex < 2; ++TriIndex)
+					{
+						const FLBAGroundTriangle& Tri = Section.Triangles[Cell + TriIndex];
+						if (!Tri.IsVisible())
+						{
+							continue;
+						}
+						FIntPoint Corners[3];
+						FLBAIsland::GetTriangleCorners(Section.Triangles[Cell].Sens(), TriIndex, Corners);
+						bool bAtSeaLevel = false;
+						bool bAboveSea = false;
+						for (const FIntPoint& Corner : Corners)
+						{
+							const int32 Height = Section.GetHeight(X + Corner.X, Z + Corner.Y);
+							bAtSeaLevel |= Height == 0;
+							bAboveSea |= Height > 0;
+						}
+						if (!bAtSeaLevel || !bAboveSea)
+						{
+							continue;
+						}
+						const FColor Flat = Palette[Tri.Bank() * 16 + 11];
+						const int32 TexBase = Tri.TexIndex() * 3;
+						if (Tri.IsTextured() && Section.TexCoords.IsValidIndex(TexBase + 2))
+						{
+							// The texture at the corners and the centre; color-keyed texels show the triangle's color.
+							FVector2f Centre = FVector2f::ZeroVector;
+							for (int32 K = 0; K < 4; ++K)
+							{
+								FVector2f UV;
+								if (K < 3)
+								{
+									UV = Section.TexCoords[TexBase + K];
+									Centre += UV / 3.f;
+								}
+								else
+								{
+									UV = Centre;
+								}
+								const uint8 Index = Island.GroundTexture[(int32(UV.Y) & 255) * 256 + (int32(UV.X) & 255)];
+								if (Index != 0 || Tri.IsColored())
+								{
+									Sum += FLinearColor::FromSRGBColor(Index != 0 ? Palette[Index] : Flat);
+									++Count;
+								}
+							}
+						}
+						else if (Tri.IsColored())
+						{
+							Sum += FLinearColor::FromSRGBColor(Flat);
+							++Count;
+						}
+					}
+				}
+			}
+		}
+		return Count > 0 ? Sum / float(Count) : FLinearColor(0.5f, 0.42f, 0.28f);
 	}
 }
 
@@ -415,6 +493,13 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 	{
 		SeaTexture = Context.CreatePaletteTexture(TextureFolder, FString::Printf(TEXT("T_%s_Sea"), *Island.Name), 128, 128,
 			[&SkySea](int32 X, int32 Y) { return SkySea[Y * 256 + X]; }, false, true);
+		if (SeaTexture)
+		{
+			// The cartoon water reads its mips directly: keep them all resident.
+			SeaTexture->PreEditChange(nullptr);
+			SeaTexture->NeverStream = true;
+			SeaTexture->PostEditChange();
+		}
 
 		// The original's sky is the cloud half of this page tiled over the fog color: its average color tints
 		// Unreal's sky, and its brightest texels give the clouds' color.
@@ -481,6 +566,27 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 	const FBox SeaBounds = IslandBounds.ExpandBy(FVector(LBA::IslandCubeSize * Scale * 6.0, LBA::IslandCubeSize * Scale * 6.0, 0.0));
 	if (Preset.bWater)
 	{
+		// The terrain stops at sea level: a seabed slopes down from the shores, under the water.
+		const double Spacing = LBA::BrickSizeXZ * Scale;
+		FLBASeabedSettings Seabed;
+		Seabed.Vertices = FIntRect(FMath::FloorToInt32(SeaBounds.Min.X / Spacing), FMath::FloorToInt32(SeaBounds.Min.Y / Spacing),
+			FMath::CeilToInt32(SeaBounds.Max.X / Spacing) + 1, FMath::CeilToInt32(SeaBounds.Max.Y / Spacing) + 1);
+		Seabed.Height = [&Island, Scale](int32 GX, int32 GZ) { return float(GlobalHeight(Island, GX, GZ)) * Scale; };
+		Seabed.VertexSpacing = float(Spacing);
+		Seabed.Color = GetShoreColor(Island, Context.GetPalette());
+		Seabed.Material = Context.GetMaterials().GetMaster(ELBAMaterial::Color);
+		if (UStaticMesh* SeabedMesh = LBASeabed::Build(Context, Seabed, IslandFolder / TEXT("Ground"), FString::Printf(TEXT("SM_%s_Seabed"), *Island.Name)))
+		{
+			if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform::Identity, TEXT("Seabed"), TEXT("Ground")))
+			{
+				UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
+				Component->SetStaticMesh(SeabedMesh);
+				Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Component->SetCastShadow(false);
+				GroundActors.Add(Actor);
+			}
+		}
+
 		FLBAWaterSettings Water;
 		Water.Bounds = SeaBounds;
 		Water.LandPoint = FVector2D(HighestGround);

@@ -10,8 +10,9 @@
 struct FLBACartoonWaterSettings
 {
 	float TileSize;		// world size of the sea texture (cm), like the original's tiling
-	float CellSize;		// size of the cells that each show the texture differently (tiles)
-	float Variation;	// 0: plain tiling, 1: every cell shifted, turned and mirrored at random, with irregular borders
+	float CellSize;		// spacing of the randomly shifted, turned and mirrored copies of the texture (tiles)
+	float Variation;	// 0: plain tiling, 1: no visible repetition (hex-tiling)
+	float Transition;	// width of the scattered transition between copies (0: hard edges, 1: wide)
 	float2 Drift;		// drift of the sea texture (cm/s)
 	float Wobble;		// how far the waves bend the texture (cm per unit of surface normal tilt)
 	float Smoothing;	// radius the light is averaged over (cm): larger gives broader, calmer bands
@@ -32,41 +33,62 @@ uint LBASeaHash(int2 Cell)
 	return H;
 }
 
-// Smooth value noise, 0..1.
-float LBASeaNoise(float2 X)
+// Color of the sea texture (Size x Size, tiling, with mips) at Texels (mip 0 texel units on the water), read texel by
+// texel so it stays a palette color.
+//  - No visible repetition (hex-tiling): three copies of the texture, each shifted, turned a quarter turn and
+//    mirrored at random, are laid on a triangular grid of CellSize tiles. Each point has a weight for the three
+//    copies around it, sharpened so most of the water shows one copy; where they blend, each world texel picks one
+//    copy at random by weight, so the borders are a scatter of texels instead of a seam.
+//  - No shimmering in the distance: the mip is picked from TexelsPerPixel, and between two mips each world texel of
+//    the coarser one switches at random, so the change spreads instead of drawing a line.
+float3 LBASeaColor(Texture2D Sea, int Size, float2 Texels, float TexelsPerPixel, FLBACartoonWaterSettings C)
 {
-	const int2 I = int2(floor(X));
-	float2 F = frac(X);
-	F = F * F * (3.0 - 2.0 * F);
-	const float A = (LBASeaHash(I) & 0xFFFFu) / 65535.0;
-	const float B = (LBASeaHash(I + int2(1, 0)) & 0xFFFFu) / 65535.0;
-	const float C = (LBASeaHash(I + int2(0, 1)) & 0xFFFFu) / 65535.0;
-	const float D = (LBASeaHash(I + int2(1, 1)) & 0xFFFFu) / 65535.0;
-	return lerp(lerp(A, B, F.x), lerp(C, D, F.x), F.y);
-}
+	const int MaxMip = int(firstbithigh(uint(Size)));
+	const float Lod = log2(max(TexelsPerPixel, 1.0));
+	int Mip = int(floor(Lod));
+	const float MipSwitch = (LBASeaHash(int2(floor(Texels * exp2(-float(Mip + 1)))) + int2(31, 57)) & 0xFFFFu) / 65535.0;
+	Mip = min(Mip + (MipSwitch < frac(Lod) ? 1 : 0), MaxMip);
+	const float MipScale = exp2(-float(Mip));
+	const int MipSize = max(Size >> Mip, 1);
 
-// Texel of the sea texture (Size x Size, tiling) at Texels (texel units on the water), without visible repetition:
-// the water is cut into cells with irregular borders (CellSize tiles, borders bent by noise), and each cell shows the
-// tiled texture at its own random offset, quarter turn and mirroring. Texels are read as they are, so colors stay
-// palette colors; the seams along the cell borders get lost in the busy sea pattern.
-int2 LBASeaTexel(float2 Texels, int Size, FLBACartoonWaterSettings C)
-{
-	int2 Texel = int2(floor(Texels));
+	float2 T = Texels;
 	if (C.Variation > 0.0)
 	{
-		const float CellTexels = max(C.CellSize, 0.1) * Size;
-		const float2 N = Texels / CellTexels * 2.0;
-		const float2 Warp = (float2(LBASeaNoise(N), LBASeaNoise(N + 17.31)) - 0.5) * (0.6 * C.Variation * CellTexels);
-		const uint H = LBASeaHash(int2(floor((Texels + Warp) / CellTexels)) + int2(7919, 104729));
-		if (H & 1u)
+		// Triangular grid (Heitz and Neyret 2018, Mikkelsen 2022): the three vertices around the point and their
+		// barycentric weights.
+		const float2 G = Texels / (max(C.CellSize, 0.1) * Size);
+		const float2 Skewed = float2(G.x - 0.57735027 * G.y, 1.15470054 * G.y);
+		const int2 Base = int2(floor(Skewed));
+		const float2 F = frac(Skewed);
+		const float Z = 1.0 - F.x - F.y;
+		int2 V1, V2, V3;
+		float3 W;
+		if (Z > 0.0)
 		{
-			Texel.x = -Texel.x;
+			W = float3(Z, F.y, F.x);
+			V1 = Base;
+			V2 = Base + int2(0, 1);
+			V3 = Base + int2(1, 0);
 		}
+		else
+		{
+			W = float3(-Z, 1.0 - F.y, 1.0 - F.x);
+			V1 = Base + int2(1, 1);
+			V2 = Base + int2(1, 0);
+			V3 = Base + int2(0, 1);
+		}
+		W = pow(max(W, 0.0), lerp(16.0, 2.0, saturate(C.Transition)));
+		W /= max(W.x + W.y + W.z, 1e-5);
+		const float Pick = (LBASeaHash(int2(floor(Texels * MipScale)) + int2(9001, 77 + Mip)) & 0xFFFFu) / 65535.0;
+		const uint H = LBASeaHash(Pick < W.x ? V1 : Pick < W.x + W.y ? V2 : V3);
+		T.x = (H & 1u) ? -T.x : T.x;
 		const uint Turns = (H >> 1) & 3u;
-		Texel = Turns == 1u ? int2(-Texel.y, Texel.x) : Turns == 2u ? -Texel : Turns == 3u ? int2(Texel.y, -Texel.x) : Texel;
-		Texel += int2((H >> 8) & 0xFFu, (H >> 16) & 0xFFu);
+		T = Turns == 1u ? float2(-T.y, T.x) : Turns == 2u ? -T : Turns == 3u ? float2(T.y, -T.x) : T;
+		T += float2((H >> 8) & 0xFFu, (H >> 16) & 0xFFu);
 	}
-	return ((Texel % Size) + Size) % Size;
+	int2 Texel = int2(floor(T * MipScale));
+	Texel = ((Texel % MipSize) + MipSize) % MipSize;
+	return Sea.Load(int3(Texel, Mip)).rgb;
 }
 
 // Foam at Distance (cm) from the nearest thing standing in the water: a wavy line hugging it, and lines leaving it

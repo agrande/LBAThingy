@@ -94,11 +94,15 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   island and an ocean filling it, out to the horizon, with Epic's ocean material tinted towards the
   original sea's color under the island's lights (`MI_<Island>_Ocean`), and a calm swell or storm
   waves (`<Root>/Rendering/Water/Waves_LBA_Calm|Storm`, kept on reimport). The terrain renders into the
-  zone as the ground (`WaterTerrainComponent`). The palette shading recognizes water (single layer
+  zone as the ground (`WaterTerrainComponent`), with a generated seabed (`SM_<Island>_Seabed`) sloping
+  down from the shores: a shallow shelf off beaches, deep water right along quays and cliffs, in the
+  shores' average color, so beaches get lighter shallows and the water's shore foam and waves see a
+  real depth. The palette shading recognizes water (single layer
   water shading model) and draws it as cartoon water (`Shaders/Private/LBAWaterCartoon.ush`): the
-  island's original sea texture, at the original's scale but without visible repetition (cells with
-  irregular borders, each showing it shifted, turned and mirrored: *SeaCellSize*, *SeaVariation*),
-  drifting and bent by the waves, each texel
+  island's original sea texture, at the original's scale but without visible repetition (hex-tiling:
+  three randomly shifted, turned and mirrored copies blended texel by texel, *SeaCellSize*,
+  *SeaVariation*, *SeaTransition*) nor shimmering in the distance (its mips, picked from the pixel's
+  size on the water), drifting and bent by the waves, each texel
   shaded along its palette color's shade path in flat bands that follow the water's light averaged
   around it (deep water, reflections, distance; the sky's reflections roll off into the brightest
   rows), white foam lines hugging the coast and anything standing in the water (piers, hulls, Twinsen

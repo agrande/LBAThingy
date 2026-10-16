@@ -342,7 +342,7 @@ UMaterial* FLBARenderingAssets::GetMaster()
 UMaterial* FLBARenderingAssets::CreateMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 26;
+	constexpr int32 Version = 27;
 
 	CreateDitherTextures();
 	CreateHalftoneRamp();
@@ -462,6 +462,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("SeaDrift"), Vector(TEXT("SeaDrift"), FLinearColor(6.f, 2.5f, 0.f), TEXT("Water Cartoon")) },
 		{ TEXT("SeaCellSize"), Scalar(TEXT("SeaCellSize"), 1.f, TEXT("Water Cartoon")) },
 		{ TEXT("SeaVariation"), Scalar(TEXT("SeaVariation"), 1.f, TEXT("Water Cartoon")) },
+		{ TEXT("SeaTransition"), Scalar(TEXT("SeaTransition"), 0.7f, TEXT("Water Cartoon")) },
 		{ TEXT("SeaWobble"), Scalar(TEXT("SeaWobble"), 60.f, TEXT("Water Cartoon")) },
 		{ TEXT("WaterSmoothing"), Scalar(TEXT("WaterSmoothing"), 80.f, TEXT("Water Cartoon")) },
 		{ TEXT("FoamWidth"), Scalar(TEXT("FoamWidth"), 60.f, TEXT("Water Cartoon")) },
@@ -526,6 +527,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Cartoon.Drift = SeaDrift.xy;\n"
 		"S.Cartoon.CellSize = SeaCellSize;\n"
 		"S.Cartoon.Variation = SeaVariation;\n"
+		"S.Cartoon.Transition = SeaTransition;\n"
 		"S.Cartoon.Wobble = SeaWobble;\n"
 		"S.Cartoon.Smoothing = WaterSmoothing;\n"
 		"S.Cartoon.FoamWidth = FoamWidth;\n"

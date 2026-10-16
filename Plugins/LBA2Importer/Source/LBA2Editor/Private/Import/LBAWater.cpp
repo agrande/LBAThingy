@@ -24,9 +24,10 @@ namespace
 
 	/**
 	 * Scattering coefficient of the water (1/cm). The absorption is set per island for the water's color; together
-	 * they set how deep you see (clear water: about 2 m in red, 15 m in blue).
+	 * they set how deep you see: the seabed shows through the first meter or two, so only the shore's shallows get
+	 * lighter (half the light gets through 2.5 m of water in blue, a third of a meter in red).
 	 */
-	constexpr float WaterScattering = 0.0005f;
+	constexpr float WaterScattering = 0.0025f;
 	/** Brightest single-scattering albedo given to a channel: deep water can't scatter back all of its light. */
 	constexpr float MaxWaterAlbedo = 0.9f;
 

@@ -389,16 +389,22 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 	const float2 P = DFDemote(DFFastSubtract(Translated, PrimaryView.PreViewTranslation)).xy;
 	const float Time = View.GameTime;
 	const float BaseLuma = max(LBALuma(BaseColor), 1e-4);
+	// World size of a pixel on the water (its longest side, at grazing angles along the view): details smaller than a
+	// few pixels fade out in the distance instead of shimmering.
+	const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, PostProcessOutput_ViewportSizeInverse);
+	const float Footprint = max(length(Frame.DUVDX), length(Frame.DUVDY));
+	const bool bNear = 3.0 * Footprint < C.Smoothing;
 
 	// Flat bands: the light averaged around the pixel, so ripples don't break the bands up.
 	float3 Smooth = Display;
+	const float Radius = max(C.Smoothing, 3.0 * Footprint);
 	if (C.Smoothing > 0.0)
 	{
 		Smooth = 2.0 * Display;
-		Smooth += LBAWaterLightAt(Translated, float2(C.Smoothing, 0.0), Display, HeightFog);
-		Smooth += LBAWaterLightAt(Translated, float2(-C.Smoothing, 0.0), Display, HeightFog);
-		Smooth += LBAWaterLightAt(Translated, float2(0.0, C.Smoothing), Display, HeightFog);
-		Smooth += LBAWaterLightAt(Translated, float2(0.0, -C.Smoothing), Display, HeightFog);
+		Smooth += LBAWaterLightAt(Translated, float2(Radius, 0.0), Display, HeightFog);
+		Smooth += LBAWaterLightAt(Translated, float2(-Radius, 0.0), Display, HeightFog);
+		Smooth += LBAWaterLightAt(Translated, float2(0.0, Radius), Display, HeightFog);
+		Smooth += LBAWaterLightAt(Translated, float2(0.0, -Radius), Display, HeightFog);
 		Smooth /= 6.0;
 	}
 	float Contrasted;
@@ -411,9 +417,11 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 	SeaTexture.GetDimensions(Width, Height);
 	if (Width >= 16)
 	{
-		const float2 Texels = (P + C.Drift * Time + WorldNormal.xy * C.Wobble) / max(C.TileSize, 1.0) * float(Width);
-		const int2 Texel = LBASeaTexel(Texels, int(Width), C);
-		TexIndex = LBANearestPaletteIndex(Lut, SeaTexture.Load(int3(Texel, 0)).rgb);
+		const float TexelsPerCm = float(Width) / max(C.TileSize, 1.0);
+		const float TexelsPerPixel = Footprint * TexelsPerCm;
+		const float Wobble = C.Wobble * saturate(1.5 - TexelsPerPixel);
+		const float2 Texels = (P + C.Drift * Time + WorldNormal.xy * Wobble) * TexelsPerCm;
+		TexIndex = LBANearestPaletteIndex(Lut, LBASeaColor(SeaTexture, int(Width), Texels, TexelsPerPixel, C));
 	}
 	float3 Color = LBAShadeColor(Shades, TexIndex, uint(round(Row)));
 
@@ -426,11 +434,11 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 
 	// Foam and sparkles: the palette color nearest to white at the level's foam brightness (grey under the storm).
 	const float3 White = LBAShadeColor(Shades, LBANearestPaletteIndex(Lut, saturate(C.FoamBrightness).xxx), LBA_PALETTE_ROW);
-	if (LBALuma(Display) > C.SparkleLight * LBALuma(Smooth))
+	if (bNear && LBALuma(Display) > C.SparkleLight * LBALuma(Smooth))
 	{
 		Color = White;
 	}
-	if (C.FoamWidth > 0.0 && LBAFoam(LBAWaterContactDistance(Translated, C.FoamWidth), P, Time, C) > 0.5)
+	if (C.FoamWidth > 2.0 * Footprint && LBAFoam(LBAWaterContactDistance(Translated, C.FoamWidth), P, Time, C) > 0.5)
 	{
 		Color = White;
 	}
