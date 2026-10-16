@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 
 class FLBAImportContext;
+class UTexture2D;
 class UWorld;
 
 /** Lighting and atmosphere for a generated level. Presets follow the original island moods. */
@@ -63,14 +64,44 @@ struct FLBAEnvironmentPreset
 	FLinearColor CloudColor = FLinearColor(0.98f, 0.98f, 0.98f);
 	bool bStormClouds = false;
 
+	/**
+	 * The sea is Unreal water (Water plugin ocean) rather than the original's textured plane, with storm waves or a
+	 * calm swell. SeaColor is the original sea's main color (linear, a palette color): the palette shading shades
+	 * water along its shade path, open water getting the light SeaLight (1 = the sea color, as the original's
+	 * unshaded sea texture; less for a darker sea). WaterNeutralLight is the light that shows the sea color (see
+	 * LBAWater).
+	 */
+	bool bWater = false;
+	bool bStormSea = false;
+	FLinearColor SeaColor = FLinearColor::Black;
+	float SeaLight = 1.f;
+	/** The original sea texture and its tile size (cm), for cartoon water. */
+	UTexture2D* SeaTexture = nullptr;
+	float SeaTileSize = 1024.f;
+	float WaterNeutralLight = 1.f;
+
 	/** Preset for an island file name (CITABAU, DESERT, EMERAUDE...). */
 	static FLBAEnvironmentPreset ForIsland(const FString& IslandName);
 	/** Neutral preset for isometric interiors. */
 	static FLBAEnvironmentPreset Interior();
 };
 
+/** Sun and sky light of a level, in display units (see FLBAEnvironmentPreset). */
+struct FLBAEnvironmentLights
+{
+	/** Sun illuminance (lux) and sky light intensity. */
+	float SunIntensity = 0.f;
+	float SkyLightIntensity = 0.f;
+	/** Light flat ground receives in the shade, and in the sun (1 = shows its base color). */
+	float AmbientLight = 0.f;
+	float GroundLight = 0.f;
+};
+
 namespace LBAEnvironment
 {
+	/** Sun and sky light intensities for a preset: calibrated from its GroundRow, or the preset's own values. */
+	FLBAEnvironmentLights ComputeLights(const FLBAEnvironmentPreset& Preset, const FRotator& SunRotation, int32 NeutralRow);
+
 	/**
 	 * Spawns sun, sky light, sky atmosphere, clouds, fog and the post-process volume (palette looks, exposure) into
 	 * a level.

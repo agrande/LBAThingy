@@ -342,7 +342,7 @@ UMaterial* FLBARenderingAssets::GetMaster()
 UMaterial* FLBARenderingAssets::CreateMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 15;
+	constexpr int32 Version = 26;
 
 	CreateDitherTextures();
 	CreateHalftoneRamp();
@@ -418,11 +418,15 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("BaseColor"), SceneTexture(PPI_BaseColor, 120) },
 		{ TEXT("Depth"), SceneTexture(PPI_SceneDepth, 240) },
 		{ TEXT("Stencil"), SceneTexture(PPI_CustomStencil, 360) },
+		{ TEXT("ShadingModel"), SceneTexture(PPI_ShadingModelID, 420) },
+		{ TEXT("WorldNormal"), SceneTexture(PPI_WorldNormal, 440) },
 		{ TEXT("Lut"), TextureObject(TEXT("PaletteLut"), DitherTexture, 480) },
 		{ TEXT("Shades"), TextureObject(TEXT("Shades"), DefaultShades, 600) },
 		{ TEXT("Dither"), TextureObject(TEXT("Dither3D"), DitherTexture, 720) },
 		{ TEXT("DitherRamp"), TextureObject(TEXT("DitherRamp"), DitherRamp, 840) },
 		{ TEXT("HalftoneRamp"), TextureObject(TEXT("HalftoneRamp"), HalftoneRamp, 960) },
+		// The island's sea texture, set per level (LBAEnvironment), for cartoon water.
+		{ TEXT("SeaTexture"), TextureObject(TEXT("SeaTexture"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1080) },
 		{ TEXT("Strength"), Scalar(TEXT("Strength"), 1.f, TEXT("Palette")) },
 		{ TEXT("NeutralRow"), Scalar(TEXT("NeutralRow"), 12.f, TEXT("Palette")) },
 		{ TEXT("NeutralLight"), Scalar(TEXT("NeutralLight"), 1.f, TEXT("Palette")) },
@@ -447,6 +451,23 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("DotSizeVariability"), Scalar(TEXT("DotSizeVariability"), 0.f, TEXT("Dither")) },
 		{ TEXT("StretchSmoothness"), Scalar(TEXT("StretchSmoothness"), 1.f, TEXT("Dither")) },
 		{ TEXT("ExcludedStencil"), Scalar(TEXT("ExcludedStencil"), float(LBA::MovingObjectStencil), TEXT("Dither")) },
+		// The sea's color and neutral light are set per level (LBAEnvironment).
+		{ TEXT("WaterColor"), Vector(TEXT("WaterColor"), FLinearColor::Black, TEXT("Water")) },
+		{ TEXT("WaterNeutralLight"), Scalar(TEXT("WaterNeutralLight"), 1.f, TEXT("Water")) },
+		{ TEXT("WaterLightTint"), Scalar(TEXT("WaterLightTint"), 0.35f, TEXT("Water")) },
+		{ TEXT("WaterStrength"), Scalar(TEXT("WaterStrength"), 1.f, TEXT("Water")) },
+		{ TEXT("WaterHighlightRange"), Scalar(TEXT("WaterHighlightRange"), 0.2f, TEXT("Water")) },
+		// Cartoon water, cm and seconds; the sea texture's tile size is set per level.
+		{ TEXT("SeaTileSize"), Scalar(TEXT("SeaTileSize"), 1024.f, TEXT("Water Cartoon")) },
+		{ TEXT("SeaDrift"), Vector(TEXT("SeaDrift"), FLinearColor(6.f, 2.5f, 0.f), TEXT("Water Cartoon")) },
+		{ TEXT("SeaCellSize"), Scalar(TEXT("SeaCellSize"), 1.f, TEXT("Water Cartoon")) },
+		{ TEXT("SeaVariation"), Scalar(TEXT("SeaVariation"), 1.f, TEXT("Water Cartoon")) },
+		{ TEXT("SeaWobble"), Scalar(TEXT("SeaWobble"), 60.f, TEXT("Water Cartoon")) },
+		{ TEXT("WaterSmoothing"), Scalar(TEXT("WaterSmoothing"), 80.f, TEXT("Water Cartoon")) },
+		{ TEXT("FoamWidth"), Scalar(TEXT("FoamWidth"), 60.f, TEXT("Water Cartoon")) },
+		{ TEXT("FoamSpeed"), Scalar(TEXT("FoamSpeed"), 0.35f, TEXT("Water Cartoon")) },
+		{ TEXT("FoamBrightness"), Scalar(TEXT("FoamBrightness"), 1.f, TEXT("Water Cartoon")) },
+		{ TEXT("SparkleLight"), Scalar(TEXT("SparkleLight"), 1.8f, TEXT("Water Cartoon")) },
 		{ TEXT("FogColor"), Vector(TEXT("FogColor"), FLinearColor(0.45f, 0.6f, 0.8f), TEXT("Fog")) },
 		{ TEXT("FogStart"), Scalar(TEXT("FogStart"), 0.f, TEXT("Fog")) },
 		{ TEXT("FogEnd"), Scalar(TEXT("FogEnd"), 0.f, TEXT("Fog")) },
@@ -496,6 +517,21 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Contrast = max(Contrast, 0.05);\n"
 		"S.Saturation = Saturation;\n"
 		"S.ExcludedStencil = ExcludedStencil;\n"
+		"S.WaterColor = WaterColor.rgb;\n"
+		"S.WaterNeutralLight = max(WaterNeutralLight, 0.01);\n"
+		"S.WaterLightTint = WaterLightTint;\n"
+		"S.WaterStrength = WaterStrength;\n"
+		"S.WaterHighlightRange = WaterHighlightRange;\n"
+		"S.Cartoon.TileSize = SeaTileSize;\n"
+		"S.Cartoon.Drift = SeaDrift.xy;\n"
+		"S.Cartoon.CellSize = SeaCellSize;\n"
+		"S.Cartoon.Variation = SeaVariation;\n"
+		"S.Cartoon.Wobble = SeaWobble;\n"
+		"S.Cartoon.Smoothing = WaterSmoothing;\n"
+		"S.Cartoon.FoamWidth = FoamWidth;\n"
+		"S.Cartoon.FoamSpeed = FoamSpeed;\n"
+		"S.Cartoon.FoamBrightness = FoamBrightness;\n"
+		"S.Cartoon.SparkleLight = SparkleLight;\n"
 		"S.SkyDepth = SkyDepth;\n"
 		"S.DebugView = DebugView;\n"
 		"S.FogColor = FogColor.rgb;\n"
@@ -521,7 +557,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Dither.StretchSmoothness = StretchSmoothness;\n"
 		"S.Halftone.DotPixels = max(DotSpacing, 1.0);\n"
 		"S.Halftone.Contrast = DotContrast;\n"
-		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, Lut, Shades,\n"
+		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture,\n"
 		"    Dither, DitherSampler, DitherRamp, DitherRampSampler, HalftoneRamp, HalftoneRampSampler, S);"), DitherDotsPerSide);
 
 	UMaterialEditingLibrary::ConnectMaterialProperty(Custom, TEXT(""), MP_EmissiveColor);

@@ -38,6 +38,7 @@ public class LBA2Editor : ModuleRules
 			"AnimationCore",
 			"ImageWrapper",
 			"AnimationBlueprintLibrary",
+			"Water",
 		});
 	}
 }

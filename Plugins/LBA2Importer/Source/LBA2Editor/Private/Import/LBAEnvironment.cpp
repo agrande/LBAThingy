@@ -9,6 +9,7 @@
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/SkyLight.h"
+#include "Engine/Texture2D.h"
 #include "Engine/TextureCube.h"
 #include "Formats/LBAXpl.h"
 #include "Import/LBAImportContext.h"
@@ -69,7 +70,16 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::ForIsland(const FString& IslandName
 		Preset.AmbientLight = 1.f;
 		Preset.MaxAmbientFraction = 0.9f;
 	}
-	else if (Name == TEXT("EMERAUDE") || Name == TEXT("MOON"))
+	if (Name == TEXT("CITABAU") || Name == TEXT("CITADEL") || Name == TEXT("DESERT"))
+	{
+		// Twinsun's seas are water. The other worlds' "seas" (Zeelich's cloud sea and red gas, the moon's ground)
+		// keep the original's textured plane.
+		Preset.bWater = true;
+		Preset.bStormSea = Preset.bStormClouds;
+		// The original's storm sea is darker than its texture (measured on Citadel's harbour).
+		Preset.SeaLight = Preset.bStormSea ? 0.8f : 1.f;
+	}
+	if (Name == TEXT("EMERAUDE") || Name == TEXT("MOON"))
 	{
 		// Emerald moon: no atmosphere.
 		Preset.SunColor = FLinearColor(0.9f, 0.95f, 1.f);
@@ -102,6 +112,52 @@ FRotator LBAEnvironment::SunRotationFromLbaAngles(int32 Alpha, int32 Beta)
 	return FRotator(-Elevation, -LBA::AngleToDegrees(Beta & 0xFFF), 0.0);
 }
 
+namespace
+{
+	/**
+	 * Without atmosphere (space) or under an overcast sky, the sky light is a uniform gray sky: even light, like the
+	 * original's, and independent of what the sky looks like.
+	 */
+	bool UsesUniformSkyLight(const FLBAEnvironmentPreset& Preset)
+	{
+		return !Preset.bAtmosphere || Preset.bOvercast;
+	}
+
+	FLinearColor GetSkyLightColor(const FLBAEnvironmentPreset& Preset)
+	{
+		return !Preset.bAtmosphere ? Preset.SunColor : Preset.SkyLightColor;
+	}
+
+	bool HasTintedSky(const FLBAEnvironmentPreset& Preset)
+	{
+		return Preset.bAtmosphere && Preset.SkyColor.GetLuminance() > 0.f;
+	}
+}
+
+FLBAEnvironmentLights LBAEnvironment::ComputeLights(const FLBAEnvironmentPreset& Preset, const FRotator& SunRotation, int32 NeutralRow)
+{
+	// With the manual exposure at 1 and a neutral tonemapper, a Lambert surface under a sun of E lux receives a
+	// light of E * sin(elevation) / pi (1 = shows its base color), and under a uniform sky of luminance L, a light of
+	// L * sky light intensity. The palette shading turns that light into a shade row.
+	const float SinElevation = FMath::Max(FMath::Sin(FMath::DegreesToRadians(-SunRotation.Pitch)), 0.2f);
+	FLBAEnvironmentLights Lights;
+	Lights.SunIntensity = Preset.SunIntensity;
+	Lights.SkyLightIntensity = Preset.SkyLightIntensity;
+	if (Preset.GroundRow <= 0.f)
+	{
+		// Uncalibrated: only the sun's direct light is known.
+		Lights.GroundLight = Lights.SunIntensity * SinElevation / UE_PI;
+		return Lights;
+	}
+	const float SkyLuminance = UsesUniformSkyLight(Preset) ? UniformSkyLuminance * GetSkyLightColor(Preset).GetLuminance()
+		: HasTintedSky(Preset) ? Preset.SkyColor.GetLuminance() : Preset.FogColor.GetLuminance();
+	Lights.GroundLight = Preset.GroundRow / float(FMath::Max(NeutralRow, 1));
+	Lights.AmbientLight = FMath::Min(Preset.AmbientLight, Lights.GroundLight * Preset.MaxAmbientFraction);
+	Lights.SunIntensity = (Lights.GroundLight - Lights.AmbientLight) * UE_PI / (SinElevation * MeasuredSunGain);
+	Lights.SkyLightIntensity = Lights.AmbientLight / (MeasuredSkyGain * FMath::Max(SkyLuminance, 0.05f));
+	return Lights;
+}
+
 void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAEnvironmentPreset& Preset, const FRotator& SunRotation)
 {
 	const FName Folder(TEXT("Environment"));
@@ -109,27 +165,15 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 	const FString LevelPath = World->GetPackage()->GetName();
 	const FString LevelFolder = FPackageName::GetLongPackagePath(LevelPath);
 	const FString LevelName = FPackageName::GetShortName(LevelPath);
-	const bool bTintedSky = Preset.bAtmosphere && Preset.SkyColor.GetLuminance() > 0.f;
-	// Without atmosphere (space) or under an overcast sky, the sky light is a uniform gray sky: even light, like the
-	// original's, and independent of what the sky looks like.
-	const bool bUniformSkyLight = !Preset.bAtmosphere || Preset.bOvercast;
-	const FLinearColor SkyLightColor = !Preset.bAtmosphere ? Preset.SunColor : Preset.SkyLightColor;
+	const bool bTintedSky = HasTintedSky(Preset);
+	const bool bUniformSkyLight = UsesUniformSkyLight(Preset);
+	const FLinearColor SkyLightColor = GetSkyLightColor(Preset);
 
-	// With the manual exposure at 1 and a neutral tonemapper, a Lambert surface under a sun of E lux receives a
-	// light of E * sin(elevation) / pi (1 = shows its base color), and under a uniform sky of luminance L, a light of
-	// L * sky light intensity. The palette shading turns that light into a shade row.
-	float SunIntensity = Preset.SunIntensity;
-	float SkyLightIntensity = Preset.SkyLightIntensity;
+	const FLBAEnvironmentLights Lights = ComputeLights(Preset, SunRotation, Xpl ? Xpl->ShadeNormalLevel : 12);
+	const float SunIntensity = Lights.SunIntensity;
+	const float SkyLightIntensity = Lights.SkyLightIntensity;
 	if (Preset.GroundRow > 0.f)
 	{
-		const float NeutralRow = Xpl ? float(Xpl->ShadeNormalLevel) : 12.f;
-		const float GroundLight = Preset.GroundRow / NeutralRow;
-		const float Ambient = FMath::Min(Preset.AmbientLight, GroundLight * Preset.MaxAmbientFraction);
-		const float SinElevation = FMath::Max(FMath::Sin(FMath::DegreesToRadians(-SunRotation.Pitch)), 0.2f);
-		const float SkyLuminance = bUniformSkyLight ? UniformSkyLuminance * SkyLightColor.GetLuminance()
-			: bTintedSky ? Preset.SkyColor.GetLuminance() : Preset.FogColor.GetLuminance();
-		SunIntensity = (GroundLight - Ambient) * UE_PI / (SinElevation * MeasuredSunGain);
-		SkyLightIntensity = Ambient / (MeasuredSkyGain * FMath::Max(SkyLuminance, 0.05f));
 		UE_LOG(LogLBA2, Display, TEXT("LBA2 environment: ground row %.1f, sun pitch %.1f -> sun %.2f lux, sky light %.2f"), Preset.GroundRow, SunRotation.Pitch, SunIntensity, SkyLightIntensity);
 	}
 
@@ -267,6 +311,18 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(LevelLook, Vector.Key, Vector.Value);
 		}
 		UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("ContrastPivot"), ContrastPivot);
+		if (Preset.bWater)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(LevelLook, TEXT("WaterColor"), Preset.SeaColor);
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("WaterNeutralLight"), Preset.WaterNeutralLight);
+			// Cartoon foam is as much darker than white as the sea is darker than its color, twice over (grey in the storm).
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("FoamBrightness"), FMath::Square(FMath::Min(Preset.SeaLight, 1.f)));
+			if (Preset.SeaTexture)
+			{
+				UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(LevelLook, TEXT("SeaTexture"), Preset.SeaTexture);
+				UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("SeaTileSize"), Preset.SeaTileSize);
+			}
+		}
 		UMaterialEditingLibrary::UpdateMaterialInstance(LevelLook);
 		Context.MarkForSave(LevelLook);
 		return LevelLook;

@@ -1,0 +1,86 @@
+// LBAWaterCartoon.ush
+//
+// Cartoon water (LBACartoonWater in LBAPaletteShading.ush), in the spirit of
+// stylized game water: the original's sea texture drifting and bent by the waves, flat bands of shade rows following
+// the smoothed light (deep, reflections, distance), white foam lines along coasts, piers, hulls and anyone wading, and
+// white sparkles where the sun glints. This file holds the settings and the foam pattern.
+
+#pragma once
+
+struct FLBACartoonWaterSettings
+{
+	float TileSize;		// world size of the sea texture (cm), like the original's tiling
+	float CellSize;		// size of the cells that each show the texture differently (tiles)
+	float Variation;	// 0: plain tiling, 1: every cell shifted, turned and mirrored at random, with irregular borders
+	float2 Drift;		// drift of the sea texture (cm/s)
+	float Wobble;		// how far the waves bend the texture (cm per unit of surface normal tilt)
+	float Smoothing;	// radius the light is averaged over (cm): larger gives broader, calmer bands
+	float FoamWidth;	// reach of the foam from what stands in the water (cm); 0: no foam
+	float FoamSpeed;	// foam lines leaving the shore per second
+	float FoamBrightness;	// linear brightness of the foam and sparkles (1: white)
+	float SparkleLight;	// glints this many times brighter than the water around them become white sparkles
+};
+
+uint LBASeaHash(int2 Cell)
+{
+	uint H = (uint(Cell.x) * 0x8DA6B343u) ^ (uint(Cell.y) * 0xD8163841u);
+	H ^= H >> 16;
+	H *= 0x7FEB352Du;
+	H ^= H >> 15;
+	H *= 0x846CA68Bu;
+	H ^= H >> 16;
+	return H;
+}
+
+// Smooth value noise, 0..1.
+float LBASeaNoise(float2 X)
+{
+	const int2 I = int2(floor(X));
+	float2 F = frac(X);
+	F = F * F * (3.0 - 2.0 * F);
+	const float A = (LBASeaHash(I) & 0xFFFFu) / 65535.0;
+	const float B = (LBASeaHash(I + int2(1, 0)) & 0xFFFFu) / 65535.0;
+	const float C = (LBASeaHash(I + int2(0, 1)) & 0xFFFFu) / 65535.0;
+	const float D = (LBASeaHash(I + int2(1, 1)) & 0xFFFFu) / 65535.0;
+	return lerp(lerp(A, B, F.x), lerp(C, D, F.x), F.y);
+}
+
+// Texel of the sea texture (Size x Size, tiling) at Texels (texel units on the water), without visible repetition:
+// the water is cut into cells with irregular borders (CellSize tiles, borders bent by noise), and each cell shows the
+// tiled texture at its own random offset, quarter turn and mirroring. Texels are read as they are, so colors stay
+// palette colors; the seams along the cell borders get lost in the busy sea pattern.
+int2 LBASeaTexel(float2 Texels, int Size, FLBACartoonWaterSettings C)
+{
+	int2 Texel = int2(floor(Texels));
+	if (C.Variation > 0.0)
+	{
+		const float CellTexels = max(C.CellSize, 0.1) * Size;
+		const float2 N = Texels / CellTexels * 2.0;
+		const float2 Warp = (float2(LBASeaNoise(N), LBASeaNoise(N + 17.31)) - 0.5) * (0.6 * C.Variation * CellTexels);
+		const uint H = LBASeaHash(int2(floor((Texels + Warp) / CellTexels)) + int2(7919, 104729));
+		if (H & 1u)
+		{
+			Texel.x = -Texel.x;
+		}
+		const uint Turns = (H >> 1) & 3u;
+		Texel = Turns == 1u ? int2(-Texel.y, Texel.x) : Turns == 2u ? -Texel : Turns == 3u ? int2(Texel.y, -Texel.x) : Texel;
+		Texel += int2((H >> 8) & 0xFFu, (H >> 16) & 0xFFu);
+	}
+	return ((Texel % Size) + Size) % Size;
+}
+
+// Foam at Distance (cm) from the nearest thing standing in the water: a wavy line hugging it, and lines leaving it
+// and thinning out. 1 on foam, 0 elsewhere.
+float LBAFoam(float Distance, float2 P, float Time, FLBACartoonWaterSettings C)
+{
+	if (Distance >= C.FoamWidth)
+	{
+		return 0.0;
+	}
+	const float X = Distance / C.FoamWidth;
+	const float Noise = 0.5 + 0.25 * sin(P.x * 0.031 + P.y * 0.017 + Time * 0.7) + 0.25 * sin(P.y * 0.043 - P.x * 0.011 - Time * 0.9);
+	const float Hug = X < 0.2 + 0.15 * Noise ? 1.0 : 0.0;
+	const float Phase = frac(Time * C.FoamSpeed + 0.2 * Noise);
+	const float Leaving = abs(X - (0.35 + 0.65 * Phase)) < 0.06 * (1.0 - Phase) ? 1.0 : 0.0;
+	return max(Hug, Leaving);
+}

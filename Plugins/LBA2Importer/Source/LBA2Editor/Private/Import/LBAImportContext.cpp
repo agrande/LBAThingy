@@ -1,5 +1,6 @@
 #include "Import/LBAImportContext.h"
 
+#include "ActorFactories/ActorFactory.h"
 #include "AssetCompilingManager.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Editor.h"
@@ -549,19 +550,40 @@ AActor* FLBAImportContext::SpawnGeneratedActor(UWorld* World, UClass* Class, con
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	Params.bNoFail = true;
 	AActor* Actor = World->SpawnActor(Class, &Transform, Params);
-	if (Actor)
-	{
-		Actor->Tags.AddUnique(GeneratedActorTag);
-		if (!Label.IsEmpty())
-		{
-			Actor->SetActorLabel(Label, false);
-		}
-		if (!Folder.IsNone())
-		{
-			Actor->SetFolderPath(Folder);
-		}
-	}
+	TagGeneratedActor(Actor, Label, Folder);
 	return Actor;
+}
+
+AActor* FLBAImportContext::SpawnGeneratedActorWithFactory(UWorld* World, UClass* Class, const FTransform& Transform, const FString& Label, const FName& Folder)
+{
+	UActorFactory* Factory = GEditor ? GEditor->FindActorFactoryForActorClass(Class) : nullptr;
+	if (!Factory)
+	{
+		return SpawnGeneratedActor(World, Class, Transform, Label, Folder);
+	}
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	Params.bNoFail = true;
+	AActor* Actor = Factory->CreateActor(nullptr, World->PersistentLevel, Transform, Params);
+	TagGeneratedActor(Actor, Label, Folder);
+	return Actor;
+}
+
+void FLBAImportContext::TagGeneratedActor(AActor* Actor, const FString& Label, const FName& Folder)
+{
+	if (!Actor)
+	{
+		return;
+	}
+	Actor->Tags.AddUnique(GeneratedActorTag);
+	if (!Label.IsEmpty())
+	{
+		Actor->SetActorLabel(Label, false);
+	}
+	if (!Folder.IsNone())
+	{
+		Actor->SetFolderPath(Folder);
+	}
 }
 
 // Progress --------------------------------------------------------------------------------------------

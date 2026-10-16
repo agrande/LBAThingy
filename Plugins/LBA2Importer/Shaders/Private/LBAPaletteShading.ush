@@ -21,6 +21,12 @@
 //  4. The light's color (GI bounce, colored lights, fog) is kept as a tint, and the result is blended with the
 //     modern image by Strength.
 //
+// Water (Unreal's single layer water) has no palette color in the G-buffer: its color comes from scattering, and its
+// base color is only foam. It is drawn as cartoon water instead (LBACartoonWater): the original's sea texture drifting
+// and bent by the waves, each texel along its shade path, in flat bands of shade rows following the water's smoothed
+// light relative to the sea's main color (WaterColor), with white foam lines along everything that stands in the water
+// and sparkles where the sun glints.
+//
 // The same material makes both looks of generated levels. "Original" keeps the defaults: rows picked linearly, one
 // row apart, small dots. "Enhanced" is graded: a contrast curve on the light, rows further apart for bolder dots,
 // split toning, exposure and saturation (see MI_LBA_Look_Enhanced).
@@ -34,9 +40,11 @@
 
 #include "/Plugin/LBA2Importer/Private/LBADither3D.ush"
 #include "/Plugin/LBA2Importer/Private/LBAHalftone.ush"
+#include "/Plugin/LBA2Importer/Private/LBAWaterCartoon.ush"
 
 #define LBA_SHADE_ROWS 16
 #define LBA_PALETTE_ROW 16
+#define LBA_SHADINGMODEL_WATER 10	// SHADINGMODELID_SINGLELAYERWATER
 
 float3 LBASrgbToLinear(float3 C)
 {
@@ -234,6 +242,11 @@ struct FLBAPaletteShadingSettings
 	float Contrast;			// contrast of the image around mid grey: 1 keeps it, more for punchier images
 	float Saturation;		// 1 keeps the colors, more is more colorful
 	float ExcludedStencil;	// custom stencil of moving objects: they get smooth shading instead of world dots
+	float3 WaterColor;		// the sea's palette color (linear) water is shaded with; black: water keeps Unreal's look
+	float WaterNeutralLight;// light of open water relative to WaterColor (water is darker than the original's sea)
+	float WaterLightTint;	// LightTint of water: how much shallows, foam and reflections keep their own color
+	float WaterStrength;	// palette shading strength on water, relative to Strength
+	float WaterHighlightRange;	// light above open water's that water's brightest rows take (reflections roll off into it)
 	float SkyDepth;			// pixels at least this far (cm) keep their color
 	float3 FogColor;		// the original's distance fog, applied after shading like its fog tables (linear color)
 	float FogStart;			// view depth (cm) where the fog starts, and where it is complete
@@ -244,7 +257,96 @@ struct FLBAPaletteShadingSettings
 	FLBAHeightFog HeightFog;
 	FLBADither3DSettings Dither;
 	FLBAHalftoneSettings Halftone;
+	FLBACartoonWaterSettings Cartoon;
 };
+
+// Viewport UV of the point at a horizontal world offset from a translated world position; false off screen.
+bool LBAOffsetToViewportUV(float3 Translated, float2 Offset, out float2 UV)
+{
+	const float4 Clip = mul(float4(Translated + float3(Offset, 0.0), 1.0), View.TranslatedWorldToClip);
+	UV = Clip.xy / max(Clip.w, 1e-4) * float2(0.5, -0.5) + 0.5;
+	return Clip.w > 0.0 && all(UV >= 0.0) && all(UV <= 1.0);
+}
+
+bool LBAIsWaterAt(float2 UV)
+{
+	return abs(SceneTextureLookup(ViewportUVToSceneTextureUV(UV, PPI_ShadingModelID), PPI_ShadingModelID, false).r - LBA_SHADINGMODEL_WATER) < 0.5;
+}
+
+// Light of the water at a horizontal offset from a water pixel, with this pixel's fog taken off. Falls back to Display
+// where that point isn't water (behind the pier).
+float3 LBAWaterLightAt(float3 Translated, float2 Offset, float3 Display, float4 HeightFog)
+{
+	float2 UV;
+	if (!LBAOffsetToViewportUV(Translated, Offset, UV) || !LBAIsWaterAt(UV))
+	{
+		return Display;
+	}
+	const float3 Color = SceneTextureLookup(ViewportUVToSceneTextureUV(UV, PPI_PostProcessInput0), PPI_PostProcessInput0, false).rgb;
+	return max(Color - HeightFog.rgb, 0.0) / HeightFog.a;
+}
+
+// Whether something stands in the water at a horizontal offset from a water pixel: the screen shows another surface
+// there, and that surface is about at the water's height (a pier's foot, the coast, a hull; not a pier top in front).
+bool LBAWaterContactAt(float3 Translated, float2 Offset, float MaxHeight)
+{
+	float2 UV;
+	if (!LBAOffsetToViewportUV(Translated, Offset, UV) || LBAIsWaterAt(UV))
+	{
+		return false;
+	}
+	const float3 Hit = LBATranslatedPositionAt(UV, LBASceneDepthAt(UV));
+	return abs(Hit.z - Translated.z) < MaxHeight;
+}
+
+// Horizontal distance (cm) from a water pixel to the nearest thing standing in the water, searched in 8 directions up
+// to Range (returns Range when nothing is that close).
+float LBAWaterContactDistance(float3 Translated, float Range)
+{
+	const int Steps = 5;
+	float Nearest = Range;
+	LOOP
+	for (int K = 0; K < 8; ++K)
+	{
+		const float Angle = K * (0.25 * PI);
+		const float2 Dir = float2(cos(Angle), sin(Angle));
+		float Lo = 0.0;
+		float Hi = -1.0;
+		LOOP
+		for (int J = 1; J <= Steps; ++J)
+		{
+			const float R = Range * J / Steps;
+			if (R >= Nearest)
+			{
+				break;
+			}
+			if (LBAWaterContactAt(Translated, Dir * R, Range))
+			{
+				Hi = R;
+				break;
+			}
+			Lo = R;
+		}
+		if (Hi > 0.0)
+		{
+			UNROLL
+			for (int B = 0; B < 2; ++B)
+			{
+				const float Mid = 0.5 * (Lo + Hi);
+				if (LBAWaterContactAt(Translated, Dir * Mid, Range))
+				{
+					Hi = Mid;
+				}
+				else
+				{
+					Lo = Mid;
+				}
+			}
+			Nearest = min(Nearest, Hi);
+		}
+	}
+	return Nearest;
+}
 
 // Exposure, contrast and saturation, the same for every pixel so the sky, fog and surfaces stay coherent. Contrast
 // bends the luminance around mid grey (like Unreal's color grading contrast) and keeps the hue.
@@ -261,12 +363,99 @@ float3 LBASplitTone(float3 Tint, float Amount)
 	return lerp(1.0, Tint / max(LBALuma(Tint), 1e-4), saturate(Amount));
 }
 
+// Shade row for a light (relative to the neutral light), and that light after the contrast curve. Like the original's
+// Gouraud intensity, the light picks the row linearly: no light is row 0, the neutral light the normal row
+// (ShadeNormalLevel, 12 in every island palette), and the last rows are highlights. LightContrast first bends it around
+// the pivot, so sunlit ground keeps its row while shade gets darker and sun-facing slopes brighter. HighlightRange
+// (water): light above the pivot rolls off into the highlight rows instead of clipping.
+float LBALightToRow(float Ratio, FLBAPaletteShadingSettings S, float HighlightRange, out float Contrasted)
+{
+	const float Pivot = max(S.ContrastPivot, 0.05);
+	Contrasted = Pivot * pow(max(Ratio, 0.0) / Pivot, S.LightContrast);
+	if (HighlightRange > 0.0 && Contrasted > 1.0)
+	{
+		const float Above = Contrasted - 1.0;
+		Contrasted = 1.0 + HighlightRange * Above / (Above + HighlightRange);
+	}
+	return clamp(S.NeutralRow * (1.0 + (Contrasted - 1.0) * S.ShadeContrast), 0.0, LBA_SHADE_ROWS - 1.0);
+}
+
+// Cartoon water, before fog. Display: this pixel's light; BaseColor: the sea color.
+float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 HeightFog, float3 BaseColor, float3 WorldNormal,
+	uint Index, Texture3D Lut, Texture2D Shades, Texture2D SeaTexture, float HighlightRange, FLBAPaletteShadingSettings S)
+{
+	const FLBACartoonWaterSettings C = S.Cartoon;
+	const float3 Translated = LBATranslatedPositionAt(ViewportUV, Depth);
+	const float2 P = DFDemote(DFFastSubtract(Translated, PrimaryView.PreViewTranslation)).xy;
+	const float Time = View.GameTime;
+	const float BaseLuma = max(LBALuma(BaseColor), 1e-4);
+
+	// Flat bands: the light averaged around the pixel, so ripples don't break the bands up.
+	float3 Smooth = Display;
+	if (C.Smoothing > 0.0)
+	{
+		Smooth = 2.0 * Display;
+		Smooth += LBAWaterLightAt(Translated, float2(C.Smoothing, 0.0), Display, HeightFog);
+		Smooth += LBAWaterLightAt(Translated, float2(-C.Smoothing, 0.0), Display, HeightFog);
+		Smooth += LBAWaterLightAt(Translated, float2(0.0, C.Smoothing), Display, HeightFog);
+		Smooth += LBAWaterLightAt(Translated, float2(0.0, -C.Smoothing), Display, HeightFog);
+		Smooth /= 6.0;
+	}
+	float Contrasted;
+	const float Light = LBALuma(Smooth) / BaseLuma;
+	const float Row = LBALightToRow(Light / S.NeutralLight, S, HighlightRange, Contrasted);
+
+	// The original's sea texture, drifting and bent by the waves; each texel keeps its palette color's shade path.
+	uint TexIndex = Index;
+	uint Width, Height;
+	SeaTexture.GetDimensions(Width, Height);
+	if (Width >= 16)
+	{
+		const float2 Texels = (P + C.Drift * Time + WorldNormal.xy * C.Wobble) / max(C.TileSize, 1.0) * float(Width);
+		const int2 Texel = LBASeaTexel(Texels, int(Width), C);
+		TexIndex = LBANearestPaletteIndex(Lut, SeaTexture.Load(int3(Texel, 0)).rgb);
+	}
+	float3 Color = LBAShadeColor(Shades, TexIndex, uint(round(Row)));
+
+	// Light color and split toning, like the other surfaces.
+	float3 Tint = (Smooth + 0.002) / (BaseColor * Light + 0.002);
+	Tint = clamp(Tint / max(LBALuma(Tint), 1e-4), 0.0, 4.0);
+	Color *= lerp(1.0, Tint, S.LightTint);
+	Color *= LBASplitTone(S.ShadowTint, (1.0 - Contrasted) * S.ShadowTintAmount);
+	Color *= LBASplitTone(S.HighlightTint, (Contrasted - 1.0) * S.HighlightTintAmount);
+
+	// Foam and sparkles: the palette color nearest to white at the level's foam brightness (grey under the storm).
+	const float3 White = LBAShadeColor(Shades, LBANearestPaletteIndex(Lut, saturate(C.FoamBrightness).xxx), LBA_PALETTE_ROW);
+	if (LBALuma(Display) > C.SparkleLight * LBALuma(Smooth))
+	{
+		Color = White;
+	}
+	if (C.FoamWidth > 0.0 && LBAFoam(LBAWaterContactDistance(Translated, C.FoamWidth), P, Time, C) > 0.5)
+	{
+		Color = White;
+	}
+	return Color;
+}
+
 float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor, float3 BaseColor, float Depth, float Stencil,
-	Texture3D Lut, Texture2D Shades,
+	float ShadingModel, float3 WorldNormal, Texture3D Lut, Texture2D Shades, Texture2D SeaTexture,
 	Texture3D DitherTexture, SamplerState DitherSampler, Texture2D DitherRamp, SamplerState DitherRampSampler,
 	Texture2D HalftoneRamp, SamplerState HalftoneRampSampler,
 	FLBAPaletteShadingSettings S)
 {
+	const bool bWater = abs(ShadingModel - LBA_SHADINGMODEL_WATER) < 0.5 && any(S.WaterColor > 0.0);
+	float HighlightRange = 0.0;
+	if (bWater)
+	{
+		// Open water shows the sea's color, like the original's unshaded sea texture: the contrast curve turns around it.
+		HighlightRange = max(S.WaterHighlightRange, 0.01);
+		BaseColor = S.WaterColor;
+		S.NeutralLight *= S.WaterNeutralLight;
+		S.ContrastPivot = 1.0;
+		S.LightTint = S.WaterLightTint;
+		S.Strength *= S.WaterStrength;
+	}
+
 	// The sky and unlit surfaces (black base color in the G-buffer) already show palette colors as they are, and
 	// fog themselves.
 	BRANCH
@@ -294,19 +483,26 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 		const float3 Unfogged = S.DebugView > 3.5 ? Display : lerp(Display, S.FogColor, Fog);
 		return LBAGrade(lerp(Unfogged, Unfogged * HeightFog.a + HeightFog.rgb, S.HeightFogAmount * (S.DebugView > 3.5 ? 0.0 : 1.0)), S);
 	}
+	BRANCH
+	if (bWater && S.DebugView < 0.5)
+	{
+		const float3 Cartoon = LBACartoonWater(ViewportUV, Depth, Display, HeightFog, BaseColor, WorldNormal,
+			LBANearestPaletteIndex(Lut, BaseColor), Lut, Shades, SeaTexture, HighlightRange, S);
+		const float3 CartoonShaded = lerp(lerp(Display, Cartoon, S.Strength), S.FogColor, Fog);
+		return LBAGrade(lerp(CartoonShaded, CartoonShaded * HeightFog.a + HeightFog.rgb, S.HeightFogAmount), S);
+	}
+
 	const float Y = LBALuma(Display);
 	const uint Index = LBANearestPaletteIndex(Lut, BaseColor);
 
-	// Light reaching the surface, relative to the light that shows its base color as it is. Like the original's
-	// Gouraud intensity, it picks the shade row linearly: no light is row 0, the neutral light the normal row
-	// (ShadeNormalLevel, 12 in every island palette), and the last rows are highlights. LightContrast first bends it
-	// around the pivot, so sunlit ground keeps its row while shade gets darker and sun-facing slopes brighter.
+	// Light reaching the surface, relative to the light that shows its base color as it is, picks the shade row (water
+	// only gets here in the debug views).
 	const float BaseLuma = LBALuma(BaseColor);
 	const float Light = Y / max(BaseLuma, 1e-4);
 	const float Ratio = Light / S.NeutralLight;
 	const float Pivot = max(S.ContrastPivot, 0.05);
-	const float Contrasted = Pivot * pow(max(Ratio, 0.0) / Pivot, S.LightContrast);
-	const float Row = clamp(S.NeutralRow * (1.0 + (Contrasted - 1.0) * S.ShadeContrast), 0.0, LBA_SHADE_ROWS - 1.0);
+	float Contrasted;
+	const float Row = LBALightToRow(Ratio, S, HighlightRange, Contrasted);
 
 	// The two rows to mix are RowStep apart, counted from the neutral row so the unshaded color stays reachable.
 	const float Step = max(S.RowStep, 1.0);

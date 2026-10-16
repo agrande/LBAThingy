@@ -137,6 +137,18 @@ public:
 		return Cast<T>(SpawnGeneratedActor(World, T::StaticClass(), Transform, Label, Folder));
 	}
 
+	/**
+	 * Same, through the editor's actor factory for the class (falls back to a plain spawn), so the actor gets the
+	 * defaults it would get when dragged into a level (water bodies: materials, waves, ocean filling its zone).
+	 */
+	AActor* SpawnGeneratedActorWithFactory(UWorld* World, UClass* Class, const FTransform& Transform, const FString& Label, const FName& Folder);
+
+	template <typename T>
+	T* SpawnGeneratedActorWithFactory(UWorld* World, const FTransform& Transform, const FString& Label, const FName& Folder)
+	{
+		return Cast<T>(SpawnGeneratedActorWithFactory(World, T::StaticClass(), Transform, Label, Folder));
+	}
+
 	// Progress / reporting ---------------------------------------------------------------------------
 
 	void SetSlowTask(FScopedSlowTask* InTask) { SlowTask = InTask; }
@@ -152,6 +164,7 @@ private:
 	bool LoadPalette(FString& OutError);
 	void LoadCommunityNames();
 	bool SavePackageFor(UObject* Asset);
+	void TagGeneratedActor(AActor* Actor, const FString& Label, const FName& Folder);
 
 	const ULBA2ImporterSettings& Settings;
 	FString DataDirectory;

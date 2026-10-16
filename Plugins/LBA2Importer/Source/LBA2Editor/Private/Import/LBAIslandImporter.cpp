@@ -16,6 +16,7 @@
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBAWater.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBATypes.h"
@@ -335,6 +336,8 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 	const float Scale = Context.GetScale();
 
 	FBox IslandBounds(ForceInit);
+	TArray<AActor*> GroundActors;
+	FVector HighestGround(0.0, 0.0, -UE_BIG_NUMBER);
 	for (int32 Index = 0; Index < Island.Sections.Num(); ++Index)
 	{
 		const FLBAIslandSection& Section = Island.Sections[Index];
@@ -342,6 +345,14 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		const FVector Location = LBA::ToUnreal(Origin.X, Origin.Y, Origin.Z, Scale);
 		IslandBounds += Location;
 		IslandBounds += LBA::ToUnreal(Origin.X + LBA::IslandCubeSize, 0, Origin.Z + LBA::IslandCubeSize, Scale);
+		for (int32 Z = 0; Z < 65; ++Z)
+		{
+			for (int32 X = 0; X < 65; ++X)
+			{
+				const FVector Vertex = LBA::ToUnreal(Origin.X + X * LBA::BrickSizeXZ, Section.GetHeight(X, Z), Origin.Z + Z * LBA::BrickSizeXZ, Scale);
+				HighestGround = Vertex.Z > HighestGround.Z ? Vertex : HighestGround;
+			}
+		}
 
 		if (UStaticMesh* Mesh = GroundMeshes.IsValidIndex(Index) ? GroundMeshes[Index] : nullptr)
 		{
@@ -349,6 +360,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 				FString::Printf(TEXT("Ground_%02d_%02d"), Section.CubeX, Section.CubeZ), TEXT("Ground")))
 			{
 				Actor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
+				GroundActors.Add(Actor);
 			}
 		}
 
@@ -427,7 +439,26 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		}
 		const float BrightMax = FMath::Max3(Bright.R, Bright.G, Bright.B);
 		Preset.CloudColor = FLinearColor(Bright.R, Bright.G, Bright.B) * (0.98f / FMath::Max(BrightMax, 1e-4f));
+
+		// The sea's main color: its most common palette color.
+		int32 Counts[256] = {};
+		for (int32 Y = 0; Y < 128; ++Y)
+		{
+			for (int32 X = 0; X < 128; ++X)
+			{
+				++Counts[SkySea[Y * 256 + X]];
+			}
+		}
+		int32 SeaIndex = 0;
+		for (int32 Index = 1; Index < 256; ++Index)
+		{
+			SeaIndex = Counts[Index] > Counts[SeaIndex] ? Index : SeaIndex;
+		}
+		Preset.SeaColor = FLinearColor::FromSRGBColor(Xpl->Palette[SeaIndex]);
+		Preset.SeaTexture = SeaTexture;
+		Preset.SeaTileSize = 8192.f * Scale;
 	}
+	Preset.bWater &= Preset.SeaColor.GetLuminance() > 0.f;
 
 	// Modern fog: the original drew everything crisp up to its fog distance and nothing beyond; the height fog keeps
 	// that range clear and lets you see the rest of the island fading into the palette's fog color. Overcast skies
@@ -444,16 +475,28 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 	UE_LOG(LogLBA2, Display, TEXT("LBA2 environment %s: fog %.0f-%.0f cm, visibility %.0f cm, sky %s, clouds %s"), *Island.Name,
 		Preset.FogStart, Preset.FogEnd, Preset.FogVisibility, *Preset.SkyColor.ToString(), *Preset.CloudColor.ToString());
 
-	// Sea: a large opaque plane at LBA height 0 with the island's sea texture, plus an invisible floor just below so
-	// the player can wade.
+	// Sea: Unreal water on Twinsun, else a large opaque plane at LBA height 0 with the island's sea texture, like the
+	// original's; and an invisible floor just below so the player can wade.
+	const FRotator SunRotation = LBAEnvironment::SunRotationFromLbaAngles(FirstSection.LightAlpha, FirstSection.LightBeta);
+	const FBox SeaBounds = IslandBounds.ExpandBy(FVector(LBA::IslandCubeSize * Scale * 6.0, LBA::IslandCubeSize * Scale * 6.0, 0.0));
+	if (Preset.bWater)
+	{
+		FLBAWaterSettings Water;
+		Water.Bounds = SeaBounds;
+		Water.LandPoint = FVector2D(HighestGround);
+		Water.MaterialFolder = MaterialFolder;
+		Water.Name = Island.Name;
+		Water.TerrainActors = GroundActors;
+		const FLBAEnvironmentLights Lights = LBAEnvironment::ComputeLights(Preset, SunRotation, Xpl ? Xpl->ShadeNormalLevel : 12);
+		Preset.WaterNeutralLight = LBAWater::Spawn(Context, World, Water, Preset, Lights);
+	}
 	if (UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))
 	{
-		const FBox SeaBounds = IslandBounds.ExpandBy(FVector(LBA::IslandCubeSize * Scale * 6.0, LBA::IslandCubeSize * Scale * 6.0, 0.0));
 		const FVector Center = SeaBounds.GetCenter();
 		const FVector Size = SeaBounds.GetSize();
 		const FVector PlaneScale(Size.X / 100.0, Size.Y / 100.0, 1.0);
 
-		UMaterialInstanceConstant* WaterMaterial = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(MaterialFolder,
+		UMaterialInstanceConstant* WaterMaterial = Preset.bWater ? nullptr : Context.CreateOrReuseAsset<UMaterialInstanceConstant>(MaterialFolder,
 			FString::Printf(TEXT("MI_%s_Water"), *Island.Name));
 		if (WaterMaterial)
 		{
@@ -472,8 +515,9 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 			Context.MarkForSave(WaterMaterial);
 		}
 
-		if (AStaticMeshActor* Sea = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform(FRotator::ZeroRotator, FVector(Center.X, Center.Y, 0.0), PlaneScale),
-			TEXT("Sea"), TEXT("Environment")))
+		AStaticMeshActor* Sea = WaterMaterial ? Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform(FRotator::ZeroRotator, FVector(Center.X, Center.Y, 0.0), PlaneScale),
+			TEXT("Sea"), TEXT("Environment")) : nullptr;
+		if (Sea)
 		{
 			UStaticMeshComponent* Component = Sea->GetStaticMeshComponent();
 			Component->SetStaticMesh(Plane);
@@ -494,7 +538,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		}
 	}
 
-	LBAEnvironment::Spawn(Context, World, Preset, LBAEnvironment::SunRotationFromLbaAngles(FirstSection.LightAlpha, FirstSection.LightBeta));
+	LBAEnvironment::Spawn(Context, World, Preset, SunRotation);
 
 	// Player start: highest ground point of the section closest to the island center.
 	{
