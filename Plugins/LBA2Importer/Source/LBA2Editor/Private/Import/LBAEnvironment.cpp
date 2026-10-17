@@ -77,7 +77,7 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::ForIsland(const FString& IslandName
 		Preset.bWater = true;
 		Preset.bStormSea = Preset.bStormClouds;
 		// The original's storm sea is darker than its texture (measured on Citadel's harbour).
-		Preset.SeaLight = Preset.bStormSea ? 0.8f : 1.f;
+		Preset.SeaLight = Preset.bStormSea ? 0.7f : 0.8f;
 	}
 	if (Name == TEXT("EMERAUDE") || Name == TEXT("MOON"))
 	{
