@@ -81,6 +81,373 @@ namespace
 		}
 		return 0;
 	}
+
+	/** What the ground mesh makes of a terrain triangle. */
+	enum class EGroundTriangle : uint8
+	{
+		None,
+		Land,
+		/** Liquid at sea level: left to the level's water. */
+		Water,
+	};
+
+	EGroundTriangle ClassifyGroundTriangle(const FLBAIslandSection& Section, int32 X, int32 Z, int32 TriIndex)
+	{
+		const int32 Cell = (Z * CellsPerCube + X) * 2;
+		const FLBAGroundTriangle& Tri = Section.Triangles[Cell + TriIndex];
+		if (!Tri.IsVisible())
+		{
+			return EGroundTriangle::None;
+		}
+		FIntPoint Corners[3];
+		FLBAIsland::GetTriangleCorners(Section.Triangles[Cell].Sens(), TriIndex, Corners);
+		bool bSeaLevel = true;
+		for (const FIntPoint& Corner : Corners)
+		{
+			bSeaLevel &= Section.GetHeight(X + Corner.X, Z + Corner.Y) == 0;
+		}
+		return bSeaLevel && Tri.CodeJeu() != 0 ? EGroundTriangle::Water : EGroundTriangle::Land;
+	}
+
+	/** Douglas-Peucker on Points[First..Last] (indices modulo Num): marks the points to keep. */
+	void SimplifyPolyline(const TArray<FVector2D>& Points, int32 First, int32 Last, double Tolerance, TArray<bool>& Keep)
+	{
+		const int32 Num = Points.Num();
+		const FVector2D A = Points[First % Num];
+		const FVector2D B = Points[Last % Num];
+		const FVector2D AB = B - A;
+		const double Length = AB.Size();
+		double Farthest = 0.0;
+		int32 FarthestIndex = INDEX_NONE;
+		for (int32 Index = First + 1; Index < Last; ++Index)
+		{
+			const FVector2D AP = Points[Index % Num] - A;
+			const double Distance = Length > 0.0 ? FMath::Abs(FVector2D::CrossProduct(AB, AP)) / Length : AP.Size();
+			if (Distance > Farthest)
+			{
+				Farthest = Distance;
+				FarthestIndex = Index;
+			}
+		}
+		if (FarthestIndex != INDEX_NONE && Farthest > Tolerance)
+		{
+			Keep[FarthestIndex % Num] = true;
+			SimplifyPolyline(Points, First, FarthestIndex, Tolerance, Keep);
+			SimplifyPolyline(Points, FarthestIndex, Last, Tolerance, Keep);
+		}
+	}
+
+	bool IsSimplePolygon(const TArray<FVector2D>& Points)
+	{
+		const int32 Num = Points.Num();
+		for (int32 I = 0; I < Num; ++I)
+		{
+			const FVector2D& A = Points[I];
+			const FVector2D& B = Points[(I + 1) % Num];
+			// Segments sharing a vertex with this one meet it there, and only there when the polygon is simple.
+			for (int32 J = I + 2; J < Num; ++J)
+			{
+				if (I == 0 && J == Num - 1)
+				{
+					continue;
+				}
+				FVector Intersection;
+				if (FMath::SegmentIntersection2D(FVector(A, 0.0), FVector(B, 0.0), FVector(Points[J], 0.0), FVector(Points[(J + 1) % Num], 0.0), Intersection))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Coastline of the island's largest land mass (world cm, closed loop), for Unreal's ocean, which leaves its inside
+	 * dry: the outline of the ground the importer keeps, a cell inside it so the water still laps the shores. Land at
+	 * sea level (dry riverbeds, flats) stays out of the sea, which would otherwise cover it. Sea-level water enclosed by
+	 * land (basins, ponds) stays wet through a narrow channel to the sea; other holes in the ground count as land.
+	 * Empty when the island has no land.
+	 */
+	TArray<FVector2D> TraceCoastline(const FLBAIsland& Island, double Spacing)
+	{
+		if (Island.Sections.IsEmpty())
+		{
+			return {};
+		}
+		FIntRect Cubes(MAX_int32, MAX_int32, MIN_int32, MIN_int32);
+		for (const FLBAIslandSection& Section : Island.Sections)
+		{
+			Cubes.Include(FIntPoint(Section.CubeX, Section.CubeZ));
+		}
+		// Global cells, with a margin of open sea all around.
+		constexpr int32 Pad = 2;
+		const FIntPoint Origin = Cubes.Min * CellsPerCube - FIntPoint(Pad);
+		const int32 W = (Cubes.Width() + 1) * CellsPerCube + 2 * Pad;
+		const int32 H = (Cubes.Height() + 1) * CellsPerCube + 2 * Pad;
+		TArray<bool> Land;
+		TArray<bool> Water;
+		Land.SetNumZeroed(W * H);
+		Water.SetNumZeroed(W * H);
+		for (const FLBAIslandSection& Section : Island.Sections)
+		{
+			for (int32 Z = 0; Z < CellsPerCube; ++Z)
+			{
+				for (int32 X = 0; X < CellsPerCube; ++X)
+				{
+					const int32 Index = (Section.CubeZ * CellsPerCube + Z - Origin.Y) * W + Section.CubeX * CellsPerCube + X - Origin.X;
+					for (int32 TriIndex = 0; TriIndex < 2; ++TriIndex)
+					{
+						const EGroundTriangle Type = ClassifyGroundTriangle(Section, X, Z, TriIndex);
+						Land[Index] |= Type == EGroundTriangle::Land;
+						Water[Index] |= Type == EGroundTriangle::Water;
+					}
+				}
+			}
+		}
+
+		// 4-connected flood fill from Seeds through the cells Passable accepts, marking Reached; returns the cells reached.
+		const int32 Offsets[4] = { 1, -1, W, -W };
+		auto Flood = [&](TArray<int32> Seeds, TFunctionRef<bool(int32)> Passable, TArray<bool>& Reached)
+		{
+			TArray<int32> Cells;
+			for (int32 Seed : Seeds)
+			{
+				if (!Reached[Seed] && Passable(Seed))
+				{
+					Reached[Seed] = true;
+					Cells.Add(Seed);
+				}
+			}
+			for (int32 Next = 0; Next < Cells.Num(); ++Next)
+			{
+				const int32 Cell = Cells[Next];
+				const int32 X = Cell % W;
+				for (int32 Dir = 0; Dir < 4; ++Dir)
+				{
+					const int32 Neighbor = Cell + Offsets[Dir];
+					if ((Dir == 0 && X == W - 1) || (Dir == 1 && X == 0) || Neighbor < 0 || Neighbor >= W * H)
+					{
+						continue;
+					}
+					if (!Reached[Neighbor] && Passable(Neighbor))
+					{
+						Reached[Neighbor] = true;
+						Cells.Add(Neighbor);
+					}
+				}
+			}
+			return Cells;
+		};
+		auto FloodOutside = [&](const TArray<bool>& Solid)
+		{
+			TArray<int32> Border;
+			for (int32 X = 0; X < W; ++X)
+			{
+				Border.Add(X);
+				Border.Add((H - 1) * W + X);
+			}
+			for (int32 Y = 0; Y < H; ++Y)
+			{
+				Border.Add(Y * W);
+				Border.Add(Y * W + W - 1);
+			}
+			TArray<bool> Outside;
+			Outside.SetNumZeroed(W * H);
+			Flood(Border, [&Solid](int32 Cell) { return !Solid[Cell]; }, Outside);
+			return Outside;
+		};
+
+		// Holes in the land: water ones get a channel to the sea (the shortest way through land), others are filled.
+		TArray<bool> Outside = FloodOutside(Land);
+		for (int32 Start = 0; Start < W * H; ++Start)
+		{
+			if (Land[Start] || Outside[Start])
+			{
+				continue;
+			}
+			TArray<bool> InHole;
+			InHole.SetNumZeroed(W * H);
+			const TArray<int32> Hole = Flood({ Start }, [&Land](int32 Cell) { return !Land[Cell]; }, InHole);
+			if (!Hole.ContainsByPredicate([&Water](int32 Cell) { return Water[Cell]; }))
+			{
+				for (int32 Cell : Hole)
+				{
+					Land[Cell] = true;
+				}
+				continue;
+			}
+			TArray<int32> Parent;
+			Parent.Init(INDEX_NONE, W * H);
+			TArray<bool> Visited = InHole;
+			TArray<int32> Queue = Hole;
+			int32 Exit = INDEX_NONE;
+			for (int32 Next = 0; Next < Queue.Num() && Exit == INDEX_NONE; ++Next)
+			{
+				const int32 Cell = Queue[Next];
+				const int32 X = Cell % W;
+				for (int32 Dir = 0; Dir < 4 && Exit == INDEX_NONE; ++Dir)
+				{
+					const int32 Neighbor = Cell + Offsets[Dir];
+					if ((Dir == 0 && X == W - 1) || (Dir == 1 && X == 0) || Neighbor < 0 || Neighbor >= W * H || Visited[Neighbor])
+					{
+						continue;
+					}
+					Visited[Neighbor] = true;
+					Parent[Neighbor] = Cell;
+					Exit = Outside[Neighbor] ? Neighbor : INDEX_NONE;
+					Queue.Add(Neighbor);
+				}
+			}
+			for (int32 Cell = Exit; Cell != INDEX_NONE; Cell = Parent[Cell])
+			{
+				Land[Cell] = false;
+			}
+			for (int32 Cell : Hole)
+			{
+				Outside[Cell] = true;
+			}
+			Outside = FloodOutside(Land);
+		}
+
+		// A cell inside the shores.
+		TArray<bool> Inner;
+		Inner.SetNumZeroed(W * H);
+		for (int32 Y = 1; Y < H - 1; ++Y)
+		{
+			for (int32 X = 1; X < W - 1; ++X)
+			{
+				bool bInner = true;
+				for (int32 DY = -1; DY <= 1; ++DY)
+				{
+					for (int32 DX = -1; DX <= 1; ++DX)
+					{
+						bInner &= Land[(Y + DY) * W + X + DX];
+					}
+				}
+				Inner[Y * W + X] = bInner;
+			}
+		}
+
+		// The largest land mass, without holes nor cells touching only diagonally (the outline must be a simple
+		// polygon): drop one cell of each diagonal pair until there are none.
+		TArray<bool> Mass;
+		for (bool bChanged = true; bChanged;)
+		{
+			TArray<bool> Labeled;
+			Labeled.SetNumZeroed(W * H);
+			TArray<int32> Largest;
+			for (int32 Start = 0; Start < W * H; ++Start)
+			{
+				if (Inner[Start] && !Labeled[Start])
+				{
+					TArray<int32> Cells = Flood({ Start }, [&Inner](int32 Cell) { return Inner[Cell]; }, Labeled);
+					if (Cells.Num() > Largest.Num())
+				{
+					Largest = MoveTemp(Cells);
+				}
+				}
+			}
+			if (Largest.IsEmpty())
+			{
+				return {};
+			}
+			Mass.Init(false, W * H);
+			for (int32 Cell : Largest)
+			{
+				Mass[Cell] = true;
+			}
+			const TArray<bool> Around = FloodOutside(Mass);
+			bChanged = false;
+			for (int32 Cell = 0; Cell < W * H; ++Cell)
+			{
+				Mass[Cell] = !Around[Cell];
+			}
+			for (int32 Y = 0; Y + 1 < H; ++Y)
+			{
+				for (int32 X = 0; X + 1 < W; ++X)
+				{
+					const bool A = Mass[Y * W + X];
+					const bool B = Mass[Y * W + X + 1];
+					const bool C = Mass[(Y + 1) * W + X];
+					const bool D = Mass[(Y + 1) * W + X + 1];
+					if (A == D && B == C && A != B)
+					{
+						Mass[A ? Y * W + X : Y * W + X + 1] = false;
+						bChanged = true;
+					}
+				}
+			}
+			Inner = Mass;
+		}
+
+		// Outline: the cell edges with the land mass on their left, chained (each corner starts exactly one).
+		TMap<FIntPoint, FIntPoint> Edges;
+		for (int32 Y = 0; Y < H; ++Y)
+		{
+			for (int32 X = 0; X < W; ++X)
+			{
+				if (!Mass[Y * W + X])
+				{
+					continue;
+				}
+				if (!Mass[(Y - 1) * W + X])
+				{
+					Edges.Add(FIntPoint(X, Y), FIntPoint(X + 1, Y));
+				}
+				if (!Mass[Y * W + X + 1])
+				{
+					Edges.Add(FIntPoint(X + 1, Y), FIntPoint(X + 1, Y + 1));
+				}
+				if (!Mass[(Y + 1) * W + X])
+				{
+					Edges.Add(FIntPoint(X + 1, Y + 1), FIntPoint(X, Y + 1));
+				}
+				if (!Mass[Y * W + X - 1])
+				{
+					Edges.Add(FIntPoint(X, Y + 1), FIntPoint(X, Y));
+				}
+			}
+		}
+		TArray<FVector2D> Outline;
+		const FIntPoint First = Edges.CreateConstIterator().Key();
+		FIntPoint Corner = First;
+		do
+		{
+			const FIntPoint* Next = Edges.Find(Corner);
+			if (!Next)
+			{
+				return {};
+			}
+			Outline.Add(FVector2D(Origin + Corner) * Spacing);
+			Corner = *Next;
+		}
+		while (Corner != First && Outline.Num() <= Edges.Num());
+
+		// Fewer points: within a third of a cell of the outline, unless that makes it cross itself.
+		const int32 Num = Outline.Num();
+		int32 Opposite = 0;
+		for (int32 Index = 1; Index < Num; ++Index)
+		{
+			Opposite = FVector2D::DistSquared(Outline[Index], Outline[0]) > FVector2D::DistSquared(Outline[Opposite], Outline[0]) ? Index : Opposite;
+		}
+		TArray<bool> Keep;
+		Keep.Init(false, Num);
+		Keep[0] = Keep[Opposite] = true;
+		SimplifyPolyline(Outline, 0, Opposite, Spacing / 3.0, Keep);
+		SimplifyPolyline(Outline, Opposite, Num, Spacing / 3.0, Keep);
+		TArray<FVector2D> Simplified;
+		for (int32 Index = 0; Index < Num; ++Index)
+		{
+			if (Keep[Index])
+			{
+				Simplified.Add(Outline[Index]);
+			}
+		}
+		const bool bSimple = IsSimplePolygon(Simplified);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2 coastline %s: %d points (%d before simplifying%s)"), *Island.Name, bSimple ? Simplified.Num() : Num, Num,
+			bSimple ? TEXT("") : TEXT(", which crossed itself"));
+		return bSimple ? Simplified : Outline;
+	}
 }
 
 namespace
@@ -338,35 +705,28 @@ UStaticMesh* FLBAIslandImporter::BuildGroundMesh(const FLBAIsland& Island, const
 			const int32 Sens = Section.Triangles[Cell].Sens();
 			for (int32 TriIndex = 0; TriIndex < 2; ++TriIndex)
 			{
-				const FLBAGroundTriangle& Tri = Section.Triangles[Cell + TriIndex];
-				if (!Tri.IsVisible())
+				// Liquid at sea level is replaced by the level's water.
+				if (ClassifyGroundTriangle(Section, X, Z, TriIndex) != EGroundTriangle::Land)
 				{
 					continue;
 				}
+				const FLBAGroundTriangle& Tri = Section.Triangles[Cell + TriIndex];
 
 				FIntPoint Corners[3];
 				FLBAIsland::GetTriangleCorners(Sens, TriIndex, Corners);
 
-				bool bSeaLevel = true;
 				FLBAVertex V[3];
 				for (int32 K = 0; K < 3; ++K)
 				{
 					const int32 VX = X + Corners[K].X;
 					const int32 VZ = Z + Corners[K].Y;
 					const int32 Height = Section.GetHeight(VX, VZ);
-					bSeaLevel &= Height == 0;
 					V[K].Position = FVector3f(LBA::ToUnreal(VX * LBA::BrickSizeXZ, Height, VZ * LBA::BrickSizeXZ, Scale));
 					V[K].Normal = VertexNormal(VX, VZ);
 					// Vertex alpha: baked shade row / 24, so the unshaded row 12 is 0.5.
 					const float Light = Section.GetShadeRow(VX, VZ) / 24.f;
 					const FColor Albedo = Tri.IsColored() ? Palette[Tri.Bank() * 16 + 11] : FColor::Black;
 					V[K].Color = LBABodyConverter::ToVertexColor(Albedo, Light);
-				}
-
-				// Liquid at sea level is replaced by the level's water plane.
-				if (bSeaLevel && Tri.CodeJeu() != 0)
-				{
-					continue;
 				}
 
 				int32 Target = ColoredSection;
@@ -589,6 +949,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 
 		FLBAWaterSettings Water;
 		Water.Bounds = SeaBounds;
+		Water.Coastline = TraceCoastline(Island, Spacing);
 		Water.LandPoint = FVector2D(HighestGround);
 		Water.MaterialFolder = MaterialFolder;
 		Water.Name = Island.Name;

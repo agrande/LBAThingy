@@ -88,6 +88,15 @@ public:
 		return Cast<T>(CreateOrReuseAsset(T::StaticClass(), Folder, Name, bOutExisted));
 	}
 
+	/** Copies an asset (e.g. an engine one to derive from), replacing any asset already at that path. */
+	UObject* DuplicateAsset(UObject* Source, const FString& Folder, const FString& Name);
+
+	template <typename T>
+	T* DuplicateAsset(T* Source, const FString& Folder, const FString& Name)
+	{
+		return Cast<T>(DuplicateAsset(static_cast<UObject*>(Source), Folder, Name));
+	}
+
 	/** Loads an existing asset created by an earlier step or import run. */
 	UObject* FindAsset(UClass* Class, const FString& Folder, const FString& Name) const;
 

@@ -133,7 +133,13 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
 - **Sea**: on Twinsun (Citabau, Citadel, the desert) Unreal's water (Water plugin): a water zone over the
   island and an ocean filling it, out to the horizon, with Epic's ocean material tinted towards the
   original sea's color under the island's lights (`MI_<Island>_Ocean`), and a calm swell or storm
-  waves (`<Root>/Rendering/Water/Waves_LBA_Calm|Storm`, kept on reimport). The terrain renders into the
+  waves (`<Root>/Rendering/Water/Waves_LBA_Calm|Storm`, kept on reimport). The ocean's coastline is the
+  outline of the island's largest land mass, traced from the ground the importer keeps, a cell inside it:
+  land at sea level (the desert's dry riverbeds) stays dry, and sea-level water enclosed by land keeps a
+  channel to the sea. Unreal's water mesh only leaves out whole tiles (4 m here), and its material only
+  turns see-through where the zone has no water, which the cartoon water would still paint, so the
+  ocean uses a copy of the Water plugin's material chain that clips there (`Rendering/Water/M_LBA_Water`,
+  `MI_LBA_Water`, `MI_LBA_Water_Ocean`; the plugin's own depth mask feeds the opacity mask). The terrain renders into the
   zone as the ground (`WaterTerrainComponent`), with a generated seabed (`SM_<Island>_Seabed`) sloping
   down from the shores: a shallow shelf off beaches, deep water right along quays and cliffs, in the
   shores' average color, so beaches get lighter shallows and the water's shore foam and waves see a
@@ -176,7 +182,8 @@ Customizing (material instances in `<Root>/Rendering`, children inherit what the
 | `MI_LBA_Enhanced_<Palette>` | levels using that palette (per island tweaks) | yes, same rule |
 | `MI_LBA_Original_<Palette>`, level `MI_<Level>_<Look>Look` (fog, contrast pivot) | generated | no |
 | level `MI_<Level>_Clouds` (child of Unreal's `m_SimpleVolumetricCloud_Inst`) | generated | no |
-| island `MI_<Island>_Ocean` / `_OceanFar` (children of the Water plugin's ocean materials) | generated | no |
+| island `MI_<Island>_Ocean` / `_OceanFar` (children of the clipped ocean material / the plugin's far mesh material) | generated | no |
+| `Water/M_LBA_Water`, `MI_LBA_Water`, `MI_LBA_Water_Ocean` (copies of the Water plugin's ocean chain, clipped) | every water level | yes, unless a newer importer changes them |
 | `Water/Waves_LBA_Calm`, `Water/Waves_LBA_Storm` (Gerstner wave assets) | every water level | yes, unless a newer importer changes their defaults |
 
 Main parameters: *LightContrast*, *RowStep*, *Exposure*, *Contrast*, *Saturation*, *ShadowTint* /

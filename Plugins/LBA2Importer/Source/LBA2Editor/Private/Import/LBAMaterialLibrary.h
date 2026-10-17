@@ -47,6 +47,8 @@ namespace LBAMaterials
 	bool IsGeneratedVersion(const UMaterial* Material, int32 Version);
 	/** Clears the graph and stamps the version. */
 	void BeginRebuild(UMaterial* Material, int32 Version);
+	/** Adds the version stamp to a graph built some other way. */
+	void AddVersionStamp(UMaterial* Material, int32 Version);
 	/** Sets usages, recompiles and marks the material for saving. */
 	UMaterial* EndRebuild(FLBAImportContext& Context, UMaterial* Material);
 }

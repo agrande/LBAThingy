@@ -162,7 +162,11 @@ void LBAMaterials::BeginRebuild(UMaterial* Material, int32 Version)
 	}
 	Material->BlendMode = BLEND_Opaque;
 	Material->MaterialDomain = MD_Surface;
+	AddVersionStamp(Material, Version);
+}
 
+void LBAMaterials::AddVersionStamp(UMaterial* Material, int32 Version)
+{
 	UMaterialExpressionComment* Stamp = NewObject<UMaterialExpressionComment>(Material);
 	Stamp->Text = MakeVersionStamp(Version);
 	Stamp->MaterialExpressionEditorX = -900;

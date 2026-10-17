@@ -249,6 +249,25 @@ UObject* FLBAImportContext::CreateOrReuseAsset(UClass* Class, const FString& Fol
 	return Asset;
 }
 
+UObject* FLBAImportContext::DuplicateAsset(UObject* Source, const FString& Folder, const FString& Name)
+{
+	if (!Source)
+	{
+		return nullptr;
+	}
+	// Take over the path: an existing asset becomes a placeholder with the same name, replaced by the copy.
+	bool bExisted = false;
+	UObject* Existing = CreateOrReuseAsset(Source->GetClass(), Folder, Name, &bExisted);
+	UPackage* Package = Existing->GetPackage();
+	Existing->ClearFlags(RF_Public | RF_Standalone);
+	Existing->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
+	UObject* Copy = StaticDuplicateObject(Source, Package, FName(*Name));
+	Copy->SetFlags(RF_Public | RF_Standalone | RF_Transactional);
+	FAssetRegistryModule::AssetCreated(Copy);
+	MarkForSave(Copy);
+	return Copy;
+}
+
 UObject* FLBAImportContext::FindAsset(UClass* Class, const FString& Folder, const FString& Name) const
 {
 	const FString ObjectPath = Folder / Name + TEXT(".") + Name;

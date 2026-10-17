@@ -13,7 +13,11 @@ struct FLBAWaterSettings
 {
 	/** Area the water zone covers (cm). The ocean goes on beyond it to the horizon (the zone's far mesh). */
 	FBox Bounds = FBox(ForceInit);
-	/** A point on land: Unreal's ocean leaves the inside of its coastline spline dry, here a small loop around it. */
+	/**
+	 * Coastline (world cm, closed loop): Unreal's ocean leaves the inside of its spline dry. Without one, a small loop
+	 * around LandPoint, so the ocean covers everything the terrain doesn't hide.
+	 */
+	TArray<FVector2D> Coastline;
 	FVector2D LandPoint = FVector2D::ZeroVector;
 	/** Folder and name prefix of the level's water material instances. */
 	FString MaterialFolder;
