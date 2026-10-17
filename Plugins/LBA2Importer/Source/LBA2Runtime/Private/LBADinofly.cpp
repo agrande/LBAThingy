@@ -100,6 +100,8 @@ ALBADinofly::ALBADinofly()
 	Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 	Mesh->SetRenderCustomDepth(true);
 	Mesh->SetCustomDepthStencilValue(LBA::MovingObjectStencil);
+	// Lit by the island's character key light too.
+	Mesh->SetLightingChannels(true, true, false);
 
 	Flight = CreateDefaultSubobject<ULBAFlightMovementComponent>(TEXT("Flight"));
 	Flight->SetUpdatedComponent(Collision);

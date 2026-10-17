@@ -28,18 +28,21 @@ namespace
 	 * of sun (measured on Citabau, sun about 30 degrees high): the sky luminance factor that tints the sky towards an
 	 * island's sky divides by this.
 	 */
-	const FLinearColor DefaultSkyPerSunLux(0.031f, 0.037f, 0.064f);
+	const FLinearColor DefaultSkyPerSunLux(0.0081f, 0.0133f, 0.0242f);
 
 	/**
-	 * Measured with lba.Look.Debug 3 on Citabau (two sun / sky light balances, solved for both): the light flat ground
-	 * gets per lux of sun, and per unit of sky light intensity, relative to what the light model predicts. The sun
-	 * gains from Lumen's bounce light; the sky light loses to its dimmer horizon and sky occlusion.
+	 * Measured with lba.Look.Debug 3 on open flat ground of Citabau's harbour (two sky light balances, solved for both):
+	 * the light flat ground gets per lux of sun, and per unit of sky light intensity, relative to what the light model
+	 * predicts. The sun loses to the exposure's lens attenuation; the sky light to its dimmer horizon and occlusion.
 	 */
-	constexpr float MeasuredSunGain = 1.39f;
-	constexpr float MeasuredSkyGain = 0.6f;
+	constexpr float MeasuredSunGain = 0.865f;
+	constexpr float MeasuredSkyGain = 0.88f;
 
-	/** Effective luminance of the gray cubemap of uniform sky lights (measured with lba.Look.Debug 3 on Citadel). */
-	constexpr float UniformSkyLuminance = 0.6f;
+	/**
+	 * Effective luminance of the gray cubemap of uniform sky lights, relative to MeasuredSkyGain (measured with
+	 * lba.Look.Debug 3 on Citadel).
+	 */
+	constexpr float UniformSkyLuminance = 0.41f;
 
 	/** Height fog: density halves every 20 m above sea level (FogHeightFalloff in 1/1000 of 1/cm), so the sky clears quickly above the horizon. */
 	constexpr float FogHeightFalloff = 0.5f;
@@ -107,9 +110,11 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::Interior()
 
 FRotator LBAEnvironment::SunRotationFromLbaAngles(int32 Alpha, int32 Beta)
 {
-	// Alpha tilts the light down from the horizon, beta turns it around the vertical axis.
+	// SetLightVector (LIGHT.CPP): the direction towards the light is the inverse rotation of +Z by (alpha, beta), so
+	// (-cos a sin b, sin a, cos a cos b) in LBA space. Alpha is the light's elevation; the light travels along
+	// (cos a sin b, -cos a cos b) horizontally, which is Unreal yaw beta - 90 degrees.
 	const double Elevation = FMath::Clamp(LBA::AngleToDegrees(Alpha & 0xFFF), 15.0, 75.0);
-	return FRotator(-Elevation, -LBA::AngleToDegrees(Beta & 0xFFF), 0.0);
+	return FRotator(-Elevation, LBA::AngleToDegrees(Beta & 0xFFF) - 90.0, 0.0);
 }
 
 namespace
@@ -155,6 +160,10 @@ FLBAEnvironmentLights LBAEnvironment::ComputeLights(const FLBAEnvironmentPreset&
 	Lights.AmbientLight = FMath::Min(Preset.AmbientLight, Lights.GroundLight * Preset.MaxAmbientFraction);
 	Lights.SunIntensity = (Lights.GroundLight - Lights.AmbientLight) * UE_PI / (SinElevation * MeasuredSunGain);
 	Lights.SkyLightIntensity = Lights.AmbientLight / (MeasuredSkyGain * FMath::Max(SkyLuminance, 0.05f));
+	// A surface facing the sun gets SunIntensity * MeasuredSunGain / pi from it; the key light adds the rest.
+	const float SunLightPerNdotL = Lights.SunIntensity * MeasuredSunGain / UE_PI;
+	Lights.CharacterLightIntensity = FMath::Max(Preset.CharacterLight - SunLightPerNdotL, 0.f) * UE_PI / MeasuredSunGain;
+	Lights.CharacterFillIntensity = FMath::Max(Preset.CharacterFill, 0.f) * UE_PI / MeasuredSunGain;
 	return Lights;
 }
 
@@ -174,19 +183,53 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 	const float SkyLightIntensity = Lights.SkyLightIntensity;
 	if (Preset.GroundRow > 0.f)
 	{
-		UE_LOG(LogLBA2, Display, TEXT("LBA2 environment: ground row %.1f, sun pitch %.1f -> sun %.2f lux, sky light %.2f"), Preset.GroundRow, SunRotation.Pitch, SunIntensity, SkyLightIntensity);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2 environment: ground row %.1f, sun pitch %.1f -> sun %.2f lux, sky light %.2f, character key %.2f fill %.2f lux"),
+			Preset.GroundRow, SunRotation.Pitch, SunIntensity, SkyLightIntensity, Lights.CharacterLightIntensity, Lights.CharacterFillIntensity);
 	}
 
 	UDirectionalLightComponent* SunLight = nullptr;
-	if (ADirectionalLight* Sun = Context.SpawnGeneratedActor<ADirectionalLight>(World, FTransform(SunRotation, FVector(0, 0, 2000)), TEXT("Sun"), Folder))
+	if (ADirectionalLight* Sun = Context.SpawnGeneratedActor<ADirectionalLight>(World, FTransform(FVector(0, 0, 2000)), TEXT("Sun"), Folder))
 	{
+		// Set afterwards: a spawn transform would be combined with the light's default 46 degree tilt.
+		Sun->SetActorRotation(SunRotation);
 		SunLight = CastChecked<UDirectionalLightComponent>(Sun->GetLightComponent());
 		SunLight->SetMobility(EComponentMobility::Movable);
 		SunLight->SetIntensity(SunIntensity);
 		SunLight->SetLightColor(Preset.SunColor);
 		SunLight->SetAtmosphereSunLight(Preset.bAtmosphere);
+		// The sun, not the brighter character key light, lights translucency, water and volumetric fog.
+		SunLight->SetForwardShadingPriority(1);
 		SunLight->SetDynamicShadowDistanceMovableLight(20000.f);
 	}
+
+	// Lights of the characters only (lighting channel 1), direct light only: no bounce, no fog, no atmosphere. The key
+	// light makes their lit side as bright as the original's, which lights objects with N.L alone; the fill light,
+	// opposite the sun and tinted like the sky, sets how dark their other side gets.
+	auto SpawnCharacterLight = [&](const TCHAR* Label, const FRotator& Rotation, float Intensity, const FLinearColor& Color, bool bShadows)
+	{
+		if (Preset.GroundRow <= 0.f || Intensity <= 0.f)
+		{
+			return;
+		}
+		if (ADirectionalLight* Actor = Context.SpawnGeneratedActor<ADirectionalLight>(World, FTransform(FVector(0, 0, 2000)), Label, Folder))
+		{
+			Actor->SetActorRotation(Rotation);
+			UDirectionalLightComponent* Light = CastChecked<UDirectionalLightComponent>(Actor->GetLightComponent());
+			Light->SetMobility(EComponentMobility::Movable);
+			Light->SetIntensity(Intensity);
+			Light->SetLightColor(Color);
+			Light->SetAtmosphereSunLight(false);
+			Light->SetLightingChannels(false, true, false);
+			Light->SetIndirectLightingIntensity(0.f);
+			Light->SetVolumetricScatteringIntensity(0.f);
+			Light->SetCastShadows(bShadows);
+			Light->SetDynamicShadowDistanceMovableLight(5000.f);
+		}
+	};
+	const FLinearColor FillColor = bTintedSky ? Preset.SkyColor / FMath::Max(Preset.SkyColor.GetLuminance(), 1e-4f) : SkyLightColor;
+	SpawnCharacterLight(TEXT("CharacterLight"), SunRotation, Lights.CharacterLightIntensity, Preset.SunColor, true);
+	SpawnCharacterLight(TEXT("CharacterFill"), FRotator(SunRotation.Pitch, SunRotation.Yaw + 180.0, 0.0), Lights.CharacterFillIntensity,
+		FillColor, false);
 
 	// The sky light captures the sky (atmosphere and clouds) in real time, or is a uniform gray sky.
 	if (ASkyLight* Sky = Context.SpawnGeneratedActor<ASkyLight>(World, FTransform(FVector(0, 0, 2200)), TEXT("SkyLight"), Folder))

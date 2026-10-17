@@ -725,7 +725,8 @@ void FLBACharacterImporter::BuildGalleryLevel(const TArray<ULBAEntityAsset*>& En
 			Floor->GetStaticMeshComponent()->SetStaticMesh(Plane);
 		}
 	}
-	LBAEnvironment::Spawn(Context, World, FLBAEnvironmentPreset::ForIsland(TEXT("CITABAU")), FRotator(-45, -60, 0));
+	// Citabau's light angles (alpha 356, beta 3411).
+	LBAEnvironment::Spawn(Context, World, FLBAEnvironmentPreset::ForIsland(TEXT("CITABAU")), LBAEnvironment::SunRotationFromLbaAngles(356, 3411));
 	Context.SpawnGeneratedActor<APlayerStart>(World, FTransform(FRotator(0, 0, 0), FVector(-2500, 1200, 120)), TEXT("PlayerStart"), NAME_None);
 	Context.EndLevel(World);
 }

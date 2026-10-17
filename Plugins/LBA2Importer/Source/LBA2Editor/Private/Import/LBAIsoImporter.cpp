@@ -733,7 +733,8 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		}
 	}
-	LBAEnvironment::Spawn(Context, World, FLBAEnvironmentPreset::Interior(), FRotator(-50.0, -135.0, 0.0));
+	// A light from nearly overhead: brick floors get about the neutral light (the interior preset is calibrated for it).
+	LBAEnvironment::Spawn(Context, World, FLBAEnvironmentPreset::Interior(), FRotator(-84.0, 45.0, 0.0));
 
 	// Fallback player start (scenes provide the real hero position): a low floor near the middle of the content.
 	{

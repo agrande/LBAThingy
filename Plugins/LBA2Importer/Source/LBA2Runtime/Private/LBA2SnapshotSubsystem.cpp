@@ -72,6 +72,17 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		bPosesReady = true;
 	}
 
+	FString HeroSpec;
+	if (FParse::Value(FCommandLine::Get(), TEXT("LBA2HeroAt="), HeroSpec, false))
+	{
+		TArray<FString> Parts;
+		HeroSpec.ParseIntoArray(Parts, TEXT(","));
+		if (Parts.Num() >= 3)
+		{
+			HeroAt = FVector(FCString::Atod(*Parts[0]), FCString::Atod(*Parts[1]), FCString::Atod(*Parts[2]));
+		}
+	}
+
 	TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &ULBA2SnapshotSubsystem::Tick));
 }
 
@@ -374,6 +385,22 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 		NewCamera->GetCameraComponent()->bConstrainAspectRatio = false;
 		Camera = NewCamera;
 		PoseStart = -1.0;
+
+		APawn* Pawn = PC->GetPawn();
+		if (HeroAt && Pawn)
+		{
+			// Stand the pawn on the highest surface below the point.
+			FVector Location(HeroAt->X, HeroAt->Y, 100000.0);
+			FHitResult Hit;
+			FCollisionQueryParams Params(TEXT("LBA2HeroAt"), false, Pawn);
+			if (World->LineTraceSingleByChannel(Hit, Location, FVector(HeroAt->X, HeroAt->Y, -100000.0), ECC_Visibility, Params))
+			{
+				Location.Z = Hit.Location.Z + Pawn->GetSimpleCollisionHalfHeight() + 2.0;
+			}
+			Pawn->DisableInput(PC);
+			Pawn->TeleportTo(Location, FRotator(0.0, HeroAt->Z, 0.0), false, true);
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots: hero at %s"), *Pawn->GetActorLocation().ToString());
+		}
 	}
 
 	if (NextPose >= Poses.Num())

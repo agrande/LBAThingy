@@ -30,6 +30,19 @@ struct FLBAEnvironmentPreset
 	bool bOvercast = false;
 	FLinearColor SkyLightColor = FLinearColor::White;
 
+	/**
+	 * Characters (lighting channel 1) also get a key light along the sun, so that together with the sun they receive
+	 * this light per unit of N.L (1 = shows the base color). The original lights objects with 15 shades of N.L only,
+	 * their base color being shade 9: 15/9; a little less, since characters also get the sky light. 0: no key light.
+	 * Calibrated presets only.
+	 */
+	float CharacterLight = 1.f;
+	/**
+	 * Fill light of the characters, from the side opposite the sun (same elevation, no shadows): light added per unit
+	 * of N.L on the faces the sun misses, on top of the sky light. 0: no fill light.
+	 */
+	float CharacterFill = 0.2f;
+
 	/** Island palette (RESS.HQR entry, see FLBAXpl) used by the palette shading post-process. */
 	int32 PaletteEntry = 42;
 	/** Exposure compensation (EV) of the manual exposure. */
@@ -92,6 +105,9 @@ struct FLBAEnvironmentLights
 	/** Sun illuminance (lux) and sky light intensity. */
 	float SunIntensity = 0.f;
 	float SkyLightIntensity = 0.f;
+	/** Illuminance (lux) of the characters' key and fill lights. */
+	float CharacterLightIntensity = 0.f;
+	float CharacterFillIntensity = 0.f;
 	/** Light flat ground receives in the shade, and in the sun (1 = shows its base color). */
 	float AmbientLight = 0.f;
 	float GroundLight = 0.f;

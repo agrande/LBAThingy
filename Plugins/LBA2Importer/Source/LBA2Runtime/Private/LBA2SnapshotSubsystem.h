@@ -10,6 +10,7 @@
  *   -LBA2Shots="x,y,z,pitch,yaw;..."      explicit camera poses (Unreal units/degrees)
  *   -LBA2Shots=hero / dinofly             scripted Twinsen / Dinofly flight test (logs + a shot per step)
  *   -LBA2ShotDir=<folder>                 where to write PNGs (default Saved/LBA2Shots)
+ *   -LBA2HeroAt=x,y,yaw                   with camera poses: stands the player pawn on the ground there first
  * It takes the screenshots once the level has settled, then quits.
  */
 UCLASS()
@@ -49,6 +50,8 @@ private:
 	double Elapsed = 0.0;
 	double PoseStart = 0.0;
 	bool bPosesReady = false;
+	/** -LBA2HeroAt: where the player pawn stands during the camera poses (x, y, yaw). */
+	TOptional<FVector> HeroAt;
 	FTSTicker::FDelegateHandle TickHandle;
 	TWeakObjectPtr<AActor> Camera;
 };

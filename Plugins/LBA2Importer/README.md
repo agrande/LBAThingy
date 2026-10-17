@@ -164,7 +164,9 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
 - **Lights**: islands are lit so that sunlit ground lands on the shade rows the original's baked
   terrain lighting uses (from the island's terrain data), with the sun at the original's angle, and
   ground in the shade keeps about two thirds of that (the original has no cast shadows). The storm is
-  lit evenly by a uniform overcast sky.
+  lit evenly by a uniform overcast sky. Characters (lighting channel 1) also get a key light along the
+  sun, as bright on their lit side as the original's objects (lit by N.L alone), and a shadowless fill
+  light from the other side.
 
 Customizing (material instances in `<Root>/Rendering`, children inherit what they don't override):
 

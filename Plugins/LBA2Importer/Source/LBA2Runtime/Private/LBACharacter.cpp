@@ -67,6 +67,8 @@ ALBACharacter::ALBACharacter()
 	// Moving: the palette shading post-process shades it smoothly rather than with world-anchored dither dots.
 	GetMesh()->SetRenderCustomDepth(true);
 	GetMesh()->SetCustomDepthStencilValue(LBA::MovingObjectStencil);
+	// Lit by the island's character key light too.
+	GetMesh()->SetLightingChannels(true, true, false);
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
