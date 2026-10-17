@@ -49,13 +49,16 @@ namespace
 		/**
 		 * Vertical takeoff: crouch (deepest at 0.3 s), push off at 1.6 s, legs folded into the flying pose at 3.6 s.
 		 * Played from the crouch at TakeoffRate, the push-off meets the flight component's TakeoffDelay (0.6 s).
+		 * Its own wing beats (from 0.6 s, already twice as fast as the flapping cycle) would be frantic at that rate:
+		 * from TakeoffWingsStart the wings play the flapping cycle instead, at about ClimbFlapRate.
 		 */
 		constexpr int32 Takeoff = 340;
 		constexpr float TakeoffStart = 0.3f;
+		constexpr float TakeoffWingsStart = 0.6f;
 		constexpr float TakeoffLiftoff = 1.6f;
 		constexpr float TakeoffEnd = 3.6f;
 		constexpr float TakeoffRate = 2.2f;
-		/** The takeoff's leg folding played backwards brings the legs down while descending to land. */
+		/** The takeoff's leg folding played backwards brings the legs down (legs only) while descending to land. */
 		constexpr int32 LegsDown = -340;
 		/** Height above the ground (cm, from the center) where the legs start coming down. */
 		constexpr float LegsDownHeight = 320.f;
@@ -66,6 +69,11 @@ namespace
 		constexpr int32 Descend = 30;
 		/** The flapping cycle, played in place for hovering too. */
 		constexpr int32 Flap = 218;
+		constexpr float ClimbFlapRate = 1.3f;
+
+		/** Bone branches for layered animations: the wings (bone_16, bone_19 chains) and the legs (bone_08, bone_12). */
+		TArray<FName> WingBones() { return {TEXT("bone_16"), TEXT("bone_19")}; }
+		TArray<FName> LegBones() { return {TEXT("bone_08"), TEXT("bone_12")}; }
 	}
 }
 
@@ -237,6 +245,10 @@ void ALBADinofly::Mount(ALBACharacter* Hero)
 	// Already standing: no landing to play.
 	bWasLanded = Flight->IsLanded();
 	ActionSlot = INDEX_NONE;
+	if (ULBAAnimInstance* Anim = GetLBAAnimInstance())
+	{
+		Anim->StopLBALayer(0.f);
+	}
 	LastYaw = GetActorRotation().Yaw;
 }
 
@@ -388,6 +400,17 @@ void ALBADinofly::PlayAction(int32 AnimType, float StartTime, float EndTime, flo
 	}
 }
 
+void ALBADinofly::PlayLayer(int32 AnimType, const TArray<FName>& Bones, float StartTime, float PlayRate, float BlendTime)
+{
+	const FLBAEntityAnim* Anim = Entity ? Entity->Anims.Find(AnimType) : nullptr;
+	ULBAAnimInstance* Instance = GetLBAAnimInstance();
+	if (Anim && Anim->Sequence && Instance)
+	{
+		const bool bLoop = PlayRate >= 0.f;
+		Instance->PlayLBALayer(Anim->Sequence, Bones, bLoop, Anim->LoopStartTime, BlendTime, PlayRate, StartTime);
+	}
+}
+
 void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 {
 	const bool bLanded = Flight->IsLanded();
@@ -396,46 +419,75 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 	const float YawRate = DeltaSeconds > 0.f ? FRotator::NormalizeAxis(Yaw - LastYaw) / DeltaSeconds : 0.f;
 	LastYaw = Yaw;
 
+	ULBAAnimInstance* Instance = GetLBAAnimInstance();
+	if (!Instance)
+	{
+		return;
+	}
+
 	// One-shot actions, started by the flight state.
 	if (bLanded && !bWasLanded)
 	{
 		// The legs are already down after a descent: start after the swing.
 		PlayAction(DinoflyAnim::Land, ActionSlot == DinoflyAnim::LegsDown ? 0.1f : 0.f, DinoflyAnim::LandEnd, 1.f);
+		Instance->StopLBALayer(0.12f);
 	}
 	else if (Flight->IsTakingOff() && ActionSlot != DinoflyAnim::Takeoff)
 	{
 		PlayAction(DinoflyAnim::Takeoff, DinoflyAnim::TakeoffStart, DinoflyAnim::TakeoffEnd, DinoflyAnim::TakeoffRate);
+		Instance->StopLBALayer(0.12f);
 	}
 	else if (!bLanded && IsHovering() && ActionSlot == INDEX_NONE && Velocity.Z < -150.f
 		&& Flight->GetHeightAboveSurface(DinoflyAnim::LegsDownHeight + 200.f) < DinoflyAnim::LegsDownHeight)
 	{
-		// Coming down near the ground: unfold the legs over the time left before touchdown.
+		// Coming down near the ground: unfold the legs over the time left before touchdown, the wings keep flapping.
 		const float Height = FMath::Max(Flight->GetHeightAboveSurface(DinoflyAnim::LegsDownHeight + 200.f) - CollisionRadius, 1.f);
 		const float TimeLeft = FMath::Max(Height / -Velocity.Z, 0.15f);
 		const float Span = DinoflyAnim::TakeoffEnd - DinoflyAnim::TakeoffLiftoff;
-		PlayAction(DinoflyAnim::LegsDown, DinoflyAnim::TakeoffEnd, DinoflyAnim::TakeoffLiftoff, -Span / TimeLeft);
+		PlayLayer(DinoflyAnim::Takeoff, DinoflyAnim::LegBones(), DinoflyAnim::TakeoffEnd, -Span / TimeLeft, 0.1f);
+		ActionSlot = DinoflyAnim::LegsDown;
+		ActionEndTime = DinoflyAnim::TakeoffLiftoff;
+		ActionRate = -Span / TimeLeft;
 	}
 	bWasLanded = bLanded;
 
-	if (ActionSlot != INDEX_NONE)
+	if (ActionSlot == DinoflyAnim::LegsDown)
 	{
-		ULBAAnimInstance* Instance = GetLBAAnimInstance();
-		const float Time = Instance ? Instance->GetCurrentAnimationTime() : 0.f;
-		const bool bRunning = Instance && !Instance->IsCurrentAnimationFinished()
-			&& (ActionRate >= 0.f ? Time < ActionEndTime : Time > ActionEndTime);
-		if (ActionSlot == DinoflyAnim::LegsDown)
+		// Legs down (a layer over the flight animations): held until the touchdown; climbing again folds them back.
+		if (Velocity.Z > 0.f)
 		{
-			// Legs down: hold the pose until the touchdown; climbing again cancels it.
-			if (!bLanded && Velocity.Z <= 0.f)
+			Instance->StopLBALayer(0.3f);
+			ActionSlot = INDEX_NONE;
+		}
+		else if (Instance->GetLayerTime() <= ActionEndTime)
+		{
+			Instance->SetLayerPlayRate(0.f);
+		}
+	}
+	else if (ActionSlot != INDEX_NONE)
+	{
+		const float Time = Instance->GetCurrentAnimationTime();
+		const bool bRunning = !Instance->IsCurrentAnimationFinished()
+			&& (ActionRate >= 0.f ? Time < ActionEndTime : Time > ActionEndTime);
+		if (ActionSlot == DinoflyAnim::Takeoff)
+		{
+			const FLBAEntityAnim* Flap = Entity ? Entity->Anims.Find(DinoflyAnim::Flap) : nullptr;
+			if (bRunning && Time >= DinoflyAnim::TakeoffWingsStart && !Instance->IsLayerActive() && Flap && Flap->Sequence)
 			{
-				if (!bRunning && Instance)
-				{
-					Instance->SetPlayRate(0.f);
-				}
-				return;
+				// Wings beating at a natural pace, a whole number of beats so they meet the flying pose at the end.
+				const float TimeLeft = (DinoflyAnim::TakeoffEnd - Time) / DinoflyAnim::TakeoffRate;
+				const float Cycle = Flap->Sequence->GetPlayLength() - Flap->LoopStartTime;
+				const float Beats = FMath::Max(1.f, FMath::RoundToFloat(TimeLeft * DinoflyAnim::ClimbFlapRate / Cycle));
+				PlayLayer(DinoflyAnim::Flap, DinoflyAnim::WingBones(), Flap->LoopStartTime, Beats * Cycle / TimeLeft, 0.1f);
+			}
+			else if (!bRunning && Instance->IsLayerActive() && Flap && Flap->Sequence)
+			{
+				// Flying: the flapping cycle carries on from the wings' beat.
+				Instance->PlayLBAAnimation(Flap->Sequence, true, Flap->LoopStartTime, 0.12f, DinoflyAnim::ClimbFlapRate, false, Instance->GetLayerTime());
+				Instance->StopLBALayer(0.12f);
 			}
 		}
-		else if (bRunning)
+		if (bRunning)
 		{
 			return;
 		}
@@ -473,7 +525,7 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 			}
 			else
 			{
-				PlaySlot(DinoflyAnim::Flap, Vertical > 100.f ? 1.3f : 1.f);
+				PlaySlot(DinoflyAnim::Flap, Vertical > 100.f ? DinoflyAnim::ClimbFlapRate : 1.f);
 			}
 		}
 		else if (FMath::Abs(Flight->GetTurnRate()) > 90.f)

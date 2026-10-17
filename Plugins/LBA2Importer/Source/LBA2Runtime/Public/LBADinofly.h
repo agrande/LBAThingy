@@ -109,6 +109,8 @@ private:
 	void UpdateAnimation(float DeltaSeconds);
 	/** Plays a one-shot animation slot from StartTime until EndTime (backwards when PlayRate < 0). */
 	void PlayAction(int32 AnimType, float StartTime, float EndTime, float PlayRate);
+	/** Plays an animation slot on some bone branches only, over the current animation. */
+	void PlayLayer(int32 AnimType, const TArray<FName>& Bones, float StartTime, float PlayRate, float BlendTime);
 	void UpdateCamera(float DeltaSeconds);
 	void PlaySlot(int32 AnimType, float PlayRate = 1.f, float BlendTime = 0.25f);
 	ULBAAnimInstance* GetLBAAnimInstance() const;
@@ -175,7 +177,7 @@ private:
 	bool bDescendHeld = false;
 	/** Camera state: how far it is raised and tilted down (0-1), and the smoothed forward acceleration (cm/s^2). */
 	float CameraDrop = 0.f;
-	/** One-shot animation (landing, takeoff, legs coming down) running, or INDEX_NONE. */
+	/** One-shot animation (landing, takeoff, legs coming down as a layer) running, or INDEX_NONE. */
 	int32 ActionSlot = INDEX_NONE;
 	float ActionEndTime = 0.f;
 	float ActionRate = 1.f;

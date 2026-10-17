@@ -2,6 +2,7 @@
 
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimationPoseData.h"
+#include "Animation/BoneReference.h"
 #include "AnimationRuntime.h"
 
 void ULBAAnimInstance::NativeInitializeAnimation()
@@ -31,6 +32,39 @@ void ULBAAnimInstance::PlayLBAAnimation(UAnimSequence* Sequence, bool bLoop, flo
 	CurrentTime = Request.Time;
 }
 
+void ULBAAnimInstance::PlayLBALayer(UAnimSequence* Sequence, const TArray<FName>& BranchRoots, bool bLoop, float LoopStart, float BlendTime, float PlayRate, float StartTime)
+{
+	if (!Sequence)
+	{
+		StopLBALayer(BlendTime);
+		return;
+	}
+	LayerRequest = FLBAAnimPlayback();
+	LayerRequest.Sequence = Sequence;
+	LayerRequest.bLoop = bLoop;
+	LayerRequest.LoopStart = LoopStart;
+	LayerRequest.PlayRate = PlayRate;
+	LayerRequest.Time = FMath::Clamp(StartTime, 0.f, Sequence->GetPlayLength());
+	LayerRequestBranches = BranchRoots;
+	LayerRequestBlendTime = BlendTime;
+	PendingLayerPlayRate.Reset();
+	bHasLayerRequest = true;
+	bLayerActive = true;
+	LayerTime = LayerRequest.Time;
+}
+
+void ULBAAnimInstance::StopLBALayer(float BlendTime)
+{
+	if (!bLayerActive)
+	{
+		return;
+	}
+	LayerRequest = FLBAAnimPlayback();
+	LayerRequestBlendTime = BlendTime;
+	bHasLayerRequest = true;
+	bLayerActive = false;
+}
+
 void ULBAAnimInstance::SetApplyRootMotion(bool bApply)
 {
 	bApplyRootMotion = bApply;
@@ -54,6 +88,29 @@ void FLBAAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	{
 		Current.PlayRate = Instance->PendingPlayRate;
 		Instance->PendingPlayRate = -1.f;
+	}
+	if (Instance->bHasLayerRequest)
+	{
+		const float BlendTime = Instance->LayerRequestBlendTime;
+		if (Instance->LayerRequest.Sequence)
+		{
+			// A new layer fades in over the plain animation.
+			Layer = Instance->LayerRequest;
+			LayerBranches = Instance->LayerRequestBranches;
+			LayerWeight = BlendTime > 0.f ? 0.f : 1.f;
+			LayerTargetWeight = 1.f;
+		}
+		else
+		{
+			LayerTargetWeight = 0.f;
+		}
+		LayerBlendSpeed = BlendTime > 0.f ? 1.f / BlendTime : BIG_NUMBER;
+		Instance->bHasLayerRequest = false;
+	}
+	if (Instance->PendingLayerPlayRate.IsSet())
+	{
+		Layer.PlayRate = Instance->PendingLayerPlayRate.GetValue();
+		Instance->PendingLayerPlayRate.Reset();
 	}
 }
 
@@ -114,6 +171,15 @@ void FLBAAnimInstanceProxy::Update(float DeltaSeconds)
 		Advance(Previous, DeltaSeconds, false);
 		BlendElapsed += DeltaSeconds;
 	}
+	if (Layer.Sequence)
+	{
+		Advance(Layer, DeltaSeconds, false);
+		LayerWeight = FMath::FInterpConstantTo(LayerWeight, LayerTargetWeight, DeltaSeconds, LayerBlendSpeed);
+		if (LayerTargetWeight <= 0.f && LayerWeight <= 0.f)
+		{
+			Layer = FLBAAnimPlayback();
+		}
+	}
 	if (bApplyRootMotion && !RootMotion.Equals(FTransform::Identity, KINDA_SMALL_NUMBER))
 	{
 		GetExtractedRootMotion().Accumulate(RootMotion);
@@ -128,6 +194,10 @@ void FLBAAnimInstanceProxy::PostUpdate(UAnimInstance* InAnimInstance) const
 	{
 		Instance->CurrentTime = Current.Time;
 		Instance->bCurrentFinished = Current.bFinished;
+	}
+	if (!Instance->bHasLayerRequest && Instance->bLayerActive)
+	{
+		Instance->LayerTime = Layer.Time;
 	}
 }
 
@@ -148,17 +218,46 @@ bool FLBAAnimInstanceProxy::Evaluate(FPoseContext& Output)
 	if (!Previous.Sequence || BlendElapsed >= BlendDuration || BlendDuration <= 0.f)
 	{
 		Sample(Current, Output);
-		return true;
+	}
+	else
+	{
+		const float Alpha = FMath::Clamp(BlendElapsed / BlendDuration, 0.f, 1.f);
+		FPoseContext CurrentPose(Output);
+		FPoseContext PreviousPose(Output);
+		Sample(Current, CurrentPose);
+		Sample(Previous, PreviousPose);
+		const FAnimationPoseData CurrentData(CurrentPose);
+		const FAnimationPoseData PreviousData(PreviousPose);
+		FAnimationPoseData OutData(Output);
+		FAnimationRuntime::BlendTwoPosesTogether(CurrentData, PreviousData, Alpha, OutData);
 	}
 
-	const float Alpha = FMath::Clamp(BlendElapsed / BlendDuration, 0.f, 1.f);
-	FPoseContext CurrentPose(Output);
-	FPoseContext PreviousPose(Output);
-	Sample(Current, CurrentPose);
-	Sample(Previous, PreviousPose);
-	const FAnimationPoseData CurrentData(CurrentPose);
-	const FAnimationPoseData PreviousData(PreviousPose);
-	FAnimationPoseData OutData(Output);
-	FAnimationRuntime::BlendTwoPosesTogether(CurrentData, PreviousData, Alpha, OutData);
+	if (Layer.Sequence && LayerWeight > 0.f)
+	{
+		// The layer replaces the local transforms of its branches (bones come after their parents).
+		FPoseContext LayerPose(Output);
+		Sample(Layer, LayerPose);
+		const FBoneContainer& Bones = Output.Pose.GetBoneContainer();
+		TArray<bool, TInlineAllocator<64>> InLayer;
+		InLayer.Init(false, Output.Pose.GetNumBones());
+		for (const FName& Root : LayerBranches)
+		{
+			FBoneReference Reference(Root);
+			if (Reference.Initialize(Bones) && Reference.IsValidToEvaluate(Bones))
+			{
+				InLayer[Reference.GetCompactPoseIndex(Bones).GetInt()] = true;
+			}
+		}
+		for (const FCompactPoseBoneIndex Index : Output.Pose.ForEachBoneIndex())
+		{
+			const FCompactPoseBoneIndex Parent = Bones.GetParentBoneIndex(Index);
+			bool& bInLayer = InLayer[Index.GetInt()];
+			bInLayer = bInLayer || (Parent.IsValid() && InLayer[Parent.GetInt()]);
+			if (bInLayer)
+			{
+				Output.Pose[Index].BlendWith(LayerPose.Pose[Index], LayerWeight);
+			}
+		}
+	}
 	return true;
 }

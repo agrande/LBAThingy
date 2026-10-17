@@ -62,7 +62,9 @@ F gets Twinsen on the Dinofly, on the ground: a Dinofly waiting nearby is mounte
 one comes to Twinsen's spot (body 0 of `DA_Dinofly` has Twinsen on its back). On the ground (or the sea) it
 walks slowly (get off to go faster); climbing takes off, with a crouch and a push-off, the legs folding up
 as it rises. Touching the ground from anywhere lands at once: the legs come down during the last meters of a
-descent and the landing absorbs the touchdown. `ALBADinofly` flies with `ULBAFlightMovementComponent`, in two
+descent and the landing absorbs the touchdown. Legs and wings are animated separately there (a layer of
+`ULBAAnimInstance` on some bone branches): the wings keep beating at a natural pace while the legs fold or
+unfold as fast as needed. `ALBADinofly` flies with `ULBAFlightMovementComponent`, in two
 modes:
 
 - **Hover** (default), a simplified helicopter: hands-off it holds its position and altitude; it flies
