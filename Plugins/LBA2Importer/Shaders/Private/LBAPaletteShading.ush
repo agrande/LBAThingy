@@ -76,6 +76,17 @@ uint LBANearestPaletteIndex(Texture3D Lut, float3 LinearColor)
 
 // Scene geometry ---------------------------------------------------------------------------------------------------
 
+// Size of a pixel in viewport UV. PostProcessOutput only exists in post-process shaders; the cook also compiles the
+// material's other shader types, and one failing permutation drops the whole material for the default one.
+float2 LBAViewportPixelSize()
+{
+#if POST_PROCESS_MATERIAL
+	return PostProcessOutput_ViewportSizeInverse;
+#else
+	return View.ViewSizeAndInvSize.zw;
+#endif
+}
+
 float LBASceneDepthAt(float2 ViewportUV)
 {
 	return SceneTextureLookup(ViewportUVToSceneTextureUV(ViewportUV, PPI_SceneDepth), PPI_SceneDepth, false).r;
@@ -391,7 +402,7 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 	const float BaseLuma = max(LBALuma(BaseColor), 1e-4);
 	// World size of a pixel on the water (its longest side, at grazing angles along the view): details smaller than a
 	// few pixels fade out in the distance instead of shimmering.
-	const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, PostProcessOutput_ViewportSizeInverse);
+	const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, LBAViewportPixelSize());
 	const float Footprint = max(length(Frame.DUVDX), length(Frame.DUVDY));
 	const bool bNear = 3.0 * Footprint < C.Smoothing;
 
@@ -536,7 +547,7 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 	BRANCH
 	if (S.DitherAmount > 0.0 && !bExcluded && Fraction > 0.0 && Fraction < 1.0)
 	{
-		const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, PostProcessOutput_ViewportSizeInverse);
+		const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, LBAViewportPixelSize());
 		float Dots;
 		BRANCH
 		if (S.DotPattern >= 0.5)
