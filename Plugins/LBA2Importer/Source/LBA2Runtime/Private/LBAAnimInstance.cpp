@@ -10,7 +10,7 @@ void ULBAAnimInstance::NativeInitializeAnimation()
 	RootMotionMode = bApplyRootMotion ? ERootMotionMode::RootMotionFromEverything : ERootMotionMode::IgnoreRootMotion;
 }
 
-void ULBAAnimInstance::PlayLBAAnimation(UAnimSequence* Sequence, bool bLoop, float LoopStart, float BlendTime, float PlayRate, bool bRestart)
+void ULBAAnimInstance::PlayLBAAnimation(UAnimSequence* Sequence, bool bLoop, float LoopStart, float BlendTime, float PlayRate, bool bRestart, float StartTime)
 {
 	const UAnimSequence* Active = bHasRequest ? Request.Sequence.Get() : CurrentSequence.Get();
 	if (!bRestart && Sequence == Active && (bLoop || !bCurrentFinished))
@@ -23,11 +23,12 @@ void ULBAAnimInstance::PlayLBAAnimation(UAnimSequence* Sequence, bool bLoop, flo
 	Request.bLoop = bLoop;
 	Request.LoopStart = LoopStart;
 	Request.PlayRate = PlayRate;
+	Request.Time = Sequence ? FMath::Clamp(StartTime, 0.f, Sequence->GetPlayLength()) : 0.f;
 	RequestBlendTime = BlendTime;
 	bHasRequest = true;
 	CurrentSequence = Sequence;
 	bCurrentFinished = false;
-	CurrentTime = 0.f;
+	CurrentTime = Request.Time;
 }
 
 void ULBAAnimInstance::SetApplyRootMotion(bool bApply)
@@ -61,6 +62,13 @@ FTransform FLBAAnimInstanceProxy::Advance(FLBAAnimPlayback& Playback, float Delt
 	FTransform Delta = FTransform::Identity;
 	if (!Playback.Sequence || Playback.bFinished)
 	{
+		return Delta;
+	}
+	if (Playback.PlayRate < 0.f)
+	{
+		// Played backwards (no loop, no root motion): runs down to the start.
+		Playback.Time = FMath::Max(0.f, Playback.Time + DeltaSeconds * Playback.PlayRate);
+		Playback.bFinished = Playback.Time <= 0.f;
 		return Delta;
 	}
 	const float Length = Playback.Sequence->GetPlayLength();

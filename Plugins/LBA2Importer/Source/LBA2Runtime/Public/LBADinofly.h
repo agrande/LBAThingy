@@ -16,8 +16,11 @@ class USpringArmComponent;
 struct FInputActionValue;
 
 /**
- * Rideable Dinofly (prototype): Twinsen summons it, rides it with simple flight controls, and gets off
- * once landed. The default body already has Twinsen on its back, so the hero is hidden while flying.
+ * Rideable Dinofly (prototype): Twinsen gets on it (on the ground), rides it with simple flight controls, and
+ * gets off once landed. The default body already has Twinsen on its back, so the hero is hidden while riding.
+ *
+ * On the ground (or the water) W/S and A/D walk slowly; climbing takes off after a crouch. Touching the ground
+ * lands at once: the legs come down while descending, the landing absorbs the touchdown.
  *
  * Hover mode (default): W/S or left stick = forward / backward, A/D = turn, Space / A / right trigger = climb,
  * Ctrl / C / B / left trigger = descend (into the ground or the sea to land), Shift / X / right bumper taps =
@@ -47,10 +50,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
 	int32 RiderlessBodyType = 37;
 
-	/** Height above the hero where a summoned Dinofly appears, hovering. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
-	float SummonHeight = 400.f;
-
 	/** How fast the camera swings back behind the Dinofly when it turns (1/s): lower is lazier. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Camera")
 	float CameraFollowSpeed = 4.f;
@@ -67,8 +66,8 @@ public:
 	float MountDistance = 500.f;
 
 	/**
-	 * Mounts a waiting Dinofly next to the hero, or brings one (spawning it if needed) flying above the hero.
-	 * The hero is hidden (the ridden body includes Twinsen) and the Dinofly takes the hero's controller.
+	 * Mounts a waiting Dinofly next to the hero where it stands, or brings one (spawning it if needed) to the hero's
+	 * spot on the ground. The hero is hidden (the ridden body includes Twinsen) and the Dinofly takes the controller.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "LBA", meta = (DeterminesOutputType = "DinoflyClass"))
 	static ALBADinofly* Summon(ALBACharacter* Hero, TSubclassOf<ALBADinofly> DinoflyClass);
@@ -107,7 +106,9 @@ private:
 	void Mount(ALBACharacter* Hero);
 	void ApplyEntity();
 	void CreateInput();
-	void UpdateAnimation();
+	void UpdateAnimation(float DeltaSeconds);
+	/** Plays a one-shot animation slot from StartTime until EndTime (backwards when PlayRate < 0). */
+	void PlayAction(int32 AnimType, float StartTime, float EndTime, float PlayRate);
 	void UpdateCamera(float DeltaSeconds);
 	void PlaySlot(int32 AnimType, float PlayRate = 1.f, float BlendTime = 0.25f);
 	ULBAAnimInstance* GetLBAAnimInstance() const;
@@ -174,6 +175,12 @@ private:
 	bool bDescendHeld = false;
 	/** Camera state: how far it is raised and tilted down (0-1), and the smoothed forward acceleration (cm/s^2). */
 	float CameraDrop = 0.f;
+	/** One-shot animation (landing, takeoff, legs coming down) running, or INDEX_NONE. */
+	int32 ActionSlot = INDEX_NONE;
+	float ActionEndTime = 0.f;
+	float ActionRate = 1.f;
+	bool bWasLanded = false;
+	float LastYaw = 0.f;
 	float SmoothedAcceleration = 0.f;
 	float LastHorizontalSpeed = 0.f;
 	/** Orbit (yaw, pitch) around the camera following the heading, eased back after a while. */

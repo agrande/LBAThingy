@@ -58,15 +58,17 @@ an Animation Blueprint.
 
 ### Riding the Dinofly (prototype)
 
-F calls the Dinofly: it appears hovering 4 m above Twinsen, with Twinsen on its back (body 0 of
-`DA_Dinofly`); a Dinofly waiting nearby is mounted directly. `ALBADinofly` flies with
-`ULBAFlightMovementComponent`, in two modes:
+F gets Twinsen on the Dinofly, on the ground: a Dinofly waiting nearby is mounted where it stands, otherwise
+one comes to Twinsen's spot (body 0 of `DA_Dinofly` has Twinsen on its back). On the ground (or the sea) it
+walks slowly (get off to go faster); climbing takes off, with a crouch and a push-off, the legs folding up
+as it rises. Touching the ground from anywhere lands at once: the legs come down during the last meters of a
+descent and the landing absorbs the touchdown. `ALBADinofly` flies with `ULBAFlightMovementComponent`, in two
+modes:
 
 - **Hover** (default), a simplified helicopter: hands-off it holds its position and altitude; it flies
   forward or backward and turns, with some inertia. Thrusters: each tap adds a burst of forward speed on top
   of the cruise (up to three times the cruise speed), fading unless you tap again. Its body stays level,
-  with a small cosmetic lean and bank. Descending into the ground or the sea lands; moving or climbing
-  takes off again.
+  with a small cosmetic lean and bank.
 - **Glide** (Tab): a small aerodynamic model (lift and drag from speed and angle of attack, banked turns,
   flapping thrust) where speed and altitude trade; harder to fly.
 
@@ -79,16 +81,16 @@ goes under water: it floats on the sea (and skims off it when gliding in fast).
 
 | Key | Hover | Glide |
 |---|---|---|
-| W/S, up/down, left stick | Forward / backward (half speed) | Nose down / up (`lba.Dinofly.InvertPitch 1` swaps) |
-| A/D, left/right, left stick | Turn | Bank |
-| Space, gamepad A or right trigger (hold) | Climb (take off) | Flap |
+| W/S, up/down, left stick | Forward / backward (half speed); walk on the ground | Nose down / up (`lba.Dinofly.InvertPitch 1` swaps); walk on the ground |
+| A/D, left/right, left stick | Turn | Bank; turn on the ground |
+| Space, gamepad A or right trigger (hold) | Climb (take off) | Flap (take off) |
 | Left Ctrl, C, gamepad B or left trigger (hold) | Descend (land) | Brake |
-| Left Shift, gamepad X or right bumper (tap, repeat) | Thrusters | |
+| Left Shift, gamepad X or right bumper (tap, repeat) | Thrusters (in the air only) | |
 | Mouse, right stick | Look around (eases back behind) | Look around (eases back behind) |
 | Tab, gamepad View | Switch to glide | Switch to hover |
 | F / gamepad Y | Get off (once landed on the ground, not at sea); the Dinofly waits there | |
 
-`-LBA2Shots=dinofly` runs a scripted hover flight (moves, turns, climb, thrusters, landing at sea and on the ground, dismount) that logs the
+`-LBA2Shots=dinofly` runs a scripted ride (mount, walk, takeoff, moves, turns, thrusters, landing at sea, paddling, landing on the ground, dismount) that logs the
 flight state and screenshots each step.
 
 ## Look
@@ -215,7 +217,7 @@ color, shade row / light, surfaces without fog).
 - [ ] Look, next: Citadel storm (lamppost lights, rain, lightning), cloud shadows, interior lights,
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
-- [x] Dinofly riding prototype: summon, hover (default) and glide flight, land, float, get off
+- [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)
 - [ ] L6 Text (String Tables), voices, music, sprites, inventory objects, holomap, screens

@@ -17,8 +17,11 @@ enum class ELBAFlightMode : uint8
  *
  * Hover (default): a simplified helicopter. The inputs are forward/backward, turn and climb/descend; the
  * velocity and the turn rate ease toward the requested ones with limited accelerations, so there is inertia but
- * no piloting. The body stays level, with a small cosmetic lean and bank. Touching the ground or the water while
- * descending lands; moving or climbing takes off.
+ * no piloting. The body stays level, with a small cosmetic lean and bank. Touching walkable ground (or the water)
+ * lands at once, from any direction.
+ *
+ * On the ground (both modes) the inputs walk slowly (and paddle on water); only climbing (hover) or flapping
+ * (glide) takes off, after a short crouch (TakeoffDelay) for the push-off animation.
  *
  * Glide: the state is the velocity, a bank angle and an angle of attack; the heading always follows the velocity
  * (no sideslip), and the body is drawn at "velocity + angle of attack". Lift and drag come from a small
@@ -187,7 +190,18 @@ public:
 
 	/** Degrees per second when turning on the ground. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Ground")
-	float GroundTurnRate = 120.f;
+	float GroundTurnRate = 90.f;
+
+	/** Walking speed on the ground (cm/s; backward at half, paddling on water at 60%), and its acceleration (cm/s^2). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Ground")
+	float WalkSpeed = 150.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Ground")
+	float WalkAcceleration = 400.f;
+
+	/** Seconds crouching on the ground between asking to take off and leaving it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Ground")
+	float TakeoffDelay = 0.6f;
 
 	/** Velocity given by a takeoff (cm/s, forward and up). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Ground")
@@ -212,6 +226,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void StartHovering();
 
+	/** Starts standing on the ground, facing the owner's forward. */
+	UFUNCTION(BlueprintCallable, Category = "Flight")
+	void StartLanded();
+
 	/** Starts flying (with an initial forward speed, cm/s). */
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void Launch(float ForwardSpeed);
@@ -222,6 +240,10 @@ public:
 	/** Landed on water rather than on the ground. */
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	bool IsFloating() const { return bLanded && bOnWater; }
+
+	/** Crouching to take off (still on the ground). */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	bool IsTakingOff() const { return bLanded && TakeoffCountdown >= 0.f; }
 
 	/** Degrees, positive to the right. */
 	UFUNCTION(BlueprintPure, Category = "Flight")
@@ -289,6 +311,10 @@ private:
 	void HandleWater();
 	void TickFloating(float DeltaTime);
 	void TickHover(float DeltaTime);
+	/** Ground and water: counts the takeoff crouch down; true once it took off (the caller stops). */
+	bool TickTakeoff(float DeltaTime);
+	/** Ground and water: walking velocity (horizontal) and turning from the inputs. */
+	void UpdateWalk(float DeltaTime, float SpeedScale);
 	/** Takeoff requested by the inputs of the current mode. */
 	bool WantsTakeoff() const;
 	void TakeOff();
@@ -303,6 +329,8 @@ private:
 	/** Extra forward speed from the thrusters (cm/s), and the kick of the last thrust. */
 	float ThrustSpeed = 0.f;
 	float ThrustKick = 0.f;
+	/** Seconds left crouching before taking off, or negative. */
+	float TakeoffCountdown = -1.f;
 	/** Hover mode: degrees/s of heading change, and the cosmetic lean (degrees). */
 	float TurnRate = 0.f;
 	float LeanPitch = 0.f;

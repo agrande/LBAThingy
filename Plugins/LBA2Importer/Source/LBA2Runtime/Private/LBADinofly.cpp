@@ -35,13 +35,30 @@ namespace
 	constexpr float CollisionRadius = 70.f;
 
 	/**
-	 * Dinofly animation slots (entity 109), identified from their root motion and wing bone motion. The flapping
+	 * Dinofly animation slots (entity 109), identified from their root motion, wing and leg bone motion. The flapping
 	 * cycle (218) is the one shared by every flying animation (the takeoffs 339/340 loop on it); 152 and 278 are
 	 * walks (wings folded), not flight.
 	 */
 	namespace DinoflyAnim
 	{
 		constexpr int32 Idle = 0;
+		constexpr int32 Walk = 152;
+		/** Flying pose to standing: the legs swing down at touchdown, a crouch absorbs it (slot 7, "falling"). */
+		constexpr int32 Land = 343;
+		constexpr float LandEnd = 0.74f;
+		/**
+		 * Vertical takeoff: crouch (deepest at 0.3 s), push off at 1.6 s, legs folded into the flying pose at 3.6 s.
+		 * Played from the crouch at TakeoffRate, the push-off meets the flight component's TakeoffDelay (0.6 s).
+		 */
+		constexpr int32 Takeoff = 340;
+		constexpr float TakeoffStart = 0.3f;
+		constexpr float TakeoffLiftoff = 1.6f;
+		constexpr float TakeoffEnd = 3.6f;
+		constexpr float TakeoffRate = 2.2f;
+		/** The takeoff's leg folding played backwards brings the legs down while descending to land. */
+		constexpr int32 LegsDown = -340;
+		/** Height above the ground (cm, from the center) where the legs start coming down. */
+		constexpr float LegsDownHeight = 320.f;
 		/** Wings held spread, tail steering. */
 		constexpr int32 TurnLeft = 3;
 		constexpr int32 TurnRight = 4;
@@ -178,9 +195,11 @@ ALBADinofly* ALBADinofly::Summon(ALBACharacter* Hero, TSubclassOf<ALBADinofly> D
 		return Dinofly;
 	}
 
-	const ALBADinofly* Defaults = Class->GetDefaultObject<ALBADinofly>();
-	const FVector Location = Hero->GetActorLocation() + FVector(0.f, 0.f, Defaults->SummonHeight);
+	// Where Twinsen stands: his feet are the ground. Out of the way first, so the Dinofly can take his spot.
+	const float HeroHalfHeight = Hero->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector Location = Hero->GetActorLocation() + FVector(0.f, 0.f, CollisionRadius + 2.f - HeroHalfHeight);
 	const FRotator Rotation(0.f, Hero->GetActorRotation().Yaw, 0.f);
+	Hero->SetActorEnableCollision(false);
 	if (Dinofly)
 	{
 		Dinofly->TeleportTo(Location, Rotation);
@@ -193,8 +212,8 @@ ALBADinofly* ALBADinofly::Summon(ALBACharacter* Hero, TSubclassOf<ALBADinofly> D
 	}
 	if (Dinofly)
 	{
+		Dinofly->Flight->StartLanded();
 		Dinofly->Mount(Hero);
-		Dinofly->Flight->StartHovering();
 	}
 	return Dinofly;
 }
@@ -215,6 +234,10 @@ void ALBADinofly::Mount(ALBACharacter* Hero)
 	ApplyEntity();
 	CameraBase = FRotator(-15.f, GetActorRotation().Yaw, 0.f);
 	LookOffset = FVector2D::ZeroVector;
+	// Already standing: no landing to play.
+	bWasLanded = Flight->IsLanded();
+	ActionSlot = INDEX_NONE;
+	LastYaw = GetActorRotation().Yaw;
 }
 
 bool ALBADinofly::Dismount()
@@ -322,17 +345,22 @@ void ALBADinofly::ToggleFlightMode()
 void ALBADinofly::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (IsHovering())
+	// The landing absorbs the touchdown: no input meanwhile.
+	const bool bLocked = ActionSlot == DinoflyAnim::Land;
+	const FVector2D Steer = bLocked ? FVector2D::ZeroVector : SteerInput;
+	const bool bAscend = bAscendHeld && !bLocked;
+	const bool bDescend = bDescendHeld && !bLocked;
+	if (IsHovering() || Flight->IsLanded())
 	{
-		const float Vertical = (bAscendHeld ? 1.f : 0.f) - (bDescendHeld ? 1.f : 0.f);
-		Flight->SetHoverInput(SteerInput.Y, SteerInput.X, Vertical);
+		// Hover flight, and walking on the ground in both modes.
+		Flight->SetHoverInput(Steer.Y, Steer.X, (bAscend ? 1.f : 0.f) - (bDescend ? 1.f : 0.f));
 	}
-	else
+	if (!IsHovering())
 	{
-		const float PitchInput = CVarInvertPitch.GetValueOnGameThread() ? SteerInput.Y : -SteerInput.Y;
-		Flight->SetFlightInput(PitchInput, SteerInput.X, bAscendHeld ? 1.f : 0.f, bDescendHeld ? 1.f : 0.f);
+		const float PitchInput = CVarInvertPitch.GetValueOnGameThread() ? Steer.Y : -Steer.Y;
+		Flight->SetFlightInput(PitchInput, Steer.X, bAscend ? 1.f : 0.f, bDescend ? 1.f : 0.f);
 	}
-	UpdateAnimation();
+	UpdateAnimation(DeltaSeconds);
 	UpdateCamera(DeltaSeconds);
 }
 
@@ -346,11 +374,90 @@ void ALBADinofly::PlaySlot(int32 AnimType, float PlayRate, float BlendTime)
 	}
 }
 
-void ALBADinofly::UpdateAnimation()
+void ALBADinofly::PlayAction(int32 AnimType, float StartTime, float EndTime, float PlayRate)
 {
-	if (Flight->IsLanded())
+	const int32 Slot = FMath::Abs(AnimType);
+	const FLBAEntityAnim* Anim = Entity ? Entity->Anims.Find(Slot) : nullptr;
+	ULBAAnimInstance* Instance = GetLBAAnimInstance();
+	if (Anim && Anim->Sequence && Instance)
 	{
-		PlaySlot(DinoflyAnim::Idle, 1.f, 0.3f);
+		Instance->PlayLBAAnimation(Anim->Sequence, false, 0.f, 0.12f, PlayRate, true, StartTime);
+		ActionSlot = AnimType;
+		ActionEndTime = EndTime;
+		ActionRate = PlayRate;
+	}
+}
+
+void ALBADinofly::UpdateAnimation(float DeltaSeconds)
+{
+	const bool bLanded = Flight->IsLanded();
+	const FVector Velocity = Flight->Velocity;
+	const float Yaw = GetActorRotation().Yaw;
+	const float YawRate = DeltaSeconds > 0.f ? FRotator::NormalizeAxis(Yaw - LastYaw) / DeltaSeconds : 0.f;
+	LastYaw = Yaw;
+
+	// One-shot actions, started by the flight state.
+	if (bLanded && !bWasLanded)
+	{
+		// The legs are already down after a descent: start after the swing.
+		PlayAction(DinoflyAnim::Land, ActionSlot == DinoflyAnim::LegsDown ? 0.1f : 0.f, DinoflyAnim::LandEnd, 1.f);
+	}
+	else if (Flight->IsTakingOff() && ActionSlot != DinoflyAnim::Takeoff)
+	{
+		PlayAction(DinoflyAnim::Takeoff, DinoflyAnim::TakeoffStart, DinoflyAnim::TakeoffEnd, DinoflyAnim::TakeoffRate);
+	}
+	else if (!bLanded && IsHovering() && ActionSlot == INDEX_NONE && Velocity.Z < -150.f
+		&& Flight->GetHeightAboveSurface(DinoflyAnim::LegsDownHeight + 200.f) < DinoflyAnim::LegsDownHeight)
+	{
+		// Coming down near the ground: unfold the legs over the time left before touchdown.
+		const float Height = FMath::Max(Flight->GetHeightAboveSurface(DinoflyAnim::LegsDownHeight + 200.f) - CollisionRadius, 1.f);
+		const float TimeLeft = FMath::Max(Height / -Velocity.Z, 0.15f);
+		const float Span = DinoflyAnim::TakeoffEnd - DinoflyAnim::TakeoffLiftoff;
+		PlayAction(DinoflyAnim::LegsDown, DinoflyAnim::TakeoffEnd, DinoflyAnim::TakeoffLiftoff, -Span / TimeLeft);
+	}
+	bWasLanded = bLanded;
+
+	if (ActionSlot != INDEX_NONE)
+	{
+		ULBAAnimInstance* Instance = GetLBAAnimInstance();
+		const float Time = Instance ? Instance->GetCurrentAnimationTime() : 0.f;
+		const bool bRunning = Instance && !Instance->IsCurrentAnimationFinished()
+			&& (ActionRate >= 0.f ? Time < ActionEndTime : Time > ActionEndTime);
+		if (ActionSlot == DinoflyAnim::LegsDown)
+		{
+			// Legs down: hold the pose until the touchdown; climbing again cancels it.
+			if (!bLanded && Velocity.Z <= 0.f)
+			{
+				if (!bRunning && Instance)
+				{
+					Instance->SetPlayRate(0.f);
+				}
+				return;
+			}
+		}
+		else if (bRunning)
+		{
+			return;
+		}
+		ActionSlot = INDEX_NONE;
+	}
+
+	if (bLanded)
+	{
+		// Walking slowly, or stepping around while turning on the spot.
+		const float Speed = Velocity.Size2D();
+		if (Speed > 15.f)
+		{
+			PlaySlot(DinoflyAnim::Walk, FMath::Clamp(Speed / Flight->WalkSpeed, 0.4f, 1.2f), 0.2f);
+		}
+		else if (FMath::Abs(YawRate) > 20.f)
+		{
+			PlaySlot(DinoflyAnim::Walk, 0.6f, 0.2f);
+		}
+		else
+		{
+			PlaySlot(DinoflyAnim::Idle, 1.f, 0.3f);
+		}
 		return;
 	}
 	if (IsHovering())

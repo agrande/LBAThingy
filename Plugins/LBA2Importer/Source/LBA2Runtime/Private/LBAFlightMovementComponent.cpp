@@ -49,13 +49,10 @@ void ULBAFlightMovementComponent::SetHoverInput(float InForward, float InTurn, f
 
 void ULBAFlightMovementComponent::Thrust()
 {
-	if (Mode != ELBAFlightMode::Hover)
+	// A flying input: on the ground, only climbing takes off.
+	if (Mode != ELBAFlightMode::Hover || bLanded)
 	{
 		return;
-	}
-	if (bLanded)
-	{
-		TakeOff();
 	}
 	ThrustKick = 1.f;
 	const float Added = FMath::Min(ThrustImpulse, MaxThrustSpeed - ThrustSpeed);
@@ -138,13 +135,63 @@ void ULBAFlightMovementComponent::StartHovering()
 	UpdateComponentVelocity();
 }
 
+void ULBAFlightMovementComponent::StartLanded()
+{
+	if (const AActor* Owner = GetOwner())
+	{
+		const FVector Forward = Owner->GetActorForwardVector().GetSafeNormal2D();
+		Heading = Forward.IsNearlyZero() ? Heading : Forward;
+	}
+	bLanded = true;
+	bOnWater = false;
+	Velocity = FVector::ZeroVector;
+	Bank = LeanPitch = LeanBank = TurnRate = 0.f;
+	ThrustSpeed = ThrustKick = 0.f;
+	TakeoffCountdown = -1.f;
+	UpdateComponentVelocity();
+}
+
 bool ULBAFlightMovementComponent::WantsTakeoff() const
 {
-	if (Mode == ELBAFlightMode::Hover)
+	// Walking inputs never take off: only climbing (hover) or flapping (glide) does.
+	return Mode == ELBAFlightMode::Hover ? Vertical > 0.5f : Flap > 0.5f;
+}
+
+bool ULBAFlightMovementComponent::TickTakeoff(float DeltaTime)
+{
+	if (TakeoffCountdown < 0.f)
 	{
-		return Vertical > 0.5f || FMath::Abs(ForwardInput) > 0.3f;
+		if (WantsTakeoff())
+		{
+			TakeoffCountdown = TakeoffDelay;
+		}
+		return false;
 	}
-	return Flap > 0.5f;
+	TakeoffCountdown -= DeltaTime;
+	if (TakeoffCountdown > 0.f)
+	{
+		return false;
+	}
+	TakeoffCountdown = -1.f;
+	TakeOff();
+	return true;
+}
+
+void ULBAFlightMovementComponent::UpdateWalk(float DeltaTime, float SpeedScale)
+{
+	// Crouching to take off: stand still.
+	const bool bCrouching = TakeoffCountdown >= 0.f;
+	const float Forward = bCrouching ? 0.f : ForwardInput;
+	const float TurnAmount = bCrouching ? 0.f : (Mode == ELBAFlightMode::Hover ? TurnInput : Roll);
+	Heading = Heading.RotateAngleAxis(TurnAmount * GroundTurnRate * DeltaTime, FVector::UpVector);
+	Bank = FMath::FInterpTo(Bank, 0.f, DeltaTime, 6.f);
+	Alpha = FMath::FInterpTo(Alpha, 0.f, DeltaTime, 6.f);
+
+	const FVector2D Target = FVector2D(Heading) * Forward * WalkSpeed * SpeedScale * (Forward < 0.f ? 0.5f : 1.f);
+	FVector2D Horizontal(Velocity.X, Velocity.Y);
+	Horizontal += (Target - Horizontal).GetClampedToMaxSize(WalkAcceleration * DeltaTime);
+	Velocity.X = Horizontal.X;
+	Velocity.Y = Horizontal.Y;
 }
 
 void ULBAFlightMovementComponent::TakeOff()
@@ -197,8 +244,9 @@ void ULBAFlightMovementComponent::TickHover(float DeltaTime)
 	{
 		return;
 	}
-	if (Hit.Normal.Z > WalkableNormalZ && Vertical < 0.f)
+	if (Hit.Normal.Z > WalkableNormalZ)
 	{
+		// Ground is sticky: touching it from anywhere lands.
 		TouchDown(Hit);
 		return;
 	}
@@ -422,20 +470,15 @@ void ULBAFlightMovementComponent::HandleWater()
 
 void ULBAFlightMovementComponent::TickFloating(float DeltaTime)
 {
-	if (WantsTakeoff())
+	if (TickTakeoff(DeltaTime))
 	{
-		TakeOff();
 		return;
 	}
 
-	Heading = Heading.RotateAngleAxis((Mode == ELBAFlightMode::Hover ? TurnInput : Roll) * GroundTurnRate * DeltaTime, FVector::UpVector);
-	Bank = FMath::FInterpTo(Bank, 0.f, DeltaTime, 6.f);
-	Alpha = FMath::FInterpTo(Alpha, 0.f, DeltaTime, 6.f);
-
-	// Drift to a stop, riding the waves.
-	FVector Horizontal(Velocity.X, Velocity.Y, 0.f);
-	Horizontal = Horizontal.GetSafeNormal() * FMath::Max(0.f, Horizontal.Size() - 400.f * DeltaTime);
-	Velocity = Horizontal;
+	// Paddle slowly, riding the waves.
+	UpdateWalk(DeltaTime, 0.6f);
+	Velocity.Z = 0.f;
+	const FVector Horizontal = Velocity;
 	const FVector Location = UpdatedComponent->GetComponentLocation();
 	float SurfaceZ = Location.Z - WaterlineHeight;
 	if (!FindWaterSurface(Location, SurfaceZ))
@@ -469,45 +512,56 @@ void ULBAFlightMovementComponent::TouchDown(const FHitResult& Hit)
 	Bank = 0.f;
 	TurnRate = 0.f;
 	ThrustSpeed = 0.f;
-	Velocity = FVector::VectorPlaneProject(Velocity, Hit.Normal) * 0.3f;
-	Velocity.Z = 0.f;
+	TakeoffCountdown = -1.f;
+	// The legs absorb the touchdown.
+	Velocity = FVector::ZeroVector;
 }
 
 void ULBAFlightMovementComponent::TickLanded(float DeltaTime)
 {
-	if (WantsTakeoff())
+	if (TickTakeoff(DeltaTime))
 	{
-		TakeOff();
 		return;
 	}
 
-	Heading = Heading.RotateAngleAxis((Mode == ELBAFlightMode::Hover ? TurnInput : Roll) * GroundTurnRate * DeltaTime, FVector::UpVector);
-	Bank = FMath::FInterpTo(Bank, 0.f, DeltaTime, 6.f);
-	Alpha = FMath::FInterpTo(Alpha, 0.f, DeltaTime, 6.f);
-
-	// Slide to a stop, held down by gravity.
-	FVector Horizontal(Velocity.X, Velocity.Y, 0.f);
-	Horizontal = Horizontal.GetSafeNormal() * FMath::Max(0.f, Horizontal.Size() - 800.f * DeltaTime);
-	Velocity = FVector(Horizontal.X, Horizontal.Y, Velocity.Z + GetGravityZ() * DeltaTime);
-
-	FHitResult Hit;
-	const FVector Delta = Velocity * DeltaTime + FVector(0.f, 0.f, -2.f);
+	// Walk slowly: along the ground (up slopes, along walls)...
+	UpdateWalk(DeltaTime, 1.f);
 	const FQuat Level = FQuat::Slerp(UpdatedComponent->GetComponentQuat(), Heading.ToOrientationQuat(), FMath::Min(1.f, 8.f * DeltaTime));
-	SafeMoveUpdatedComponent(Delta, Level, true, Hit);
+	const FVector Walk(Velocity.X * DeltaTime, Velocity.Y * DeltaTime, 0.f);
+	FHitResult Hit;
+	SafeMoveUpdatedComponent(Walk, Level, true, Hit);
 	if (Hit.IsValidBlockingHit())
 	{
-		if (Hit.Normal.Z > WalkableNormalZ)
+		if (Hit.Normal.Z <= WalkableNormalZ)
 		{
-			Velocity.Z = 0.f;
+			// Walls: lose the speed going into them.
+			const float Into = FVector(Velocity.X, Velocity.Y, 0.f) | Hit.Normal;
+			if (Into < 0.f)
+			{
+				Velocity.X -= Into * Hit.Normal.X;
+				Velocity.Y -= Into * Hit.Normal.Y;
+			}
 		}
-		else
-		{
-			SlideAlongSurface(Delta, 1.f - Hit.Time, Hit.Normal, Hit, true);
-		}
+		SlideAlongSurface(Walk, 1.f - Hit.Time, Hit.Normal, Hit, true);
+	}
+
+	// ...then down onto the floor (a few cm, enough to follow slopes going down), never sliding while standing.
+	constexpr float FloorSnap = 10.f;
+	Velocity.Z += GetGravityZ() * DeltaTime;
+	const FVector Down(0.f, 0.f, FMath::Min(Velocity.Z * DeltaTime, 0.f) - FloorSnap);
+	SafeMoveUpdatedComponent(Down, UpdatedComponent->GetComponentQuat(), true, Hit);
+	if (Hit.IsValidBlockingHit() && Hit.Normal.Z > WalkableNormalZ)
+	{
+		Velocity.Z = 0.f;
+	}
+	else if (Hit.IsValidBlockingHit())
+	{
+		// Too steep to stand on: slide down it.
+		SlideAlongSurface(Down, 1.f - Hit.Time, Hit.Normal, Hit, true);
 	}
 	else if (Velocity.Z < -300.f)
 	{
-		// Slid off a ledge: flying again.
+		// Walked off a ledge: flying again.
 		bLanded = false;
 	}
 }

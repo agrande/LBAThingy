@@ -53,9 +53,12 @@ class LBA2RUNTIME_API ULBAAnimInstance : public UAnimInstance
 	GENERATED_BODY()
 
 public:
-	/** Starts an animation, blending from the current pose. Restarting the same looping animation is ignored. */
+	/**
+	 * Starts an animation (at StartTime seconds), blending from the current pose. Restarting the same looping
+	 * animation is ignored unless bRestart. A negative PlayRate plays it backwards down to its start (no loop).
+	 */
 	UFUNCTION(BlueprintCallable, Category = "LBA|Animation")
-	void PlayLBAAnimation(UAnimSequence* Sequence, bool bLoop = true, float LoopStart = 0.f, float BlendTime = 0.15f, float PlayRate = 1.f, bool bRestart = false);
+	void PlayLBAAnimation(UAnimSequence* Sequence, bool bLoop = true, float LoopStart = 0.f, float BlendTime = 0.15f, float PlayRate = 1.f, bool bRestart = false, float StartTime = 0.f);
 
 	UFUNCTION(BlueprintPure, Category = "LBA|Animation")
 	UAnimSequence* GetCurrentAnimation() const { return CurrentSequence; }
