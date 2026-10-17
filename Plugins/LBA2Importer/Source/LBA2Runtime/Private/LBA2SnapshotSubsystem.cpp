@@ -217,27 +217,35 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 	{
 		const TCHAR* Name;
 		float Duration;
-		float Pitch;
-		float Roll;
-		bool bFlap;
-		bool bBrake;
+		/** X turn right, Y forward. */
+		FVector2D Move;
+		float Vertical;
+		/** Taps the thrusters every half second. */
+		bool bThrust;
+		/** Ends early once landed. */
+		bool bUntilLanded;
 	};
-	// Pitch: positive = nose up.
 	static const FStep Steps[] =
 	{
-		{ TEXT("summon_glide"), 3.0f, 0, 0, false, false },
-		{ TEXT("flap_climb"), 3.0f, 0, 0, true, false },
-		{ TEXT("bank_right"), 3.0f, 0, 1, false, false },
-		{ TEXT("bank_left_flap"), 3.0f, 0, -1, true, false },
-		{ TEXT("dive"), 2.0f, -1, 0, false, false },
-		{ TEXT("pull_up"), 2.0f, 1, 0, false, false },
-		{ TEXT("glide_after"), 2.0f, 0, 0, false, false },
-		{ TEXT("brake_descend"), 12.0f, -0.4f, 0, false, true },
-		{ TEXT("landed"), 1.5f, 0, 0, false, false },
-		{ TEXT("takeoff"), 2.5f, 0, 0, true, false },
-		{ TEXT("land_again"), 12.0f, -0.4f, 0, false, true },
-		{ TEXT("dismount"), 2.0f, 0, 0, false, false },
-		{ TEXT("on_foot"), 1.5f, 0, 0, false, false },
+		{ TEXT("summon_hover"), 2.0f, { 0, 0 }, 0, false, false },
+		{ TEXT("forward"), 3.0f, { 0, 1 }, 0, false, false },
+		{ TEXT("forward_turn_right"), 1.0f, { 1, 1 }, 0, false, false },
+		{ TEXT("forward_after_turn"), 1.5f, { 0, 1 }, 0, false, false },
+		{ TEXT("climb"), 2.0f, { 0, 0 }, 1, false, false },
+		{ TEXT("boost_forward"), 3.0f, { 0, 1 }, 0, true, false },
+		{ TEXT("stop"), 2.0f, { 0, 0 }, 0, false, false },
+		{ TEXT("backward"), 2.0f, { 0, -1 }, 0, false, false },
+		{ TEXT("descend_land"), 15.0f, { 0, 0 }, -1, false, true },
+		{ TEXT("landed"), 1.0f, { 0, 0 }, 0, false, false },
+		{ TEXT("takeoff"), 2.5f, { 0, 0 }, 1, false, false },
+		{ TEXT("turn_around"), 1.75f, { 1, 0 }, 0, false, false },
+		{ TEXT("return_over_land"), 3.0f, { 0, 1 }, 0, true, false },
+		{ TEXT("turn_left"), 1.0f, { -1, 0.3f }, 0, false, false },
+		{ TEXT("forward_over_land"), 2.0f, { 0, 1 }, 0, true, false },
+		{ TEXT("stop_over_land"), 1.5f, { 0, 0 }, 0, false, false },
+		{ TEXT("land_on_ground"), 15.0f, { 0, 0 }, -1, false, true },
+		{ TEXT("dismount"), 1.5f, { 0, 0 }, 0, false, false },
+		{ TEXT("on_foot"), 1.5f, { 0, 0 }, 0, false, false },
 	};
 	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
 
@@ -280,21 +288,30 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 	if (Dinofly)
 	{
 		Dinofly->DisableInput(PC);
-		const bool bWaitingToLand = Step.bBrake && !Dinofly->GetFlight()->IsLanded();
-		Dinofly->SetFlightInput(Step.Pitch, Step.Roll, Step.bFlap, Step.bBrake);
+		const bool bWaitingToLand = Step.bUntilLanded && !Dinofly->GetFlight()->IsLanded();
+		Dinofly->SetHoverInput(Step.Move, Step.Vertical);
+		if (Step.bThrust && Elapsed - LastThrust > 0.5)
+		{
+			Dinofly->Thrust();
+			LastThrust = Elapsed;
+		}
 		if (Elapsed >= NextReport)
 		{
 			const ULBAFlightMovementComponent* Flight = Dinofly->GetFlight();
 			const UAnimInstance* Anim = Dinofly->FindComponentByClass<USkeletalMeshComponent>()->GetAnimInstance();
 			const ULBAAnimInstance* LBAAnim = Cast<ULBAAnimInstance>(Anim);
-			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly %s t=%.2f loc=(%.0f %.0f %.0f) speed=%.0f path=%.0f aoa=%.1f bank=%.0f yaw=%.0f landed=%d anim=%s"),
+			const FRotator Rotation = Dinofly->GetActorRotation();
+			const UCameraComponent* ViewCamera = Dinofly->FindComponentByClass<UCameraComponent>();
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly %s t=%.2f loc=(%.0f %.0f %.0f) vel=(%.0f %.0f %.0f) speed2d=%.0f height=%.0f pitch=%.1f yaw=%.0f roll=%.1f cam(pitch=%.1f fov=%.1f) landed=%d floating=%d anim=%s"),
 				Step.Name, Elapsed - HeroStepStart, Dinofly->GetActorLocation().X, Dinofly->GetActorLocation().Y, Dinofly->GetActorLocation().Z,
-				Flight->Velocity.Size(), Flight->GetFlightPathAngle(), Flight->GetAngleOfAttack(), Flight->GetBank(), Dinofly->GetActorRotation().Yaw,
-				Flight->IsLanded() ? 1 : 0, LBAAnim && LBAAnim->GetCurrentAnimation() ? *LBAAnim->GetCurrentAnimation()->GetName() : TEXT("none"));
+				Flight->Velocity.X, Flight->Velocity.Y, Flight->Velocity.Z, Flight->Velocity.Size2D(), Flight->GetHeightAboveSurface(10000.f),
+				Rotation.Pitch, Rotation.Yaw, Rotation.Roll,
+				ViewCamera ? ViewCamera->GetComponentRotation().Pitch : 0.f, ViewCamera ? ViewCamera->FieldOfView : 0.f,
+				Flight->IsLanded() ? 1 : 0, Flight->IsFloating() ? 1 : 0, LBAAnim && LBAAnim->GetCurrentAnimation() ? *LBAAnim->GetCurrentAnimation()->GetName() : TEXT("none"));
 			NextReport = Elapsed + 0.5;
 		}
 		// Landing steps end once landed (or time out).
-		if (Step.bBrake && !bWaitingToLand && Elapsed - HeroStepStart < Step.Duration)
+		if (Step.bUntilLanded && !bWaitingToLand && Elapsed - HeroStepStart < Step.Duration)
 		{
 			HeroStepStart = Elapsed - Step.Duration;
 		}

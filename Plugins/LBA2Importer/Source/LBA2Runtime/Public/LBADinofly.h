@@ -19,9 +19,13 @@ struct FInputActionValue;
  * Rideable Dinofly (prototype): Twinsen summons it, rides it with simple flight controls, and gets off
  * once landed. The default body already has Twinsen on its back, so the hero is hidden while flying.
  *
- * Controls: W/S or stick = pitch (W dives, like a flight stick; lba.Dinofly.InvertPitch 1 flips it),
- * A/D = bank and turn, Space / A / right trigger = flap (climb, speed up, take off), Shift / left trigger
- * = brake (flare to slow down and land), mouse / right stick = look, F / Y = get off (when landed).
+ * Hover mode (default): W/S or left stick = forward / backward, A/D = turn, Space / A / right trigger = climb,
+ * Ctrl / C / B / left trigger = descend (into the ground or the sea to land), Shift / X / right bumper taps =
+ * thrusters (each tap speeds up, the extra speed fades).
+ * Glide mode (Tab / View): W/S pitch (W dives unless lba.Dinofly.InvertPitch 1), A/D bank, climb = flap,
+ * descend = brake. The camera follows behind, rising and looking down when descending or high above the
+ * ground; its field of view widens with speed, accelerations and altitude changes. Mouse / right stick look
+ * around, easing back behind after a moment. F / Y = get off (when landed on the ground).
  */
 UCLASS(Blueprintable)
 class LBA2RUNTIME_API ALBADinofly : public APawn
@@ -43,9 +47,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
 	int32 RiderlessBodyType = 37;
 
-	/** Height above the hero where a summoned Dinofly appears, already flying. */
+	/** Height above the hero where a summoned Dinofly appears, hovering. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
-	float SummonHeight = 1000.f;
+	float SummonHeight = 400.f;
+
+	/** How fast the camera swings back behind the Dinofly when it turns (1/s): lower is lazier. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Camera")
+	float CameraFollowSpeed = 4.f;
+
+	/** Height above the ground (cm) where the camera is fully raised, looking down by up to MaxCameraDrop degrees. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Camera")
+	float HighAltitude = 3000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Camera")
+	float MaxCameraDrop = 25.f;
 
 	/** A waiting Dinofly closer than this (cm) is mounted directly instead of flying in. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
@@ -62,9 +77,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	bool Dismount();
 
-	/** Drives the Dinofly like the player would (pitch, roll in [-1, 1], flap and brake in [0, 1]). */
+	/** Drives the Dinofly like the player would: move (X turn right, Y forward), vertical [-1, 1]. */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void SetHoverInput(FVector2D Move, float Vertical);
+
+	/** One tap of the thrusters (hover mode). */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void Thrust();
+
+	/** Glide mode equivalent: pitch (positive nose up), roll in [-1, 1], flap and brake. */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void SetFlightInput(float Pitch, float Roll, bool bFlap, bool bBrake);
+
+	/** Switches between hover (default) and glide. */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void ToggleFlightMode();
 
 	ULBAFlightMovementComponent* GetFlight() const { return Flight; }
 	virtual UPawnMovementComponent* GetMovementComponent() const override;
@@ -88,11 +115,14 @@ private:
 	void OnSteer(const FInputActionValue& Value);
 	void OnSteerReleased(const FInputActionValue& Value);
 	void OnLook(const FInputActionValue& Value);
-	void OnFlap(const FInputActionValue& Value) { bFlapHeld = true; }
-	void OnFlapReleased(const FInputActionValue& Value) { bFlapHeld = false; }
-	void OnBrake(const FInputActionValue& Value) { bBrakeHeld = true; }
-	void OnBrakeReleased(const FInputActionValue& Value) { bBrakeHeld = false; }
+	void OnAscend(const FInputActionValue& Value) { bAscendHeld = true; }
+	void OnAscendReleased(const FInputActionValue& Value) { bAscendHeld = false; }
+	void OnDescend(const FInputActionValue& Value) { bDescendHeld = true; }
+	void OnDescendReleased(const FInputActionValue& Value) { bDescendHeld = false; }
+	void OnThrust(const FInputActionValue& Value) { Thrust(); }
+	void OnToggleMode(const FInputActionValue& Value) { ToggleFlightMode(); }
 	void OnDismount(const FInputActionValue& Value) { Dismount(); }
+	bool IsHovering() const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<USphereComponent> Collision;
@@ -118,11 +148,19 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> LookAction;
 
+	/** Climb in hover mode, flap in glide mode. */
 	UPROPERTY(Transient)
-	TObjectPtr<UInputAction> FlapAction;
+	TObjectPtr<UInputAction> AscendAction;
+
+	/** Descend in hover mode, brake in glide mode. */
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> DescendAction;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UInputAction> BrakeAction;
+	TObjectPtr<UInputAction> ThrustAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> ModeAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> DismountAction;
@@ -132,9 +170,13 @@ private:
 	TWeakObjectPtr<ALBACharacter> Rider;
 
 	FVector2D SteerInput = FVector2D::ZeroVector;
-	bool bFlapHeld = false;
-	bool bBrakeHeld = false;
-	/** Mouse / right stick orbit (yaw, pitch), eased back behind the Dinofly after a while. */
+	bool bAscendHeld = false;
+	bool bDescendHeld = false;
+	/** Camera state: how far it is raised and tilted down (0-1), and the smoothed forward acceleration (cm/s^2). */
+	float CameraDrop = 0.f;
+	float SmoothedAcceleration = 0.f;
+	float LastHorizontalSpeed = 0.f;
+	/** Orbit (yaw, pitch) around the camera following the heading, eased back after a while. */
 	FVector2D LookOffset = FVector2D::ZeroVector;
 	float LastLookTime = -100.f;
 	FRotator CameraBase = FRotator::ZeroRotator;

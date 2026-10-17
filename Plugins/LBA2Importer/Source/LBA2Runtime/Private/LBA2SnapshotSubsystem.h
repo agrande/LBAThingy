@@ -33,6 +33,7 @@ private:
 	/** -LBA2Shots=dinofly: Twinsen summons the Dinofly, which flies a scripted sequence of inputs. */
 	bool bDinofly = false;
 	double NextReport = 0.0;
+	double LastThrust = -10.0;
 	int32 HeroStep = -1;
 	double HeroStepStart = 0.0;
 

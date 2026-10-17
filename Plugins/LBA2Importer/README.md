@@ -58,23 +58,37 @@ an Animation Blueprint.
 
 ### Riding the Dinofly (prototype)
 
-F calls the Dinofly: it appears 10 m above Twinsen, already gliding, with Twinsen on its back (body 0 of
+F calls the Dinofly: it appears hovering 4 m above Twinsen, with Twinsen on its back (body 0 of
 `DA_Dinofly`); a Dinofly waiting nearby is mounted directly. `ALBADinofly` flies with
-`ULBAFlightMovementComponent`, a small aerodynamic model (lift and drag from speed and angle of attack,
-banked turns, flapping thrust and hover lift) with assists that keep it simple: hands-off it glides at
-about 8 m/s, it never loops, and turns stay roughly level. It never goes under water: touching the sea
-slowly lands on it (it floats and can take off again), faster skims off it.
+`ULBAFlightMovementComponent`, in two modes:
 
-| Key | Dinofly |
-|---|---|
-| Up/W, Down/S, left stick | Nose down (dive, gain speed) / nose up (climb, lose speed). `lba.Dinofly.InvertPitch 1` swaps them |
-| Left/A, Right/D | Bank and turn (turn in place on the ground) |
-| Space, gamepad A or right trigger (hold) | Flap: speed up and climb, hover when slow, take off from the ground |
-| Left Shift, gamepad left trigger (hold) | Brake: flare the wings to slow down and come down gently to land |
-| F / gamepad Y | Get off (once landed on the ground, not at sea); the Dinofly waits there |
-| Mouse, right stick | Look around (eases back behind the Dinofly) |
+- **Hover** (default), a simplified helicopter: hands-off it holds its position and altitude; it flies
+  forward or backward and turns, with some inertia. Thrusters: each tap adds a burst of forward speed on top
+  of the cruise (up to three times the cruise speed), fading unless you tap again. Its body stays level,
+  with a small cosmetic lean and bank. Descending into the ground or the sea lands; moving or climbing
+  takes off again.
+- **Glide** (Tab): a small aerodynamic model (lift and drag from speed and angle of attack, banked turns,
+  flapping thrust) where speed and altitude trade; harder to fly.
 
-`-LBA2Shots=dinofly` runs a scripted flight (glide, climb, turns, dive, landings, dismount) that logs the
+The camera stays behind the Dinofly, swinging after it with some lag (`CameraFollowSpeed`). It rises and
+looks down at the Dinofly and the ground when descending or high above the ground (`HighAltitude`,
+`MaxCameraDrop`), and its field of view widens with speed, accelerations (each thrust), climbing or
+descending, and height. Looking around with the mouse or right stick (vertical inverted on the stick) eases
+back behind after a moment. It never
+goes under water: it floats on the sea (and skims off it when gliding in fast).
+
+| Key | Hover | Glide |
+|---|---|---|
+| W/S, up/down, left stick | Forward / backward (half speed) | Nose down / up (`lba.Dinofly.InvertPitch 1` swaps) |
+| A/D, left/right, left stick | Turn | Bank |
+| Space, gamepad A or right trigger (hold) | Climb (take off) | Flap |
+| Left Ctrl, C, gamepad B or left trigger (hold) | Descend (land) | Brake |
+| Left Shift, gamepad X or right bumper (tap, repeat) | Thrusters | |
+| Mouse, right stick | Look around (eases back behind) | Look around (eases back behind) |
+| Tab, gamepad View | Switch to glide | Switch to hover |
+| F / gamepad Y | Get off (once landed on the ground, not at sea); the Dinofly waits there | |
+
+`-LBA2Shots=dinofly` runs a scripted hover flight (moves, turns, climb, thrusters, landing at sea and on the ground, dismount) that logs the
 flight state and screenshots each step.
 
 ## Look
@@ -201,7 +215,7 @@ color, shade row / light, surfaces without fog).
 - [ ] Look, next: Citadel storm (lamppost lights, rain, lightning), cloud shadows, interior lights,
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
-- [x] Dinofly riding prototype: summon, simple plausible flight, land, get off
+- [x] Dinofly riding prototype: summon, hover (default) and glide flight, land, float, get off
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)
 - [ ] L6 Text (String Tables), voices, music, sprites, inventory objects, holomap, screens

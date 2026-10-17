@@ -40,6 +40,177 @@ void ULBAFlightMovementComponent::SetFlightInput(float InPitch, float InRoll, fl
 	Brake = FMath::Clamp(InBrake, 0.f, 1.f);
 }
 
+void ULBAFlightMovementComponent::SetHoverInput(float InForward, float InTurn, float InVertical)
+{
+	ForwardInput = FMath::Clamp(InForward, -1.f, 1.f);
+	TurnInput = FMath::Clamp(InTurn, -1.f, 1.f);
+	Vertical = FMath::Clamp(InVertical, -1.f, 1.f);
+}
+
+void ULBAFlightMovementComponent::Thrust()
+{
+	if (Mode != ELBAFlightMode::Hover)
+	{
+		return;
+	}
+	if (bLanded)
+	{
+		TakeOff();
+	}
+	ThrustKick = 1.f;
+	const float Added = FMath::Min(ThrustImpulse, MaxThrustSpeed - ThrustSpeed);
+	if (Added > 0.f)
+	{
+		ThrustSpeed += Added;
+		Velocity += Heading * Added * 0.5f;
+	}
+}
+
+float ULBAFlightMovementComponent::GetHeightAboveSurface(float MaxDistance) const
+{
+	if (!UpdatedComponent)
+	{
+		return 0.f;
+	}
+	const FVector Start = UpdatedComponent->GetComponentLocation();
+	float SurfaceZ = Start.Z - MaxDistance;
+	FHitResult Hit;
+	// Whatever the Dinofly itself would land on: sweep its own shape down, the surface is under its bottom.
+	if (UpdatedPrimitive)
+	{
+		const FCollisionShape Shape = UpdatedPrimitive->GetCollisionShape();
+		const float Bottom = Shape.GetExtent().Z;
+		if (GetWorld()->SweepSingleByChannel(Hit, Start, Start - FVector(0.f, 0.f, MaxDistance), UpdatedComponent->GetComponentQuat(),
+			UpdatedPrimitive->GetCollisionObjectType(), Shape, FCollisionQueryParams(SCENE_QUERY_STAT(LBAFlightHeight), false, GetOwner()),
+			FCollisionResponseParams(UpdatedPrimitive->GetCollisionResponseToChannels())))
+		{
+			SurfaceZ = Hit.Location.Z - Bottom;
+		}
+	}
+	float WaterZ = 0.f;
+	if (FindWaterSurface(Start, WaterZ) && WaterZ > SurfaceZ && WaterZ < Start.Z)
+	{
+		SurfaceZ = WaterZ;
+	}
+	return FMath::Clamp(Start.Z - SurfaceZ, 0.f, MaxDistance);
+}
+
+void ULBAFlightMovementComponent::SetMode(ELBAFlightMode NewMode)
+{
+	if (NewMode == Mode)
+	{
+		return;
+	}
+	Mode = NewMode;
+	if (Mode == ELBAFlightMode::Glide)
+	{
+		// Enter the glide with at least gliding speed, along the heading.
+		Alpha = FMath::DegreesToRadians(TrimAngle);
+		Bank = 0.f;
+		if (!bLanded)
+		{
+			const FVector Horizontal(Velocity.X, Velocity.Y, 0.f);
+			Velocity = Heading * FMath::Max(Horizontal.Size(), GetTrimSpeed()) + FVector(0.f, 0.f, Velocity.Z);
+		}
+	}
+	else
+	{
+		const FRotator Current = UpdatedComponent ? UpdatedComponent->GetComponentRotation() : FRotator::ZeroRotator;
+		LeanPitch = FRotator::NormalizeAxis(Current.Pitch);
+		LeanBank = FRotator::NormalizeAxis(Current.Roll);
+	}
+}
+
+void ULBAFlightMovementComponent::StartHovering()
+{
+	if (const AActor* Owner = GetOwner())
+	{
+		const FVector Forward = Owner->GetActorForwardVector().GetSafeNormal2D();
+		Heading = Forward.IsNearlyZero() ? Heading : Forward;
+	}
+	Mode = ELBAFlightMode::Hover;
+	bLanded = false;
+	bOnWater = false;
+	Velocity = FVector::ZeroVector;
+	LeanPitch = LeanBank = 0.f;
+	TurnRate = 0.f;
+	ThrustSpeed = ThrustKick = 0.f;
+	UpdateComponentVelocity();
+}
+
+bool ULBAFlightMovementComponent::WantsTakeoff() const
+{
+	if (Mode == ELBAFlightMode::Hover)
+	{
+		return Vertical > 0.5f || FMath::Abs(ForwardInput) > 0.3f;
+	}
+	return Flap > 0.5f;
+}
+
+void ULBAFlightMovementComponent::TakeOff()
+{
+	bLanded = false;
+	bOnWater = false;
+	Alpha = FMath::DegreesToRadians(TrimAngle);
+	Velocity = Mode == ELBAFlightMode::Hover
+		? FVector(0.f, 0.f, ClimbSpeed)
+		: Heading * TakeoffVelocity.X + FVector::UpVector * TakeoffVelocity.Y;
+}
+
+void ULBAFlightMovementComponent::TickHover(float DeltaTime)
+{
+	// Turn: the rate builds up and dies down, a little inertia.
+	const float OldYaw = Heading.Rotation().Yaw;
+	TurnRate += FMath::Clamp(TurnInput * HoverTurnRate - TurnRate, -HoverTurnAcceleration * DeltaTime, HoverTurnAcceleration * DeltaTime);
+	const float NewYaw = OldYaw + TurnRate * DeltaTime;
+	Heading = FRotator(0.f, NewYaw, 0.f).Vector();
+
+	// Thrust fades (faster when pulling back).
+	ThrustSpeed = FMath::Max(0.f, ThrustSpeed - ThrustDecay * DeltaTime * (ForwardInput < 0.f ? 3.f : 1.f));
+	ThrustKick = FMath::Max(0.f, ThrustKick - 2.f * DeltaTime);
+
+	// Velocity eases toward the requested one: inertia without piloting.
+	const FVector Location = UpdatedComponent->GetComponentLocation();
+	const float Cruise = HoverSpeed * (ForwardInput < 0.f ? BackwardSpeedFactor : 1.f);
+	const FVector2D TargetHorizontal = FVector2D(Heading) * (ForwardInput * Cruise + ThrustSpeed);
+	const float CeilingFade = FMath::Clamp((MaxAltitude - Location.Z) / 1000.f, 0.f, 1.f);
+	const float TargetVertical = Vertical > 0.f ? Vertical * ClimbSpeed * CeilingFade : Vertical * DescendSpeed;
+
+	FVector2D Horizontal(Velocity.X, Velocity.Y);
+	const bool bSpeedingUp = TargetHorizontal.SizeSquared() > Horizontal.SizeSquared();
+	const FVector2D Change = TargetHorizontal - Horizontal;
+	Horizontal += Change.GetClampedToMaxSize((bSpeedingUp ? HoverAcceleration : HoverDeceleration) * DeltaTime);
+	const float VerticalSpeed = Velocity.Z + FMath::Clamp(TargetVertical - Velocity.Z, -VerticalAcceleration * DeltaTime, VerticalAcceleration * DeltaTime);
+	Velocity = FVector(Horizontal.X, Horizontal.Y, VerticalSpeed);
+
+	// Cosmetic lean: nose down with forward speed, bank with the turn.
+	const float ForwardSpeed = FVector2D::DotProduct(Horizontal, FVector2D(Heading));
+	const float TargetPitch = -MaxLeanPitch * FMath::Clamp(ForwardSpeed / GetMaxHoverSpeed(), -1.f, 1.f);
+	const float TargetBank = MaxLeanBank * FMath::Clamp(TurnRate / HoverTurnRate, -1.f, 1.f) * FMath::Clamp(Horizontal.Size() / HoverSpeed, 0.f, 1.f);
+	LeanPitch = FMath::FInterpTo(LeanPitch, TargetPitch, DeltaTime, 4.f);
+	LeanBank = FMath::FInterpTo(LeanBank, TargetBank, DeltaTime, 4.f);
+
+	const FVector Delta = Velocity * DeltaTime;
+	FHitResult Hit;
+	SafeMoveUpdatedComponent(Delta, FRotator(LeanPitch, NewYaw, LeanBank).Quaternion(), true, Hit);
+	if (!Hit.IsValidBlockingHit())
+	{
+		return;
+	}
+	if (Hit.Normal.Z > WalkableNormalZ && Vertical < 0.f)
+	{
+		TouchDown(Hit);
+		return;
+	}
+	// Bump: lose the speed going into the obstacle and slide along it.
+	const float Into = Velocity | Hit.Normal;
+	if (Into < 0.f)
+	{
+		Velocity -= Into * Hit.Normal;
+	}
+	SlideAlongSurface(Delta, 1.f - Hit.Time, Hit.Normal, Hit, true);
+}
+
 void ULBAFlightMovementComponent::Launch(float ForwardSpeed)
 {
 	if (const AActor* Owner = GetOwner())
@@ -95,7 +266,14 @@ void ULBAFlightMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	}
 	else
 	{
-		TickAirborne(DeltaTime);
+		if (Mode == ELBAFlightMode::Hover)
+		{
+			TickHover(DeltaTime);
+		}
+		else
+		{
+			TickAirborne(DeltaTime);
+		}
 		HandleWater();
 	}
 	UpdateComponentVelocity();
@@ -229,7 +407,7 @@ void ULBAFlightMovementComponent::HandleWater()
 	}
 	FHitResult Hit;
 	MoveUpdatedComponent(FVector(0.f, 0.f, SurfaceZ + WaterlineHeight - Location.Z), UpdatedComponent->GetComponentQuat(), true, &Hit);
-	if (-Velocity.Z < MaxLandingSinkSpeed && Velocity.Size() < MaxLandingSpeed)
+	if (Mode == ELBAFlightMode::Hover || (-Velocity.Z < MaxLandingSinkSpeed && Velocity.Size() < MaxLandingSpeed))
 	{
 		bLanded = true;
 		bOnWater = true;
@@ -244,16 +422,13 @@ void ULBAFlightMovementComponent::HandleWater()
 
 void ULBAFlightMovementComponent::TickFloating(float DeltaTime)
 {
-	if (Flap > 0.5f)
+	if (WantsTakeoff())
 	{
-		bLanded = false;
-		bOnWater = false;
-		Alpha = FMath::DegreesToRadians(TrimAngle);
-		Velocity = Heading * TakeoffVelocity.X + FVector::UpVector * TakeoffVelocity.Y;
+		TakeOff();
 		return;
 	}
 
-	Heading = Heading.RotateAngleAxis(Roll * GroundTurnRate * DeltaTime, FVector::UpVector);
+	Heading = Heading.RotateAngleAxis((Mode == ELBAFlightMode::Hover ? TurnInput : Roll) * GroundTurnRate * DeltaTime, FVector::UpVector);
 	Bank = FMath::FInterpTo(Bank, 0.f, DeltaTime, 6.f);
 	Alpha = FMath::FInterpTo(Alpha, 0.f, DeltaTime, 6.f);
 
@@ -292,21 +467,21 @@ void ULBAFlightMovementComponent::TouchDown(const FHitResult& Hit)
 	bLanded = true;
 	bOnWater = false;
 	Bank = 0.f;
+	TurnRate = 0.f;
+	ThrustSpeed = 0.f;
 	Velocity = FVector::VectorPlaneProject(Velocity, Hit.Normal) * 0.3f;
 	Velocity.Z = 0.f;
 }
 
 void ULBAFlightMovementComponent::TickLanded(float DeltaTime)
 {
-	if (Flap > 0.5f)
+	if (WantsTakeoff())
 	{
-		bLanded = false;
-		Alpha = FMath::DegreesToRadians(TrimAngle);
-		Velocity = Heading * TakeoffVelocity.X + FVector::UpVector * TakeoffVelocity.Y;
+		TakeOff();
 		return;
 	}
 
-	Heading = Heading.RotateAngleAxis(Roll * GroundTurnRate * DeltaTime, FVector::UpVector);
+	Heading = Heading.RotateAngleAxis((Mode == ELBAFlightMode::Hover ? TurnInput : Roll) * GroundTurnRate * DeltaTime, FVector::UpVector);
 	Bank = FMath::FInterpTo(Bank, 0.f, DeltaTime, 6.f);
 	Alpha = FMath::FInterpTo(Alpha, 0.f, DeltaTime, 6.f);
 

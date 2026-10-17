@@ -34,17 +34,20 @@ namespace
 
 	constexpr float CollisionRadius = 70.f;
 
-	/** Dinofly animation slots (entity 109). The flight ones were identified from their root motion. */
+	/**
+	 * Dinofly animation slots (entity 109), identified from their root motion and wing bone motion. The flapping
+	 * cycle (218) is the one shared by every flying animation (the takeoffs 339/340 loop on it); 152 and 278 are
+	 * walks (wings folded), not flight.
+	 */
 	namespace DinoflyAnim
 	{
 		constexpr int32 Idle = 0;
+		/** Wings held spread, tail steering. */
 		constexpr int32 TurnLeft = 3;
 		constexpr int32 TurnRight = 4;
-		/** Wings spread, gliding down. */
-		constexpr int32 Glide = 30;
-		/** Flapping in place. */
-		constexpr int32 Hover = 152;
-		/** Flapping forward. */
+		/** Flapping while coming down. */
+		constexpr int32 Descend = 30;
+		/** The flapping cycle, played in place for hovering too. */
 		constexpr int32 Flap = 218;
 	}
 }
@@ -191,7 +194,7 @@ ALBADinofly* ALBADinofly::Summon(ALBACharacter* Hero, TSubclassOf<ALBADinofly> D
 	if (Dinofly)
 	{
 		Dinofly->Mount(Hero);
-		Dinofly->Flight->Launch(Dinofly->Flight->GetTrimSpeed());
+		Dinofly->Flight->StartHovering();
 	}
 	return Dinofly;
 }
@@ -273,18 +276,45 @@ bool ALBADinofly::Dismount()
 	}
 	Rider = nullptr;
 	SteerInput = FVector2D::ZeroVector;
-	bFlapHeld = bBrakeHeld = false;
+	bAscendHeld = bDescendHeld = false;
 	Flight->SetFlightInput(0.f, 0.f, 0.f, 0.f);
+	Flight->SetHoverInput(0.f, 0.f, 0.f);
 	ApplyEntity();
 	return true;
+}
+
+void ALBADinofly::Thrust()
+{
+	Flight->Thrust();
+}
+
+void ALBADinofly::SetHoverInput(FVector2D Move, float Vertical)
+{
+	SteerInput = Move;
+	bAscendHeld = Vertical > 0.f;
+	bDescendHeld = Vertical < 0.f;
 }
 
 void ALBADinofly::SetFlightInput(float Pitch, float Roll, bool bFlap, bool bBrake)
 {
 	// Same convention as the stick: Y forward, so forward pitch input is "nose down" unless inverted.
 	SteerInput = FVector2D(Roll, CVarInvertPitch.GetValueOnGameThread() ? Pitch : -Pitch);
-	bFlapHeld = bFlap;
-	bBrakeHeld = bBrake;
+	bAscendHeld = bFlap;
+	bDescendHeld = bBrake;
+}
+
+bool ALBADinofly::IsHovering() const
+{
+	return Flight->Mode == ELBAFlightMode::Hover;
+}
+
+void ALBADinofly::ToggleFlightMode()
+{
+	// Keep the view where it is across the switch.
+	const FRotator View = CameraBoom->GetComponentRotation();
+	Flight->SetMode(IsHovering() ? ELBAFlightMode::Glide : ELBAFlightMode::Hover);
+	CameraBase = FRotator(View.Pitch, View.Yaw, 0.f);
+	LookOffset = FVector2D::ZeroVector;
 }
 
 // Tick --------------------------------------------------------------------------------------------------------
@@ -292,8 +322,16 @@ void ALBADinofly::SetFlightInput(float Pitch, float Roll, bool bFlap, bool bBrak
 void ALBADinofly::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	const float PitchInput = CVarInvertPitch.GetValueOnGameThread() ? SteerInput.Y : -SteerInput.Y;
-	Flight->SetFlightInput(PitchInput, SteerInput.X, bFlapHeld ? 1.f : 0.f, bBrakeHeld ? 1.f : 0.f);
+	if (IsHovering())
+	{
+		const float Vertical = (bAscendHeld ? 1.f : 0.f) - (bDescendHeld ? 1.f : 0.f);
+		Flight->SetHoverInput(SteerInput.Y, SteerInput.X, Vertical);
+	}
+	else
+	{
+		const float PitchInput = CVarInvertPitch.GetValueOnGameThread() ? SteerInput.Y : -SteerInput.Y;
+		Flight->SetFlightInput(PitchInput, SteerInput.X, bAscendHeld ? 1.f : 0.f, bDescendHeld ? 1.f : 0.f);
+	}
 	UpdateAnimation();
 	UpdateCamera(DeltaSeconds);
 }
@@ -315,12 +353,40 @@ void ALBADinofly::UpdateAnimation()
 		PlaySlot(DinoflyAnim::Idle, 1.f, 0.3f);
 		return;
 	}
+	if (IsHovering())
+	{
+		const float Horizontal = Flight->Velocity.Size2D();
+		if (Horizontal < 250.f)
+		{
+			// Hovering in place: the flapping cycle, beating faster when climbing.
+			const float Vertical = Flight->Velocity.Z;
+			if (Vertical < -250.f)
+			{
+				PlaySlot(DinoflyAnim::Descend);
+			}
+			else
+			{
+				PlaySlot(DinoflyAnim::Flap, Vertical > 100.f ? 1.3f : 1.f);
+			}
+		}
+		else if (FMath::Abs(Flight->GetTurnRate()) > 90.f)
+		{
+			PlaySlot(Flight->GetTurnRate() > 0.f ? DinoflyAnim::TurnRight : DinoflyAnim::TurnLeft);
+		}
+		else
+		{
+			// Faster beats with speed, and a burst on each thrust.
+			const float Rate = FMath::GetMappedRangeValueClamped(FVector2D(250.f, Flight->GetMaxHoverSpeed()), FVector2D(0.8f, 1.5f), Horizontal);
+			PlaySlot(DinoflyAnim::Flap, Rate + 0.8f * Flight->GetThrustKick());
+		}
+		return;
+	}
 	const float Speed = Flight->Velocity.Size();
 	const bool bFlapping = Flight->GetFlapInput() > 0.f;
 	const float Bank = Flight->GetBank();
 	if (Speed < 350.f || (bFlapping && Speed < 500.f))
 	{
-		PlaySlot(DinoflyAnim::Hover, bFlapping ? 1.2f : 0.9f);
+		PlaySlot(DinoflyAnim::Flap, bFlapping ? 1.2f : 0.9f);
 	}
 	else if (bFlapping)
 	{
@@ -337,17 +403,28 @@ void ALBADinofly::UpdateAnimation()
 	}
 	else
 	{
-		PlaySlot(DinoflyAnim::Glide);
+		PlaySlot(DinoflyAnim::Descend);
 	}
 }
 
 void ALBADinofly::UpdateCamera(float DeltaSeconds)
 {
-	const float Speed = Flight->Velocity.Size();
-	const float Yaw = Flight->IsLanded() ? GetActorRotation().Yaw : Flight->GetHeading().Rotation().Yaw;
-	const float PathPitch = Flight->IsLanded() ? 0.f : Flight->GetFlightPathAngle();
-	const FRotator Target(FMath::Clamp(-15.f + 0.4f * PathPitch, -50.f, 20.f), Yaw, 0.f);
-	CameraBase = FMath::RInterpTo(CameraBase, Target, DeltaSeconds, 2.5f);
+	// Raised and looking down toward the Dinofly and the ground when descending or high above the ground.
+	const bool bHovering = IsHovering();
+	const FVector Velocity = Flight->Velocity;
+	const float HeightAlpha = Flight->IsLanded() ? 0.f
+		: FMath::Clamp((Flight->GetHeightAboveSurface(HighAltitude + 500.f) - 400.f) / (HighAltitude - 400.f), 0.f, 1.f);
+	const float DescendAlpha = bHovering ? FMath::Clamp(-Velocity.Z / Flight->DescendSpeed, 0.f, 1.f) : 0.f;
+	CameraDrop = FMath::FInterpTo(CameraDrop, FMath::Clamp(0.65f * HeightAlpha + 0.65f * DescendAlpha, 0.f, 1.f), DeltaSeconds, 1.5f);
+	// Tilting the boom down raises the camera along its arc, looking down at the Dinofly; bring the Dinofly a bit
+	// toward the center of the view meanwhile, so it stays framed with the ground around it.
+	CameraBoom->SocketOffset = FVector(0.f, 0.f, 120.f - 60.f * CameraDrop);
+
+	// Behind the Dinofly, swinging after it with some lag; never banked. Gliding also follows the climb or dive.
+	const float Yaw = !bHovering && Flight->IsLanded() ? GetActorRotation().Yaw : Flight->GetHeading().Rotation().Yaw;
+	const float PathPitch = bHovering || Flight->IsLanded() ? 0.f : Flight->GetFlightPathAngle();
+	const FRotator Target(FMath::Clamp(-15.f - MaxCameraDrop * CameraDrop + 0.4f * PathPitch, -60.f, 20.f), Yaw, 0.f);
+	CameraBase = FMath::RInterpTo(CameraBase, Target, DeltaSeconds, bHovering ? CameraFollowSpeed : 2.5f);
 
 	// The look offset eases back behind the Dinofly when the player stops looking around.
 	if (GetWorld()->GetTimeSeconds() - LastLookTime > 1.5f)
@@ -356,10 +433,21 @@ void ALBADinofly::UpdateCamera(float DeltaSeconds)
 	}
 	CameraBoom->SetWorldRotation(FRotator(FMath::Clamp(CameraBase.Pitch + LookOffset.Y, -80.f, 60.f), CameraBase.Yaw + LookOffset.X, 0.f));
 
-	// Speed feel: pull back and widen with speed.
-	const float SpeedAlpha = FMath::Clamp((Speed - Flight->GetTrimSpeed()) / 1500.f, 0.f, 1.f);
-	CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, 850.f + 350.f * SpeedAlpha, DeltaSeconds, 2.f);
-	FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, 75.f + 20.f * SpeedAlpha, DeltaSeconds, 2.f));
+	// Field of view: wider with speed, accelerations (each thrust punches it), climbing or descending, and height.
+	const float HorizontalSpeed = Velocity.Size2D();
+	if (DeltaSeconds > 0.f)
+	{
+		SmoothedAcceleration = FMath::FInterpTo(SmoothedAcceleration, (HorizontalSpeed - LastHorizontalSpeed) / DeltaSeconds, DeltaSeconds, 6.f);
+	}
+	LastHorizontalSpeed = HorizontalSpeed;
+	const float SpeedAlpha = bHovering
+		? FMath::Clamp((HorizontalSpeed - Flight->HoverSpeed) / Flight->MaxThrustSpeed, 0.f, 1.f)
+		: FMath::Clamp((Velocity.Size() - Flight->GetTrimSpeed()) / 1500.f, 0.f, 1.f);
+	const float AccelerationAlpha = FMath::Clamp(SmoothedAcceleration / 1500.f, 0.f, 1.f);
+	const float VerticalAlpha = bHovering ? FMath::Clamp(FMath::Abs(Velocity.Z) / Flight->DescendSpeed, 0.f, 1.f) : 0.f;
+	const float FieldOfView = FMath::Min(75.f + 14.f * SpeedAlpha + 10.f * AccelerationAlpha + 6.f * VerticalAlpha + 8.f * HeightAlpha, 105.f);
+	CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, 850.f + 300.f * SpeedAlpha + 200.f * HeightAlpha, DeltaSeconds, 2.f);
+	FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, FieldOfView, DeltaSeconds, 3.f));
 }
 
 // Input -------------------------------------------------------------------------------------------------------
@@ -402,18 +490,33 @@ void ALBADinofly::CreateInput()
 	LookAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Dinofly_Look"));
 	LookAction->ValueType = EInputActionValueType::Axis2D;
 	InputContext->MapKey(LookAction, EKeys::Mouse2D);
-	MapStick(LookAction, EKeys::Gamepad_Right2D);
+	{
+		// The stick turns the camera at a rate (degrees/s), the mouse by its movement.
+		FEnhancedActionKeyMapping& Mapping = InputContext->MapKey(LookAction, EKeys::Gamepad_Right2D);
+		UInputModifierDeadZone* DeadZone = NewObject<UInputModifierDeadZone>(InputContext);
+		DeadZone->LowerThreshold = 0.2f;
+		UInputModifierScalar* Rate = NewObject<UInputModifierScalar>(InputContext);
+		// Vertical inverted on the stick (pushing up looks down), not on the mouse.
+		Rate->Scalar = FVector(180.0, -120.0, 1.0);
+		Mapping.Modifiers.Add(DeadZone);
+		Mapping.Modifiers.Add(NewObject<UInputModifierScaleByDeltaTime>(InputContext));
+		Mapping.Modifiers.Add(Rate);
+	}
 
-	FlapAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Dinofly_Flap"));
-	FlapAction->ValueType = EInputActionValueType::Boolean;
-	InputContext->MapKey(FlapAction, EKeys::SpaceBar);
-	InputContext->MapKey(FlapAction, EKeys::Gamepad_FaceButton_Bottom);
-	InputContext->MapKey(FlapAction, EKeys::Gamepad_RightTrigger);
-
-	BrakeAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Dinofly_Brake"));
-	BrakeAction->ValueType = EInputActionValueType::Boolean;
-	InputContext->MapKey(BrakeAction, EKeys::LeftShift);
-	InputContext->MapKey(BrakeAction, EKeys::Gamepad_LeftTrigger);
+	auto MakeButton = [this](const TCHAR* Name, std::initializer_list<FKey> Keys)
+	{
+		UInputAction* Action = NewObject<UInputAction>(this, Name);
+		Action->ValueType = EInputActionValueType::Boolean;
+		for (const FKey& Key : Keys)
+		{
+			InputContext->MapKey(Action, Key);
+		}
+		return Action;
+	};
+	AscendAction = MakeButton(TEXT("IA_LBA_Dinofly_Ascend"), { EKeys::SpaceBar, EKeys::Gamepad_FaceButton_Bottom, EKeys::Gamepad_RightTrigger });
+	DescendAction = MakeButton(TEXT("IA_LBA_Dinofly_Descend"), { EKeys::LeftControl, EKeys::C, EKeys::Gamepad_FaceButton_Right, EKeys::Gamepad_LeftTrigger });
+	ThrustAction = MakeButton(TEXT("IA_LBA_Dinofly_Thrust"), { EKeys::LeftShift, EKeys::Gamepad_FaceButton_Left, EKeys::Gamepad_RightShoulder });
+	ModeAction = MakeButton(TEXT("IA_LBA_Dinofly_Mode"), { EKeys::Tab, EKeys::Gamepad_Special_Left });
 
 	DismountAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Dinofly_Dismount"));
 	DismountAction->ValueType = EInputActionValueType::Boolean;
@@ -437,10 +540,12 @@ void ALBADinofly::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	Input->BindAction(SteerAction, ETriggerEvent::Triggered, this, &ALBADinofly::OnSteer);
 	Input->BindAction(SteerAction, ETriggerEvent::Completed, this, &ALBADinofly::OnSteerReleased);
 	Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALBADinofly::OnLook);
-	Input->BindAction(FlapAction, ETriggerEvent::Started, this, &ALBADinofly::OnFlap);
-	Input->BindAction(FlapAction, ETriggerEvent::Completed, this, &ALBADinofly::OnFlapReleased);
-	Input->BindAction(BrakeAction, ETriggerEvent::Started, this, &ALBADinofly::OnBrake);
-	Input->BindAction(BrakeAction, ETriggerEvent::Completed, this, &ALBADinofly::OnBrakeReleased);
+	Input->BindAction(AscendAction, ETriggerEvent::Started, this, &ALBADinofly::OnAscend);
+	Input->BindAction(AscendAction, ETriggerEvent::Completed, this, &ALBADinofly::OnAscendReleased);
+	Input->BindAction(DescendAction, ETriggerEvent::Started, this, &ALBADinofly::OnDescend);
+	Input->BindAction(DescendAction, ETriggerEvent::Completed, this, &ALBADinofly::OnDescendReleased);
+	Input->BindAction(ThrustAction, ETriggerEvent::Started, this, &ALBADinofly::OnThrust);
+	Input->BindAction(ModeAction, ETriggerEvent::Started, this, &ALBADinofly::OnToggleMode);
 	Input->BindAction(DismountAction, ETriggerEvent::Started, this, &ALBADinofly::OnDismount);
 }
 
