@@ -23,8 +23,9 @@ struct FInputActionValue;
  * lands at once: the legs come down while descending, the landing absorbs the touchdown.
  *
  * Hover mode (default): W/S or left stick = forward / backward, A/D = turn, Space / A / right trigger = climb,
- * Ctrl / C / B / left trigger = descend (into the ground or the sea to land), Shift / X / right bumper taps =
- * thrusters (each tap speeds up, the extra speed fades).
+ * Ctrl / C / B / left trigger = descend (into the ground or the sea to land). The higher, the faster it cruises.
+ * Shift / X / right bumper held = dive (forward steeper, backward shallower, turning spirals down); releasing pulls
+ * out with the speed gained (climbing meanwhile zooms up). It pulls out by itself before hitting anything.
  * Glide mode (Tab / View): W/S pitch (W dives unless lba.Dinofly.InvertPitch 1), A/D bank, climb = flap,
  * descend = brake. The camera follows behind, rising and looking down when descending or high above the
  * ground; its field of view widens with speed, accelerations and altitude changes. Mouse / right stick look
@@ -80,9 +81,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void SetHoverInput(FVector2D Move, float Vertical);
 
-	/** One tap of the thrusters (hover mode). */
+	/** Dive while held (hover mode, in flight). */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
-	void Thrust();
+	void SetDiveInput(bool bDive);
 
 	/** Glide mode equivalent: pitch (positive nose up), roll in [-1, 1], flap and brake. */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
@@ -122,7 +123,8 @@ private:
 	void OnAscendReleased(const FInputActionValue& Value) { bAscendHeld = false; }
 	void OnDescend(const FInputActionValue& Value) { bDescendHeld = true; }
 	void OnDescendReleased(const FInputActionValue& Value) { bDescendHeld = false; }
-	void OnThrust(const FInputActionValue& Value) { Thrust(); }
+	void OnDive(const FInputActionValue& Value) { bDiveHeld = true; }
+	void OnDiveReleased(const FInputActionValue& Value) { bDiveHeld = false; }
 	void OnToggleMode(const FInputActionValue& Value) { ToggleFlightMode(); }
 	void OnDismount(const FInputActionValue& Value) { Dismount(); }
 	bool IsHovering() const;
@@ -160,7 +162,7 @@ private:
 	TObjectPtr<UInputAction> DescendAction;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UInputAction> ThrustAction;
+	TObjectPtr<UInputAction> DiveAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ModeAction;
@@ -175,6 +177,9 @@ private:
 	FVector2D SteerInput = FVector2D::ZeroVector;
 	bool bAscendHeld = false;
 	bool bDescendHeld = false;
+	bool bDiveHeld = false;
+	/** The wings are folded (a layer) for the dive. */
+	bool bWingsTucked = false;
 	/** Camera state: how far it is raised and tilted down (0-1), and the smoothed forward acceleration (cm/s^2). */
 	float CameraDrop = 0.f;
 	/** One-shot animation (landing, takeoff, legs coming down as a layer) running, or INDEX_NONE. */

@@ -231,8 +231,8 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 		/** X turn right, Y forward. */
 		FVector2D Move;
 		float Vertical;
-		/** Taps the thrusters every half second. */
-		bool bThrust;
+		/** Holds the dive. */
+		bool bDive;
 		/** Ends early once landed. */
 		bool bUntilLanded;
 	};
@@ -241,19 +241,26 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 		{ TEXT("mount_on_ground"), 1.5f, { 0, 0 }, 0, false, false },
 		{ TEXT("walk_forward"), 2.5f, { 0, 1 }, 0, false, false },
 		{ TEXT("walk_turn_right"), 1.5f, { 1, 1 }, 0, false, false },
-		{ TEXT("thrust_on_ground_ignored"), 1.0f, { 0, 0 }, 0, true, false },
+		{ TEXT("dive_on_ground_ignored"), 1.0f, { 0, 0 }, 0, true, false },
 		{ TEXT("takeoff"), 2.5f, { 0, 0 }, 1, false, false },
 		{ TEXT("forward"), 2.0f, { 0, 1 }, 0, false, false },
-		{ TEXT("thrust_forward"), 3.0f, { 0, 1 }, 0, true, false },
+		{ TEXT("climb_high"), 8.0f, { 0, 0.3f }, 1, false, false },
+		{ TEXT("fast_high"), 5.0f, { 0, 1 }, 0, false, false },
+		{ TEXT("dive_spiral"), 1.8f, { 1, 0 }, 0, true, false },
+		{ TEXT("pull_out"), 2.5f, { 0, 1 }, 0, false, false },
+		{ TEXT("climb_again"), 5.0f, { 0, 0.5f }, 1, false, false },
+		{ TEXT("dive_steep"), 1.6f, { 0, 1 }, 0, true, false },
+		{ TEXT("zoom_climb"), 4.0f, { 0, 0 }, 1, false, false },
+		{ TEXT("coast"), 3.0f, { 0, 0 }, 0, false, false },
 		{ TEXT("stop"), 2.0f, { 0, 0 }, 0, false, false },
 		{ TEXT("descend_land"), 15.0f, { 0, 0 }, -1, false, true },
 		{ TEXT("landed"), 1.0f, { 0, 0 }, 0, false, false },
 		{ TEXT("walk_after_landing"), 2.0f, { 0, 1 }, 0, false, false },
 		{ TEXT("takeoff_again"), 2.5f, { 0, 0 }, 1, false, false },
 		{ TEXT("turn_around"), 1.75f, { 1, 0 }, 0, false, false },
-		{ TEXT("return_over_land"), 3.0f, { 0, 1 }, 0, true, false },
+		{ TEXT("return_over_land"), 3.0f, { 0, 1 }, 0, false, false },
 		{ TEXT("turn_left"), 1.0f, { -1, 0.3f }, 0, false, false },
-		{ TEXT("forward_over_land"), 2.0f, { 0, 1 }, 0, true, false },
+		{ TEXT("forward_over_land"), 2.0f, { 0, 1 }, 0, false, false },
 		{ TEXT("stop_over_land"), 1.5f, { 0, 0 }, 0, false, false },
 		{ TEXT("land_on_ground"), 15.0f, { 0, 0 }, -1, false, true },
 		{ TEXT("landed_again"), 1.0f, { 0, 0 }, 0, false, false },
@@ -303,11 +310,7 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 		Dinofly->DisableInput(PC);
 		const bool bWaitingToLand = Step.bUntilLanded && !Dinofly->GetFlight()->IsLanded();
 		Dinofly->SetHoverInput(Step.Move, Step.Vertical);
-		if (Step.bThrust && Elapsed - LastThrust > 0.5)
-		{
-			Dinofly->Thrust();
-			LastThrust = Elapsed;
-		}
+		Dinofly->SetDiveInput(Step.bDive);
 		if (Elapsed >= NextReport)
 		{
 			const ULBAFlightMovementComponent* Flight = Dinofly->GetFlight();
@@ -315,9 +318,9 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 			const ULBAAnimInstance* LBAAnim = Cast<ULBAAnimInstance>(Anim);
 			const FRotator Rotation = Dinofly->GetActorRotation();
 			const UCameraComponent* ViewCamera = Dinofly->FindComponentByClass<UCameraComponent>();
-			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly %s t=%.2f loc=(%.0f %.0f %.0f) vel=(%.0f %.0f %.0f) speed2d=%.0f height=%.0f pitch=%.1f yaw=%.0f roll=%.1f cam(pitch=%.1f fov=%.1f) landed=%d floating=%d takingoff=%d anim=%s@%.2f layer=%d@%.2f"),
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly %s t=%.2f loc=(%.0f %.0f %.0f) vel=(%.0f %.0f %.0f) speed2d=%.0f cruise=%.0f dive=%d height=%.0f pitch=%.1f yaw=%.0f roll=%.1f cam(pitch=%.1f fov=%.1f) landed=%d floating=%d takingoff=%d anim=%s@%.2f layer=%d@%.2f"),
 				Step.Name, Elapsed - HeroStepStart, Dinofly->GetActorLocation().X, Dinofly->GetActorLocation().Y, Dinofly->GetActorLocation().Z,
-				Flight->Velocity.X, Flight->Velocity.Y, Flight->Velocity.Z, Flight->Velocity.Size2D(), Flight->GetHeightAboveSurface(10000.f),
+				Flight->Velocity.X, Flight->Velocity.Y, Flight->Velocity.Z, Flight->Velocity.Size2D(), Flight->GetCruiseSpeed(), Flight->IsDiving() ? (Flight->IsPullingOut() ? 2 : 1) : 0, Flight->GetHeightAboveSurface(10000.f),
 				Rotation.Pitch, Rotation.Yaw, Rotation.Roll,
 				ViewCamera ? ViewCamera->GetComponentRotation().Pitch : 0.f, ViewCamera ? ViewCamera->FieldOfView : 0.f,
 				Flight->IsLanded() ? 1 : 0, Flight->IsFloating() ? 1 : 0, Flight->IsTakingOff() ? 1 : 0, LBAAnim && LBAAnim->GetCurrentAnimation() ? *LBAAnim->GetCurrentAnimation()->GetName() : TEXT("none"), LBAAnim ? LBAAnim->GetCurrentAnimationTime() : 0.f,

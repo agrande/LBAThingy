@@ -18,7 +18,9 @@ enum class ELBAFlightMode : uint8
  * Hover (default): a simplified helicopter. The inputs are forward/backward, turn and climb/descend; the
  * velocity and the turn rate ease toward the requested ones with limited accelerations, so there is inertia but
  * no piloting. The body stays level, with a small cosmetic lean and bank. Touching walkable ground (or the water)
- * lands at once, from any direction.
+ * lands at once, from any direction. The higher above the ground, the faster the cruise; at speed, turns are
+ * banked and wider, and the extra speed is lost slowly. Holding the dive tucks the wings and dives (turning
+ * spirals down); releasing it pulls out to level flight with the speed gained, or zooms up when climbing.
  *
  * On the ground (both modes) the inputs walk slowly (and paddle on water); only climbing (hover) or flapping
  * (glide) takes off, after a short crouch (TakeoffDelay) for the push-off animation.
@@ -44,22 +46,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight")
 	ELBAFlightMode Mode = ELBAFlightMode::Hover;
 
-	/** Horizontal cruising speed (cm/s). */
+	/** Horizontal cruising speed (cm/s) near the ground or the water. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float HoverSpeed = 700.f;
 
 	/**
-	 * Thrusters: each Thrust() (a tap) adds this much forward speed on top of the cruise (cm/s), half of it at once,
-	 * up to MaxThrustSpeed in all; the extra speed then fades at ThrustDecay (cm/s^2), so tapping again keeps it up.
+	 * Cruising speed high above the ground (cm/s): the cruise grows from HoverSpeed at FastHeights.X to this at
+	 * FastHeights.Y (height above the ground or the water, cm). 18 m/s, about 65 km/h: the cruise of a large
+	 * flapping flyer.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float ThrustImpulse = 450.f;
+	float HighCruiseSpeed = 1800.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float MaxThrustSpeed = 1400.f;
+	FVector2D FastHeights = FVector2D(400.f, 3500.f);
 
+	/** Speed above HoverSpeed is lost this slowly (cm/s^2) unless pulling back: drag, not braking. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float ThrustDecay = 300.f;
+	float CoastDeceleration = 250.f;
+
+	/** Sideways acceleration of turns (g): at speed the turn rate drops below HoverTurnRate, turns get wider. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
+	float MaxTurnLoad = 2.f;
 
 	/** Vertical speeds (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
@@ -88,6 +96,41 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float HoverTurnAcceleration = 360.f;
+
+	/**
+	 * Dive (held): the wings tucked, the path heads down at DiveAngle (degrees below the horizon; forward steepens
+	 * it to SteepDiveAngle, backward flattens it to ShallowDiveAngle) and speed builds up; turning spirals down.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
+	float DiveAngle = 55.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
+	float SteepDiveAngle = 75.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
+	float ShallowDiveAngle = 30.f;
+
+	/** Speed of a vertical dive (cm/s), where drag balances gravity: 36 m/s, about 130 km/h. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
+	float DiveTerminalSpeed = 3600.f;
+
+	/** Wing beats into the dive (cm/s^2), fading out toward DiveTerminalSpeed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
+	float DiveFlapAcceleration = 400.f;
+
+	/** How fast the path tips over into the dive (degrees/s), and the load (g) curving it at speed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
+	float DivePitchRate = 90.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
+	float PullOutLoad = 3.f;
+
+	/**
+	 * Releasing the dive pulls out to level flight, keeping the speed; climbing meanwhile zooms up at this angle
+	 * (degrees), trading the speed for height, until back to cruising speed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
+	float ZoomClimbAngle = 35.f;
 
 	/** Cosmetic lean (degrees): nose down at full speed, bank in turns. 0 keeps the body perfectly level. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
@@ -215,9 +258,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void SetHoverInput(float InForward, float InTurn, float InVertical);
 
-	/** Hover mode: one burst of the thrusters (see ThrustImpulse). Takes off when landed. */
+	/** Hover mode: dive while held (pressing starts a dive, in flight only); releasing pulls out. */
 	UFUNCTION(BlueprintCallable, Category = "Flight")
-	void Thrust();
+	void SetDiveInput(bool bInDive);
 
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void SetMode(ELBAFlightMode NewMode);
@@ -266,13 +309,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	float GetVerticalInput() const { return Vertical; }
 
-	/** Hover mode: top speed with full thrust (cm/s). */
+	/** Hover mode: top cruising speed, high above the ground (cm/s). */
 	UFUNCTION(BlueprintPure, Category = "Flight")
-	float GetMaxHoverSpeed() const { return HoverSpeed + MaxThrustSpeed; }
+	float GetMaxHoverSpeed() const { return HighCruiseSpeed; }
 
-	/** 1 right after a thrust, fading to 0 within half a second. */
+	/** Hover mode: cruising speed at the current height (cm/s). */
 	UFUNCTION(BlueprintPure, Category = "Flight")
-	float GetThrustKick() const { return ThrustKick; }
+	float GetCruiseSpeed() const;
+
+	/** Hover mode: diving or pulling out of a dive. */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	bool IsDiving() const { return DivePhase != EDivePhase::None; }
+
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	bool IsPullingOut() const { return DivePhase == EDivePhase::PullingOut; }
 
 	/** Height above the ground or the water below (cm), up to MaxDistance. */
 	UFUNCTION(BlueprintPure, Category = "Flight")
@@ -311,6 +361,11 @@ private:
 	void HandleWater();
 	void TickFloating(float DeltaTime);
 	void TickHover(float DeltaTime);
+	void TickDive(float DeltaTime, float Height);
+	/** Hover mode: turns the heading from the turn input (limited by MaxTurnLoad at that speed); degrees turned. */
+	float UpdateTurn(float DeltaTime, float HorizontalSpeed);
+	/** Something in the way of the Dinofly's shape moving by Delta. */
+	bool IsBlocked(const FVector& Delta) const;
 	/** Ground and water: counts the takeoff crouch down; true once it took off (the caller stops). */
 	bool TickTakeoff(float DeltaTime);
 	/** Ground and water: walking velocity (horizontal) and turning from the inputs. */
@@ -326,9 +381,15 @@ private:
 	float ForwardInput = 0.f;
 	float TurnInput = 0.f;
 	float Vertical = 0.f;
-	/** Extra forward speed from the thrusters (cm/s), and the kick of the last thrust. */
-	float ThrustSpeed = 0.f;
-	float ThrustKick = 0.f;
+	enum class EDivePhase : uint8 { None, Diving, PullingOut };
+	EDivePhase DivePhase = EDivePhase::None;
+	bool bDiveInput = false;
+	bool bDivePressed = false;
+	/** Dive: speed along the path (cm/s), and the path angle (radians below the horizon, negative climbing). */
+	float DiveSpeed = 0.f;
+	float DivePath = 0.f;
+	/** Height above the surface (cm), smoothed: sets the cruising speed. */
+	float CruiseHeight = 0.f;
 	/** Seconds left crouching before taking off, or negative. */
 	float TakeoffCountdown = -1.f;
 	/** Hover mode: degrees/s of heading change, and the cosmetic lean (degrees). */
