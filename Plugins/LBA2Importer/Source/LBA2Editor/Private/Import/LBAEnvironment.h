@@ -24,8 +24,8 @@ struct FLBAEnvironmentPreset
 	 * has no cast shadows, only its baked shading, so shade stays fairly bright.
 	 */
 	float GroundRow = 0.f;
-	float AmbientLight = 0.45f;
-	float MaxAmbientFraction = 0.7f;
+	float AmbientLight = 0.6f;
+	float MaxAmbientFraction = 0.85f;
 	/** Overcast: the sky light is a uniform gray sky tinted SkyLightColor instead of a capture of the sky. */
 	bool bOvercast = false;
 	FLinearColor SkyLightColor = FLinearColor::White;
@@ -47,6 +47,8 @@ struct FLBAEnvironmentPreset
 	int32 PaletteEntry = 42;
 	/** Exposure compensation (EV) of the manual exposure. */
 	float ExposureBias = 0.f;
+	/** Exposure (EV) of the enhanced look's grade on this level (0 keeps the shared enhanced look's). */
+	float EnhancedExposure = 0.f;
 
 	/**
 	 * The palette's fog color: color of the height fog, and of the original look's linear distance fog (view depth,

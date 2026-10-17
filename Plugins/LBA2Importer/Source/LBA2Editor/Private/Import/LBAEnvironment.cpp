@@ -63,6 +63,11 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::ForIsland(const FString& IslandName
 	Preset.PaletteEntry = FLBAXpl::GetEntryForIsland(IslandName);
 	Preset.bClouds = true;
 	const FString Name = IslandName.ToUpper();
+	if (Name == TEXT("CITABAU"))
+	{
+		// Sunnier than the original's mid tones in the enhanced look (the desert's sand is bright enough).
+		Preset.EnhancedExposure = 0.3f;
+	}
 	if (Name == TEXT("CITADEL"))
 	{
 		// Twinsun hidden by the storm: the original lights it evenly, without shadows, under a black sky.
@@ -354,6 +359,10 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(LevelLook, Vector.Key, Vector.Value);
 		}
 		UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("ContrastPivot"), ContrastPivot);
+		if (Look == ELBALookMode::Enhanced && Preset.EnhancedExposure != 0.f)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("Exposure"), Preset.EnhancedExposure);
+		}
 		if (Preset.bWater)
 		{
 			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(LevelLook, TEXT("WaterColor"), Preset.SeaColor);
