@@ -3,6 +3,7 @@ Binaries/
 Intermediate/
 Saved/
 DerivedDataCache/
+Build/*/FileOpenOrder/
 Plugins/*/Binaries/
 Plugins/*/Intermediate/
 
