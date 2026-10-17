@@ -21,6 +21,8 @@ namespace
 	constexpr int32 Step = 2;
 	/** Below the terrain's sea-level shores, so it never pokes through them. */
 	constexpr float Clearance = 3.f;
+	/** Cells deeper than this on all corners are not built (the water hides them anyway). */
+	constexpr float Deep = MaxDepth * 0.75f;
 
 	/**
 	 * Exact squared Euclidean distance transform of one row (Felzenszwalb and Huttenlocher): Out[I] = min over J of
@@ -185,7 +187,6 @@ UStaticMesh* LBASeabed::Build(FLBAImportContext& Context, const FLBASeabedSettin
 		V.Color = FVector4f(C.R, C.G, C.B, 0.5f);
 		return V;
 	};
-	const float Deep = MaxDepth * 0.75f;
 	for (int32 J = 0; J + 1 < GH; ++J)
 	{
 		for (int32 I = 0; I + 1 < GW; ++I)
@@ -216,7 +217,12 @@ UStaticMesh* LBASeabed::Build(FLBAImportContext& Context, const FLBASeabedSettin
 	TArray<FName> Slots;
 	Builder.BuildStatic(Description, Materials, Slots);
 	FLBAStaticMeshOptions Options;
-	Options.bNoCollision = true;
+	Options.bComplexAsSimple = true;
 	Options.bDeferBuild = false;
 	return Context.CreateStaticMesh(Folder, Name, MoveTemp(Description), Materials, Slots, Options);
+}
+
+float LBASeabed::GetCutoffDepth()
+{
+	return Clearance + Deep;
 }

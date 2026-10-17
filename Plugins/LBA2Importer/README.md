@@ -49,11 +49,33 @@ pressing Play spawns `ALBACharacter`. Any other map can do the same with a GameM
 | F5-F8 or 1-4 | Normal, Athletic, Aggressive, Discreet |
 | Mouse | Orbit the camera (it recenters behind Twinsen when he walks) |
 | Tab | Toggle the experimental Modern mode (camera-relative movement, in-place animations) |
+| F / gamepad Y | Ride the Dinofly (see below) |
 
 `ALBACharacter` loads its behaviour entities from **Project Settings > Plugins > LBA2 > Hero** and can be
 subclassed in Blueprint. `SetMoveInput` and `DoBehaviourAction` let AI or scripts drive it.
 `ULBAAnimInstance` plays LBA animations natively (crossfades, LBA loop frames, root motion) without
 an Animation Blueprint.
+
+### Riding the Dinofly (prototype)
+
+F calls the Dinofly: it appears 10 m above Twinsen, already gliding, with Twinsen on its back (body 0 of
+`DA_Dinofly`); a Dinofly waiting nearby is mounted directly. `ALBADinofly` flies with
+`ULBAFlightMovementComponent`, a small aerodynamic model (lift and drag from speed and angle of attack,
+banked turns, flapping thrust and hover lift) with assists that keep it simple: hands-off it glides at
+about 8 m/s, it never loops, and turns stay roughly level. It never goes under water: touching the sea
+slowly lands on it (it floats and can take off again), faster skims off it.
+
+| Key | Dinofly |
+|---|---|
+| Up/W, Down/S, left stick | Nose down (dive, gain speed) / nose up (climb, lose speed). `lba.Dinofly.InvertPitch 1` swaps them |
+| Left/A, Right/D | Bank and turn (turn in place on the ground) |
+| Space, gamepad A or right trigger (hold) | Flap: speed up and climb, hover when slow, take off from the ground |
+| Left Shift, gamepad left trigger (hold) | Brake: flare the wings to slow down and come down gently to land |
+| F / gamepad Y | Get off (once landed on the ground, not at sea); the Dinofly waits there |
+| Mouse, right stick | Look around (eases back behind the Dinofly) |
+
+`-LBA2Shots=dinofly` runs a scripted flight (glide, climb, turns, dive, landings, dismount) that logs the
+flight state and screenshots each step.
 
 ## Look
 
@@ -97,7 +119,8 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   zone as the ground (`WaterTerrainComponent`), with a generated seabed (`SM_<Island>_Seabed`) sloping
   down from the shores: a shallow shelf off beaches, deep water right along quays and cliffs, in the
   shores' average color, so beaches get lighter shallows and the water's shore foam and waves see a
-  real depth. The palette shading recognizes water (single layer
+  real depth. The seabed has collision, and an invisible floor (`SeaFloor`) closes the open sea where the
+  seabed stops, 7.5 m down. The palette shading recognizes water (single layer
   water shading model) and draws it as cartoon water (`Shaders/Private/LBAWaterCartoon.ush`): the
   island's original sea texture, at the original's scale but without visible repetition (hex-tiling:
   three randomly shifted, turned and mirrored copies blended texel by texel, *SeaCellSize*,
@@ -178,6 +201,7 @@ color, shade row / light, surfaces without fog).
 - [ ] Look, next: Citadel storm (lamppost lights, rain, lightning), cloud shadows, interior lights,
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
+- [x] Dinofly riding prototype: summon, simple plausible flight, land, get off
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)
 - [ ] L6 Text (String Tables), voices, music, sprites, inventory objects, holomap, screens

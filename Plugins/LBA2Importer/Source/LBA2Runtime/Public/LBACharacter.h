@@ -10,6 +10,7 @@ class USpringArmComponent;
 class UInputAction;
 class UInputMappingContext;
 class ULBAAnimInstance;
+class ALBADinofly;
 struct FInputActionValue;
 
 /** Twinsen's behaviour modes (F5-F8 in the original game). */
@@ -69,6 +70,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Authentic")
 	float JumpSpeed = 520.f;
 
+	/** Dinofly summoned with F / gamepad Y. Empty uses ALBADinofly. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Mounts")
+	TSubclassOf<ALBADinofly> DinoflyClass;
+
+	/** Mounts a nearby waiting Dinofly, or calls one over (prototype). */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	ALBADinofly* SummonDinofly();
+
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void SetBehaviour(ELBABehaviour NewBehaviour);
 
@@ -121,6 +130,7 @@ private:
 	void OnAction(const FInputActionValue& Value);
 	void OnBehaviour(ELBABehaviour NewBehaviour) { SetBehaviour(NewBehaviour); }
 	void OnToggleControlMode(const FInputActionValue& Value);
+	void OnSummonDinofly(const FInputActionValue& Value) { SummonDinofly(); }
 
 	UPROPERTY(VisibleAnywhere, Category = "Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -142,6 +152,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ToggleModeAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> SummonDinoflyAction;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UInputAction>> BehaviourActions;

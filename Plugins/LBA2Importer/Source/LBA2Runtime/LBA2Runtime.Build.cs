@@ -15,6 +15,7 @@ public class LBA2Runtime : ModuleRules
 			"AnimGraphRuntime",
 			"InputCore",
 			"EnhancedInput",
+			"Water",
 		});
 	}
 }

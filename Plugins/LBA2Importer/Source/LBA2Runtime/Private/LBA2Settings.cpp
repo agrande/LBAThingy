@@ -12,4 +12,5 @@ ULBA2Settings::ULBA2Settings()
 	HeroAthletic = Entity(TEXT("DA_TwinsenAthletic"));
 	HeroAggressive = Entity(TEXT("DA_TwinsenAggressive"));
 	HeroDiscreet = Entity(TEXT("DA_TwinsenDiscreet"));
+	Dinofly = Entity(TEXT("DA_Dinofly"));
 }

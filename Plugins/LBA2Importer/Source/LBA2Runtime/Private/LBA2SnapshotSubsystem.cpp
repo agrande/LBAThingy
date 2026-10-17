@@ -2,6 +2,7 @@
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -17,6 +18,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "LBAAnimInstance.h"
 #include "LBACharacter.h"
+#include "LBADinofly.h"
+#include "LBAFlightMovementComponent.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
@@ -45,6 +48,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	else if (Spec.Equals(TEXT("hero"), ESearchCase::IgnoreCase))
 	{
 		bHero = true;
+		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("dinofly"), ESearchCase::IgnoreCase))
+	{
+		bDinofly = true;
 		bPosesReady = true;
 	}
 	else
@@ -203,6 +211,111 @@ bool ULBA2SnapshotSubsystem::TickHero(UWorld* World, float DeltaTime)
 	return true;
 }
 
+bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
+{
+	struct FStep
+	{
+		const TCHAR* Name;
+		float Duration;
+		float Pitch;
+		float Roll;
+		bool bFlap;
+		bool bBrake;
+	};
+	// Pitch: positive = nose up.
+	static const FStep Steps[] =
+	{
+		{ TEXT("summon_glide"), 3.0f, 0, 0, false, false },
+		{ TEXT("flap_climb"), 3.0f, 0, 0, true, false },
+		{ TEXT("bank_right"), 3.0f, 0, 1, false, false },
+		{ TEXT("bank_left_flap"), 3.0f, 0, -1, true, false },
+		{ TEXT("dive"), 2.0f, -1, 0, false, false },
+		{ TEXT("pull_up"), 2.0f, 1, 0, false, false },
+		{ TEXT("glide_after"), 2.0f, 0, 0, false, false },
+		{ TEXT("brake_descend"), 12.0f, -0.4f, 0, false, true },
+		{ TEXT("landed"), 1.5f, 0, 0, false, false },
+		{ TEXT("takeoff"), 2.5f, 0, 0, true, false },
+		{ TEXT("land_again"), 12.0f, -0.4f, 0, false, true },
+		{ TEXT("dismount"), 2.0f, 0, 0, false, false },
+		{ TEXT("on_foot"), 1.5f, 0, 0, false, false },
+	};
+	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (HeroStep < 0)
+	{
+		ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+		if (!Hero)
+		{
+			if (Elapsed > 15.0)
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots dinofly: the player pawn is not an ALBACharacter"));
+				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+				return false;
+			}
+			return true;
+		}
+		if (!Hero->SummonDinofly())
+		{
+			return true;
+		}
+		HeroStep = 0;
+		HeroStepStart = Elapsed;
+		NextReport = Elapsed;
+		Pawn = PC->GetPawn();
+	}
+	if (HeroStep >= NumSteps)
+	{
+		if (Elapsed - HeroStepStart > 1.0)
+		{
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+
+	const FStep& Step = Steps[HeroStep];
+	ALBADinofly* Dinofly = Cast<ALBADinofly>(Pawn);
+	if (Dinofly)
+	{
+		Dinofly->DisableInput(PC);
+		const bool bWaitingToLand = Step.bBrake && !Dinofly->GetFlight()->IsLanded();
+		Dinofly->SetFlightInput(Step.Pitch, Step.Roll, Step.bFlap, Step.bBrake);
+		if (Elapsed >= NextReport)
+		{
+			const ULBAFlightMovementComponent* Flight = Dinofly->GetFlight();
+			const UAnimInstance* Anim = Dinofly->FindComponentByClass<USkeletalMeshComponent>()->GetAnimInstance();
+			const ULBAAnimInstance* LBAAnim = Cast<ULBAAnimInstance>(Anim);
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly %s t=%.2f loc=(%.0f %.0f %.0f) speed=%.0f path=%.0f aoa=%.1f bank=%.0f yaw=%.0f landed=%d anim=%s"),
+				Step.Name, Elapsed - HeroStepStart, Dinofly->GetActorLocation().X, Dinofly->GetActorLocation().Y, Dinofly->GetActorLocation().Z,
+				Flight->Velocity.Size(), Flight->GetFlightPathAngle(), Flight->GetAngleOfAttack(), Flight->GetBank(), Dinofly->GetActorRotation().Yaw,
+				Flight->IsLanded() ? 1 : 0, LBAAnim && LBAAnim->GetCurrentAnimation() ? *LBAAnim->GetCurrentAnimation()->GetName() : TEXT("none"));
+			NextReport = Elapsed + 0.5;
+		}
+		// Landing steps end once landed (or time out).
+		if (Step.bBrake && !bWaitingToLand && Elapsed - HeroStepStart < Step.Duration)
+		{
+			HeroStepStart = Elapsed - Step.Duration;
+		}
+	}
+
+	if (Elapsed - HeroStepStart >= Step.Duration)
+	{
+		const FString File = ShotDirectory / FString::Printf(TEXT("Dinofly_%02d_%s.png"), HeroStep, Step.Name);
+		FScreenshotRequest::RequestScreenshot(File, false, false);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly step %s done, pawn %s"), Step.Name, Pawn ? *Pawn->GetName() : TEXT("none"));
+		if (Dinofly && FCString::Strcmp(Step.Name, TEXT("dismount")) == 0)
+		{
+			const bool bOff = Dinofly->Dismount();
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly dismount %s, pawn now %s"), bOff ? TEXT("ok") : TEXT("refused"), PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"));
+		}
+		++HeroStep;
+		HeroStepStart = Elapsed;
+	}
+	return true;
+}
+
 bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
@@ -218,6 +331,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bHero)
 	{
 		return TickHero(World, DeltaTime);
+	}
+	if (bDinofly)
+	{
+		return TickDinofly(World, DeltaTime);
 	}
 	if (!bPosesReady)
 	{

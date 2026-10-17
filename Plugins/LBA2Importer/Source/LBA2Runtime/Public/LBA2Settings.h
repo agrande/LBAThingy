@@ -43,4 +43,8 @@ public:
 	/** Body (outfit) used by default: 0 no tunic, 1 tunic and medallion, 2 sword... */
 	UPROPERTY(Config, EditAnywhere, Category = "Hero")
 	int32 HeroBodyType = 1;
+
+	/** Entity of the rideable Dinofly (ALBADinofly), summoned with F. */
+	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
+	TSoftObjectPtr<class ULBAEntityAsset> Dinofly;
 };

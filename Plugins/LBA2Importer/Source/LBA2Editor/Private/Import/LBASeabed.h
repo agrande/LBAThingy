@@ -27,6 +27,10 @@ namespace LBASeabed
 	 * shallows along the shore (lighter water, shore depth for the water's foam and waves) and deepens away from it.
 	 * Low shores (beaches) get a shallow shelf; steep ones (quays, cliffs) drop into deep water right away.
 	 * Only the coastal band is built: open sea further out stays bottomless. Returns null when there is no coast.
+	 * The seabed has collision, so the shores can be walked down and landed on.
 	 */
 	UStaticMesh* Build(FLBAImportContext& Context, const FLBASeabedSettings& Settings, const FString& Folder, const FString& Name);
+
+	/** Depth below the sea (cm) where the seabed stops: the open sea's floor belongs there. */
+	float GetCutoffDepth();
 }

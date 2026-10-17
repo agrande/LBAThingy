@@ -17,6 +17,7 @@
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
 #include "LBAAnimInstance.h"
+#include "LBADinofly.h"
 #include "LBATypes.h"
 
 namespace
@@ -438,6 +439,11 @@ void ALBACharacter::CreateInput()
 	ToggleModeAction->ValueType = EInputActionValueType::Boolean;
 	InputContext->MapKey(ToggleModeAction, EKeys::Tab);
 
+	SummonDinoflyAction = NewObject<UInputAction>(this, TEXT("IA_LBA_SummonDinofly"));
+	SummonDinoflyAction->ValueType = EInputActionValueType::Boolean;
+	InputContext->MapKey(SummonDinoflyAction, EKeys::F);
+	InputContext->MapKey(SummonDinoflyAction, EKeys::Gamepad_FaceButton_Top);
+
 	// F5-F8 like the original game, 1-4 as an alternative.
 	const FKey BehaviourKeys[4][2] = { { EKeys::F5, EKeys::One }, { EKeys::F6, EKeys::Two }, { EKeys::F7, EKeys::Three }, { EKeys::F8, EKeys::Four } };
 	for (int32 Index = 0; Index < 4; ++Index)
@@ -468,6 +474,7 @@ void ALBACharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALBACharacter::OnLook);
 	Input->BindAction(ActionAction, ETriggerEvent::Started, this, &ALBACharacter::OnAction);
 	Input->BindAction(ToggleModeAction, ETriggerEvent::Started, this, &ALBACharacter::OnToggleControlMode);
+	Input->BindAction(SummonDinoflyAction, ETriggerEvent::Started, this, &ALBACharacter::OnSummonDinofly);
 	for (int32 Index = 0; Index < BehaviourActions.Num(); ++Index)
 	{
 		Input->BindAction(BehaviourActions[Index], ETriggerEvent::Started, this, &ALBACharacter::OnBehaviour, ELBABehaviour(Index));
@@ -569,6 +576,16 @@ void ALBACharacter::DoBehaviourAction()
 void ALBACharacter::OnToggleControlMode(const FInputActionValue& Value)
 {
 	SetControlMode(ControlMode == ELBAControlMode::Authentic ? ELBAControlMode::Modern : ELBAControlMode::Authentic);
+}
+
+ALBADinofly* ALBACharacter::SummonDinofly()
+{
+	if (ActionSlot != INDEX_NONE || GetCharacterMovement()->IsFalling())
+	{
+		return nullptr;
+	}
+	MoveInput = FVector2D::ZeroVector;
+	return ALBADinofly::Summon(this, DinoflyClass);
 }
 
 ALBAGameMode::ALBAGameMode()

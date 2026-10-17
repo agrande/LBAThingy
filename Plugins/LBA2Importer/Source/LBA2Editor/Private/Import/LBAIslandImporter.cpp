@@ -561,7 +561,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		Preset.FogStart, Preset.FogEnd, Preset.FogVisibility, *Preset.SkyColor.ToString(), *Preset.CloudColor.ToString());
 
 	// Sea: Unreal water on Twinsun, else a large opaque plane at LBA height 0 with the island's sea texture, like the
-	// original's; and an invisible floor just below so the player can wade.
+	// original's; and an invisible floor: where the seabed stops on Twinsun, else just below so the player can wade.
 	const FRotator SunRotation = LBAEnvironment::SunRotationFromLbaAngles(FirstSection.LightAlpha, FirstSection.LightBeta);
 	const FBox SeaBounds = IslandBounds.ExpandBy(FVector(LBA::IslandCubeSize * Scale * 6.0, LBA::IslandCubeSize * Scale * 6.0, 0.0));
 	if (Preset.bWater)
@@ -581,7 +581,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 			{
 				UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
 				Component->SetStaticMesh(SeabedMesh);
-				Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Component->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 				Component->SetCastShadow(false);
 				GroundActors.Add(Actor);
 			}
@@ -633,7 +633,8 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 			// Unshaded, so it would light the island with its color through Lumen.
 			Component->bAffectDynamicIndirectLighting = false;
 		}
-		if (AStaticMeshActor* Floor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform(FRotator::ZeroRotator, FVector(Center.X, Center.Y, -60.0), PlaneScale),
+		const double FloorZ = Preset.bWater ? -LBASeabed::GetCutoffDepth() : -60.0;
+		if (AStaticMeshActor* Floor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform(FRotator::ZeroRotator, FVector(Center.X, Center.Y, FloorZ), PlaneScale),
 			TEXT("SeaFloor"), TEXT("Environment")))
 		{
 			UStaticMeshComponent* Component = Floor->GetStaticMeshComponent();
