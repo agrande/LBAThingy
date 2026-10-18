@@ -18,6 +18,7 @@
 #include "LBA2Settings.h"
 #include "LBAAnimInstance.h"
 #include "LBADinofly.h"
+#include "LBAPlayerController.h"
 #include "LBATypes.h"
 
 namespace
@@ -593,4 +594,5 @@ ALBADinofly* ALBACharacter::SummonDinofly()
 ALBAGameMode::ALBAGameMode()
 {
 	DefaultPawnClass = ALBACharacter::StaticClass();
+	PlayerControllerClass = ALBAPlayerController::StaticClass();
 }

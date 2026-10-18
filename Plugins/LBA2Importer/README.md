@@ -50,6 +50,7 @@ pressing Play spawns `ALBACharacter`. Any other map can do the same with a GameM
 | Mouse | Orbit the camera (it recenters behind Twinsen when he walks) |
 | Tab | Toggle the experimental Modern mode (camera-relative movement, in-place animations) |
 | F / gamepad Y | Ride the Dinofly (see below) |
+| M / gamepad Start | Island menu (see below) |
 
 `ALBACharacter` loads its behaviour entities from **Project Settings > Plugins > LBA2 > Hero** and can be
 subclassed in Blueprint. `SetMoveInput` and `DoBehaviourAction` let AI or scripts drive it.
@@ -94,6 +95,18 @@ goes under water: it floats on the sea (and skims off it when gliding in fast).
 
 `-LBA2Shots=dinofly` runs a scripted ride (mount, walk, takeoff, moves, turns, thrusters, landing at sea, paddling, landing on the ground, dismount) that logs the
 flight state and screenshots each step.
+
+### Island menu
+
+M or gamepad Start (on foot or riding) pauses the game and lists every island level found under
+**Project Settings > Plugins > LBA2 > Island Menu > Islands Path** (`/Game/LBA2/Islands`), in story order;
+picking one opens its level at its PlayerStart. Mouse, keyboard (arrows, Enter) and gamepad (d-pad, A) all
+work; Esc, B, M or Start close it. Packaged and standalone games open it at startup (*Island Menu At
+Startup*; Play In Editor and `-LBA2Shots` runs do not). Nothing references the island levels, so the
+LBA2Editor module adds every level the menu lists to each cook (`ModifyCook` delegate). It lives in `ALBAPlayerController` (the controller
+of `LBAGameMode`), `ULBAIslandMenu` (a UMG widget built in C++, `IslandMenuClass` takes a Blueprint
+subclass) and `ULBAIslandTravelSubsystem` (`GetIslands`, `TravelToIsland`). Console: `lba.Travel DESERT`,
+`lba.Travel` (lists the islands), `lba.IslandMenu`.
 
 ## Look
 
@@ -229,6 +242,7 @@ color, shade row / light, surfaces without fog).
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
 - [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off
+- [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)
 - [ ] L6 Text (String Tables), voices, music, sprites, inventory objects, holomap, screens

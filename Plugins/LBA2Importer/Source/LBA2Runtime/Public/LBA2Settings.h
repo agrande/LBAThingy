@@ -47,4 +47,12 @@ public:
 	/** Entity of the rideable Dinofly (ALBADinofly), summoned with F. */
 	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
 	TSoftObjectPtr<class ULBAEntityAsset> Dinofly;
+
+	/** Folder scanned for the island levels (L_<ISLAND>) listed by the island menu (M / gamepad Start). */
+	UPROPERTY(Config, EditAnywhere, Category = "Island Menu")
+	FString IslandsPath = TEXT("/Game/LBA2/Islands");
+
+	/** Packaged and standalone games open the island menu when they start (Play In Editor does not). */
+	UPROPERTY(Config, EditAnywhere, Category = "Island Menu")
+	bool bIslandMenuAtStartup = true;
 };

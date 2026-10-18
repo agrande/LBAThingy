@@ -1,4 +1,7 @@
 #include "Framework/Docking/TabManager.h"
+#include "GameDelegates.h"
+#include "LBA2Runtime.h"
+#include "LBAIslandTravelSubsystem.h"
 #include "Modules/ModuleManager.h"
 #include "SLBA2ImporterPanel.h"
 #include "ToolMenus.h"
@@ -26,10 +29,22 @@ public:
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
 		UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FLBA2EditorModule::RegisterMenus));
+
+		// The island menu opens levels nothing references: cook them all, or packaged builds only have the startup map.
+		ModifyCookHandle = FGameDelegates::Get().GetModifyCookDelegate().AddLambda(
+			[](TConstArrayView<const ITargetPlatform*> TargetPlatforms, TArray<FName>& PackagesToCook, TArray<FName>& PackagesToNeverCook)
+			{
+				for (const FLBAIslandInfo& Island : ULBAIslandTravelSubsystem::FindIslands())
+				{
+					PackagesToCook.AddUnique(Island.Level.ToSoftObjectPath().GetLongPackageFName());
+					UE_LOG(LogLBA2, Display, TEXT("Cooking island level %s"), *Island.Level.ToSoftObjectPath().GetLongPackageName());
+				}
+			});
 	}
 
 	virtual void ShutdownModule() override
 	{
+		FGameDelegates::Get().GetModifyCookDelegate().Remove(ModifyCookHandle);
 		UToolMenus::UnRegisterStartupCallback(this);
 		UToolMenus::UnregisterOwner(this);
 		if (FSlateApplication::IsInitialized())
@@ -39,6 +54,8 @@ public:
 	}
 
 private:
+	FDelegateHandle ModifyCookHandle;
+
 	void RegisterMenus()
 	{
 		FToolMenuOwnerScoped OwnerScoped(this);
