@@ -87,8 +87,8 @@ struct FLBAEnvironmentPreset
 	TOptional<FLinearColor> HeightFogColor;
 
 	/**
-	 * Rain (M_LBA_Rain, both looks): share of the rain's cells that hold a drop, 0 for none. The original's rain:
-	 * speed, wind and palette colors.
+	 * Rain (both looks), 0 for none: NS_LBA_Rain keeps Rain * 18000 drops in view, with the original's wind slant (70% of
+	 * its speed) and palette colors, and M_LBA_Rain splashes them on the ground.
 	 */
 	float Rain = 0.f;
 

@@ -39,6 +39,7 @@ public class LBA2Editor : ModuleRules
 			"ImageWrapper",
 			"AnimationBlueprintLibrary",
 			"Water",
+			"Niagara",
 		});
 	}
 }

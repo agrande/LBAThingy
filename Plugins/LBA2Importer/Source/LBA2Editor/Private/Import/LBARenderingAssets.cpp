@@ -10,11 +10,20 @@
 #include "LBATypes.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialExpressionCameraPositionWS.h"
+#include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionParticleDirection.h"
+#include "Materials/MaterialExpressionParticlePositionWS.h"
+#include "Materials/MaterialExpressionParticleSize.h"
+#include "Materials/MaterialExpressionParticleSpeed.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSceneTexture.h"
+#include "Materials/MaterialExpressionSubtract.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureObjectParameter.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialExpressionWorldPosition.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "TextureCompiler.h"
 
@@ -578,7 +587,7 @@ UMaterial* FLBARenderingAssets::GetRainMaster()
 UMaterial* FLBARenderingAssets::CreateRainMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 4;
+	constexpr int32 Version = 5;
 
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_Rain"), &bExisted);
@@ -588,7 +597,7 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 	}
 	LBAMaterials::BeginRebuild(Material, Version);
 
-	// After tonemapping (and TSR): thin fast streaks stay crisp, in display colors.
+	// After tonemapping (and TSR): thin rings stay crisp, in display colors.
 	Material->MaterialDomain = MD_PostProcess;
 	Material->BlendableLocation = BL_SceneColorAfterTonemapping;
 
@@ -623,7 +632,7 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 	};
 
 	UMaterialExpressionCustom* Custom = Cast<UMaterialExpressionCustom>(Add(UMaterialExpressionCustom::StaticClass(), -250, 0));
-	Custom->Description = TEXT("LBA rain");
+	Custom->Description = TEXT("LBA rain splashes");
 	Custom->OutputType = CMOT_Float3;
 	Custom->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBARain.ush") };
 	Custom->Inputs.Reset();
@@ -633,26 +642,13 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 		const TCHAR* Name;
 		UMaterialExpression* Expression;
 	};
-	// Defaults follow the original's rain (RAIN.CPP) at the default world scale: drops falling 12.5 m/s, blown 9 m/s
-	// sideways, 40 cm streaks. Colors are display (sRGB) colors; levels set their palette's.
+	// The colors are display (sRGB) colors; levels set their palette's.
 	const FInput Inputs[] =
 	{
 		{ TEXT("SceneColor"), SceneTexture(PPI_PostProcessInput0, -200) },
 		{ TEXT("Depth"), SceneTexture(PPI_SceneDepth, -80) },
 		{ TEXT("RainAmount"), Scalar(TEXT("RainAmount"), 0.5f, TEXT("Rain")) },
-		{ TEXT("FallSpeed"), Scalar(TEXT("FallSpeed"), 1250.f, TEXT("Rain")) },
-		{ TEXT("Wind"), Vector(TEXT("Wind"), FLinearColor(625.f, 625.f, 0.f), TEXT("Rain")) },
-		{ TEXT("StreakLength"), Scalar(TEXT("StreakLength"), 40.f, TEXT("Rain")) },
-		{ TEXT("StreakWidth"), Scalar(TEXT("StreakWidth"), 0.5f, TEXT("Rain")) },
-		{ TEXT("NearRadius"), Scalar(TEXT("NearRadius"), 150.f, TEXT("Rain")) },
-		{ TEXT("Layers"), Scalar(TEXT("Layers"), 5.f, TEXT("Rain")) },
-		{ TEXT("ColumnSpacing"), Scalar(TEXT("ColumnSpacing"), 0.02f, TEXT("Rain")) },
-		{ TEXT("CellHeight"), Scalar(TEXT("CellHeight"), 0.4f, TEXT("Rain")) },
 		{ TEXT("Opacity"), Scalar(TEXT("Opacity"), 0.6f, TEXT("Rain")) },
-		{ TEXT("NearColor"), Vector(TEXT("NearColor"), FLinearColor(0.53f, 0.53f, 0.47f), TEXT("Rain")) },
-		{ TEXT("FarColor"), Vector(TEXT("FarColor"), FLinearColor(0.17f, 0.17f, 0.13f), TEXT("Rain")) },
-		{ TEXT("FogDensity"), Scalar(TEXT("FogDensity"), 0.f, TEXT("Rain")) },
-		{ TEXT("FogStart"), Scalar(TEXT("FogStart"), 0.f, TEXT("Rain")) },
 		{ TEXT("SplashRate"), Scalar(TEXT("SplashRate"), 40.f, TEXT("Splashes")) },
 		{ TEXT("SplashRadius"), Scalar(TEXT("SplashRadius"), 6.f, TEXT("Splashes")) },
 		{ TEXT("SplashDuration"), Scalar(TEXT("SplashDuration"), 0.25f, TEXT("Splashes")) },
@@ -669,19 +665,7 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 	Custom->Code = TEXT(
 		"FLBARainSettings R;\n"
 		"R.Amount = RainAmount;\n"
-		"R.FallSpeed = FallSpeed;\n"
-		"R.Wind = Wind.xy;\n"
-		"R.StreakLength = StreakLength;\n"
-		"R.StreakWidth = max(StreakWidth, 0.01);\n"
-		"R.NearRadius = max(NearRadius, 10.0);\n"
-		"R.Layers = Layers;\n"
-		"R.ColumnSpacing = max(ColumnSpacing, 0.001);\n"
-		"R.CellHeight = max(CellHeight, 0.01);\n"
 		"R.Opacity = Opacity;\n"
-		"R.NearColor = NearColor.rgb;\n"
-		"R.FarColor = FarColor.rgb;\n"
-		"R.FogDensity = FogDensity;\n"
-		"R.FogStart = FogStart;\n"
 		"R.SplashRate = SplashRate;\n"
 		"R.SplashRadius = max(SplashRadius, 0.5);\n"
 		"R.SplashDuration = max(SplashDuration, 0.01);\n"
@@ -690,5 +674,144 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 		"return LBARain(GetViewportUV(Parameters), SceneColor.rgb, Depth.r, R);");
 
 	UMaterialEditingLibrary::ConnectMaterialProperty(Custom, TEXT(""), MP_EmissiveColor);
+	return LBAMaterials::EndRebuild(Context, Material);
+}
+
+UMaterial* FLBARenderingAssets::GetRainDropMaster()
+{
+	if (!RainDropMaster)
+	{
+		RainDropMaster = CreateRainDropMaster();
+	}
+	return RainDropMaster;
+}
+
+UMaterial* FLBARenderingAssets::CreateRainDropMaster()
+{
+	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
+	constexpr int32 Version = 4;
+
+	bool bExisted = false;
+	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_RainDrop"), &bExisted);
+	if (!Material || (bExisted && LBAMaterials::IsGeneratedVersion(Material, Version)))
+	{
+		return Material;
+	}
+	LBAMaterials::BeginRebuild(Material, Version);
+
+	// Unlit streaks composited after motion blur, so after the palette shading (BL_SceneColorAfterDOF), which would
+	// read them as light on the surfaces behind. They fade in the fog themselves (Unreal's fog is the enhanced look's
+	// only), and stay out of the velocity buffer (TSR would smear them).
+	Material->MaterialDomain = MD_Surface;
+	Material->BlendMode = BLEND_Translucent;
+	Material->SetShadingModel(MSM_Unlit);
+	Material->TranslucencyPass = MTP_AfterMotionBlur;
+	Material->bUseTranslucencyVertexFog = false;
+	Material->bOutputTranslucentVelocity = false;
+	bool bNeedsRecompile = false;
+	UMaterialEditingLibrary::SetMaterialUsage(Material, MATUSAGE_NiagaraSprites, bNeedsRecompile);
+
+	auto Add = [Material](UClass* Class, int32 X, int32 Y)
+	{
+		return UMaterialEditingLibrary::CreateMaterialExpression(Material, Class, X, Y);
+	};
+	auto Connect = [](UMaterialExpression* From, const TCHAR* Output, UMaterialExpression* To, const TCHAR* Input)
+	{
+		UMaterialEditingLibrary::ConnectMaterialExpressions(From, Output, To, Input);
+	};
+	auto Subtract = [&](UMaterialExpression* A, UMaterialExpression* B, int32 Y)
+	{
+		UMaterialExpression* Node = Add(UMaterialExpressionSubtract::StaticClass(), -600, Y);
+		Connect(A, TEXT(""), Node, TEXT("A"));
+		Connect(B, TEXT(""), Node, TEXT("B"));
+		return Node;
+	};
+	int32 ParameterY = 0;
+	auto Scalar = [&](const TCHAR* Name, float Default)
+	{
+		UMaterialExpressionScalarParameter* Node = Cast<UMaterialExpressionScalarParameter>(Add(UMaterialExpressionScalarParameter::StaticClass(), -600, ParameterY));
+		ParameterY += 80;
+		Node->ParameterName = Name;
+		Node->DefaultValue = Default;
+		Node->Group = TEXT("Rain");
+		return Node;
+	};
+	auto Vector = [&](const TCHAR* Name, const FLinearColor& Default)
+	{
+		UMaterialExpressionVectorParameter* Node = Cast<UMaterialExpressionVectorParameter>(Add(UMaterialExpressionVectorParameter::StaticClass(), -600, ParameterY));
+		ParameterY += 160;
+		Node->ParameterName = Name;
+		Node->DefaultValue = Default;
+		Node->Group = TEXT("Rain");
+		return Node;
+	};
+	auto MakeCustom = [&](const TCHAR* Description, ECustomMaterialOutputType Output, int32 Y, std::initializer_list<TPair<const TCHAR*, UMaterialExpression*>> Inputs, const TCHAR* Code)
+	{
+		UMaterialExpressionCustom* Custom = Cast<UMaterialExpressionCustom>(Add(UMaterialExpressionCustom::StaticClass(), -250, Y));
+		Custom->Description = Description;
+		Custom->OutputType = Output;
+		Custom->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBARain.ush") };
+		Custom->Inputs.Reset();
+		for (const TPair<const TCHAR*, UMaterialExpression*>& Input : Inputs)
+		{
+			FCustomInput& CustomInput = Custom->Inputs.AddDefaulted_GetRef();
+			CustomInput.InputName = Input.Key;
+			CustomInput.Input.Connect(0, Input.Value);
+		}
+		Custom->Code = Code;
+		return Custom;
+	};
+
+	UMaterialExpression* Camera = Add(UMaterialExpressionCameraPositionWS::StaticClass(), -900, -400);
+	UMaterialExpression* Particle = Add(UMaterialExpressionParticlePositionWS::StaticClass(), -900, -320);
+	UMaterialExpression* Position = Add(UMaterialExpressionWorldPosition::StaticClass(), -900, -240);
+	UMaterialExpression* Direction = Add(UMaterialExpressionParticleDirection::StaticClass(), -900, -160);
+	UMaterialExpression* Speed = Add(UMaterialExpressionParticleSpeed::StaticClass(), -900, -120);
+	UMaterialExpression* Size = Add(UMaterialExpressionParticleSize::StaticClass(), -900, -80);
+	UMaterialExpression* UV = Add(UMaterialExpressionTextureCoordinate::StaticClass(), -900, 0);
+	UMaterialExpression* MinPixels = Scalar(TEXT("MinPixels"), 1.5f);
+
+	// Vertex: the streak along the drop's motion relative to the camera, at least MinPixels wide.
+	UMaterialExpressionCustom* Offset = MakeCustom(TEXT("LBA rain drop offset"), CMOT_Float3, -400,
+		{
+			{ TEXT("ToCamera"), Subtract(Camera, Particle, -400) },
+			{ TEXT("VertexOffset"), Subtract(Position, Particle, -320) },
+			{ TEXT("Direction"), Direction },
+			{ TEXT("Speed"), Speed },
+			{ TEXT("Size"), Size },
+			{ TEXT("MinPixels"), MinPixels },
+			{ TEXT("MaxStretch"), Scalar(TEXT("MaxStretch"), 16.f) },
+			{ TEXT("CameraMotion"), Scalar(TEXT("CameraMotion"), 1.5f) },
+			{ TEXT("MaxCameraSpeed"), Scalar(TEXT("MaxCameraSpeed"), 10000.f) },
+		},
+		TEXT("return LBARainDropOffset(ToCamera, VertexOffset, Direction, Speed, Size, MinPixels, MaxStretch, CameraMotion, MaxCameraSpeed);"));
+	UMaterialEditingLibrary::ConnectMaterialProperty(Offset, TEXT(""), MP_WorldPositionOffset);
+
+	// Pixel: defaults follow the original's rain (RAIN.CPP) colors; levels set their palette's, linear.
+	UMaterialExpressionCustom* Drop = MakeCustom(TEXT("LBA rain drop"), CMOT_Float4, 0,
+		{
+			{ TEXT("UV"), UV },
+			{ TEXT("ToCamera"), Subtract(Camera, Position, -240) },
+			{ TEXT("Size"), Size },
+			{ TEXT("MinPixels"), MinPixels },
+			{ TEXT("NearColor"), Vector(TEXT("NearColor"), FLinearColor(0.25f, 0.25f, 0.19f)) },
+			{ TEXT("FarColor"), Vector(TEXT("FarColor"), FLinearColor(0.025f, 0.025f, 0.015f)) },
+			{ TEXT("ColorDistance"), Scalar(TEXT("ColorDistance"), 6000.f) },
+			{ TEXT("Opacity"), Scalar(TEXT("Opacity"), 1.f) },
+			{ TEXT("TrailFade"), Scalar(TEXT("TrailFade"), 0.4f) },
+			{ TEXT("FogDensity"), Scalar(TEXT("FogDensity"), 0.f) },
+			{ TEXT("FogStart"), Scalar(TEXT("FogStart"), 0.f) },
+		},
+		TEXT("return LBARainDrop(UV, ToCamera, Size.x, MinPixels, NearColor.rgb, FarColor.rgb, ColorDistance, Opacity, TrailFade, FogDensity, FogStart);"));
+	UMaterialExpressionComponentMask* Rgb = Cast<UMaterialExpressionComponentMask>(Add(UMaterialExpressionComponentMask::StaticClass(), -100, 0));
+	Rgb->R = Rgb->G = Rgb->B = true;
+	Rgb->A = false;
+	Connect(Drop, TEXT(""), Rgb, TEXT(""));
+	UMaterialExpressionComponentMask* Alpha = Cast<UMaterialExpressionComponentMask>(Add(UMaterialExpressionComponentMask::StaticClass(), -100, 120));
+	Alpha->R = Alpha->G = Alpha->B = false;
+	Alpha->A = true;
+	Connect(Drop, TEXT(""), Alpha, TEXT(""));
+	UMaterialEditingLibrary::ConnectMaterialProperty(Rgb, TEXT(""), MP_EmissiveColor);
+	UMaterialEditingLibrary::ConnectMaterialProperty(Alpha, TEXT(""), MP_Opacity);
 	return LBAMaterials::EndRebuild(Context, Material);
 }

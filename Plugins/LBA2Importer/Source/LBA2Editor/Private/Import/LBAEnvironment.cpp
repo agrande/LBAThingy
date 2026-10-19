@@ -20,6 +20,10 @@
 #include "LBALookSubsystem.h"
 #include "LBATypes.h"
 #include "MaterialEditingLibrary.h"
+#include "NiagaraActor.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "NiagaraTypes.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Misc/PackageName.h"
@@ -56,6 +60,21 @@ namespace
 	/** The original's rain (RAIN.CPP): palette colors of the nearest and furthest drops. */
 	constexpr int32 RainNearColor = 58;
 	constexpr int32 RainFarColor = 51;
+
+	/**
+	 * Rain particles (plugin content, edited with Niagara's editor): how many drops a Rain of 1 keeps in view, and how
+	 * far (cm). They fill the view evenly, so moving through the rain doesn't thin it out; further, they would hardly
+	 * show through the fog and their own thinness.
+	 */
+	const TCHAR* RainSystemPath = TEXT("/LBA2Importer/Effects/NS_LBA_Rain.NS_LBA_Rain");
+	constexpr float MaxRainDrops = 18000.f;
+
+	/**
+	 * The original's drops fall 12.5 m/s, blown 8.8 m/s sideways: fast enough that flying hardly bends them. Slower, as
+	 * fast as real heavy rain, with the same slant and streak length.
+	 */
+	constexpr double RainSpeedScale = 0.7;
+	constexpr float MaxRainDistance = 2500.f;
 
 	bool IsZeelichUnderGas(const FString& Name)
 	{
@@ -198,8 +217,8 @@ namespace
 		return FLinearColor(Color.R / 255.f, Color.G / 255.f, Color.B / 255.f);
 	}
 
-	/** The level's rain (M_LBA_Rain instance), or null without rain. */
-	UMaterialInterface* GetRain(FLBAImportContext& Context, const FLBAEnvironmentPreset& Preset, const FLBAXpl* Xpl,
+	/** The level's rain splashes (M_LBA_Rain instance), or null without rain. */
+	UMaterialInterface* GetRainSplashes(FLBAImportContext& Context, const FLBAEnvironmentPreset& Preset, const FLBAXpl* Xpl,
 		const FString& LevelFolder, const FString& LevelName)
 	{
 		UMaterial* Master = Preset.Rain > 0.f ? Context.GetRendering().GetRainMaster() : nullptr;
@@ -209,34 +228,85 @@ namespace
 		{
 			return nullptr;
 		}
-		auto Scalar = [Rain](const TCHAR* Name, float Value)
-		{
-			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Rain, Name, Value);
-		};
-		auto Vector = [Rain](const TCHAR* Name, const FLinearColor& Value)
-		{
-			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Rain, Name, Value);
-		};
 		UMaterialEditingLibrary::SetMaterialInstanceParent(Rain, Master);
 		UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(Rain);
-		// RAIN.CPP, per second: drops fall 10000 LBA units and drift 5000 along LBA X and Z; streaks are (128, 256, 128).
-		const float Scale = Context.GetScale();
-		Scalar(TEXT("RainAmount"), Preset.Rain);
-		Scalar(TEXT("FallSpeed"), 10000.f * Scale);
-		Vector(TEXT("Wind"), FLinearColor(LBA::DirToUnreal(5000.0, 0.0, 5000.0) * Scale));
-		Scalar(TEXT("StreakLength"), FVector(128.0, 256.0, 128.0).Size() * Scale);
-		Vector(TEXT("NearColor"), GetDisplayColor(Xpl, RainNearColor));
-		Vector(TEXT("FarColor"), GetDisplayColor(Xpl, RainFarColor));
-		Vector(TEXT("SplashColor"), GetDisplayColor(Xpl, RainNearColor));
-		// Streaks fade in the height fog (at sea level): its natural extinction is ln 20 per FogVisibility.
-		if (Preset.FogVisibility > 0.f)
-		{
-			Scalar(TEXT("FogDensity"), FMath::Loge(20.f) / Preset.FogVisibility);
-			Scalar(TEXT("FogStart"), Preset.HeightFogStart);
-		}
+		UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Rain, TEXT("RainAmount"), Preset.Rain);
+		UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Rain, TEXT("SplashColor"), GetDisplayColor(Xpl, RainNearColor));
 		UMaterialEditingLibrary::UpdateMaterialInstance(Rain);
 		Context.MarkForSave(Rain);
 		return Rain;
+	}
+
+	/**
+	 * The level's rain drops: an NS_LBA_Rain actor (it keeps its drops in view around whatever camera renders it) with
+	 * the level's M_LBA_RainDrop instance, MI_<Level>_RainDrops.
+	 */
+	void SpawnRain(FLBAImportContext& Context, UWorld* World, const FLBAEnvironmentPreset& Preset, const FLBAXpl* Xpl,
+		const FString& LevelFolder, const FString& LevelName, const FName& Folder)
+	{
+		if (Preset.Rain <= 0.f)
+		{
+			return;
+		}
+		UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, RainSystemPath);
+		UMaterial* Master = Context.GetRendering().GetRainDropMaster();
+		UMaterialInstanceConstant* Drops = Master ? Context.CreateOrReuseAsset<UMaterialInstanceConstant>(LevelFolder,
+			FString::Printf(TEXT("MI_%s_RainDrops"), *LevelName)) : nullptr;
+		if (!System || !Drops)
+		{
+			Context.Warn(FString::Printf(TEXT("%s: no rain (missing %s or M_LBA_RainDrop)"), *LevelName, RainSystemPath));
+			return;
+		}
+
+		// The palette's display colors as linear colors: the drops are drawn before tonemapping, which the neutral
+		// tonemapper turns back into them (exposure compensated). Like the original, the furthest color is reached
+		// where its fog ends.
+		const float Exposure = FMath::Exp2(-Preset.ExposureBias);
+		auto PaletteColor = [Xpl, Exposure](int32 Index)
+		{
+			return FLinearColor(Xpl ? Xpl->Palette[Index] : FColor(128, 128, 128)) * Exposure;
+		};
+		UMaterialEditingLibrary::SetMaterialInstanceParent(Drops, Master);
+		UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(Drops);
+		UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Drops, TEXT("NearColor"), PaletteColor(RainNearColor));
+		UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Drops, TEXT("FarColor"), PaletteColor(RainFarColor));
+		if (Preset.FogEnd > Preset.FogStart)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Drops, TEXT("ColorDistance"), Preset.FogEnd - Preset.FogStart);
+		}
+		// Drops fade in the height fog (at sea level): its natural extinction is ln 20 per FogVisibility.
+		if (Preset.FogVisibility > 0.f)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Drops, TEXT("FogDensity"), FMath::Loge(20.f) / Preset.FogVisibility);
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Drops, TEXT("FogStart"), Preset.HeightFogStart);
+		}
+		UMaterialEditingLibrary::UpdateMaterialInstance(Drops);
+		Context.MarkForSave(Drops);
+
+		ANiagaraActor* Actor = Context.SpawnGeneratedActor<ANiagaraActor>(World, FTransform::Identity, TEXT("Rain"), Folder);
+		UNiagaraComponent* Component = Actor ? Actor->GetNiagaraComponent() : nullptr;
+		if (!Component)
+		{
+			return;
+		}
+		Component->SetAsset(System);
+		auto Override = [Component](const FNiagaraTypeDefinition& Type, const TCHAR* Name, const void* Value, int32 Size)
+		{
+			Component->SetParameterOverride(FNiagaraVariableBase(Type, Name), FNiagaraVariant(Value, Size));
+		};
+		// RAIN.CPP, per second: drops fall 10000 LBA units and drift 5000 along LBA X and Z; streaks are (128, 256, 128).
+		// Drops live from 1.5 m (nearer, a streak crosses the whole screen) to MaxRainDistance, or less in thicker fog.
+		const float Scale = Context.GetScale();
+		const int32 Count = FMath::RoundToInt(Preset.Rain * MaxRainDrops);
+		const FVector3f Velocity((LBA::DirToUnreal(5000.0, 0.0, 5000.0) * Scale + FVector(0.0, 0.0, -10000.0 * Scale)) * RainSpeedScale);
+		const FVector2f Size(0.5f, float(FVector(128.0, 256.0, 128.0).Size()) * Scale);
+		const FVector2f Distance(150.f, Preset.FogVisibility > 0.f ? FMath::Min(0.75f * Preset.FogVisibility, MaxRainDistance) : MaxRainDistance);
+		Override(FNiagaraTypeDefinition::GetIntDef(), TEXT("User.DropCount"), &Count, sizeof(Count));
+		Override(FNiagaraTypeDefinition::GetVec3Def(), TEXT("User.DropVelocity"), &Velocity, sizeof(Velocity));
+		Override(FNiagaraTypeDefinition::GetVec2Def(), TEXT("User.DropSize"), &Size, sizeof(Size));
+		Override(FNiagaraTypeDefinition::GetVec2Def(), TEXT("User.ViewDistance"), &Distance, sizeof(Distance));
+		Component->SetParameterOverride(FNiagaraVariableBase(FNiagaraTypeDefinition(UMaterialInterface::StaticClass()), TEXT("User.DropMaterial")),
+			FNiagaraVariant(TObjectPtr<UObject>(Drops)));
 	}
 }
 
@@ -509,9 +579,10 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 				Settings.WeightedBlendables.Array.Add(FWeightedBlendable(Look == ActiveLook ? 1.f : 0.f, LevelLook));
 			}
 		}
-		if (UMaterialInterface* Rain = GetRain(Context, Preset, Xpl, LevelFolder, LevelName))
+		if (UMaterialInterface* Splashes = GetRainSplashes(Context, Preset, Xpl, LevelFolder, LevelName))
 		{
-			Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Rain));
+			Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Splashes));
 		}
 	}
+	SpawnRain(Context, World, Preset, Xpl, LevelFolder, LevelName, Folder);
 }

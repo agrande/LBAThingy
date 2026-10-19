@@ -181,11 +181,18 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   section's fog distances (scaled by *Fog Distance Scale*), applied after shading like the original's
   fog tables. An island's preset can set its own fog instead: Citadel's storm is a dark grey soup from
   6 m past the camera, nearly the same at every height, hiding everything about 60 m away.
-- **Rain** (Citadel's storm, both looks): `M_LBA_Rain`, a cheap post-process after tonemapping (crisp,
-  no TSR smearing): streaks on a few cylinders around the camera, hidden behind the scene and fading in
-  the fog, with the original's speed, wind and palette colors (RAIN.CPP), and splash rings on the
-  ground and water near the camera. Level instance `MI_<Level>_Rain`; *RainAmount*, *Opacity*,
-  *FallSpeed*, *Wind*, *Layers*, *NearRadius*, *CellHeight*, *SplashRate*, *SplashRadius*.
+- **Rain** (Citadel's storm, both looks): a `Rain` Niagara actor running the plugin's
+  `Effects/NS_LBA_Rain` (edit it with Niagara's editor): GPU drops kept in view around the camera
+  (Niagara's view recycler, evenly up to 25 m, so moving doesn't thin them out), falling with the
+  original's wind slant (RAIN.CPP) at 70% of its speed (real heavy rain). Streaks follow each drop's motion
+  relative to the camera (flying into the rain stretches them towards you, exaggerated by *CameraMotion*,
+  up to *MaxStretch*). User parameters, set per level on the actor: *DropCount* (preset Rain x 18000), *DropVelocity*, *DropSize* (width, length), *ViewDistance* (near,
+  far), *DropMaterial*. The level's `MI_<Level>_RainDrops` (child of `M_LBA_RainDrop`) draws them after
+  motion blur, so after the palette shading: palette colors near/far (*NearColor*, *FarColor*,
+  *ColorDistance*), never thinner than *MinPixels* (fainter instead), fading along the trail
+  (*TrailFade*) and in the fog (*FogDensity*, *FogStart*), *Opacity*. Splash rings on the ground and
+  water near the camera are still a post-process after tonemapping, `M_LBA_Rain` (level instance
+  `MI_<Level>_Rain`: *RainAmount*, *Opacity*, *SplashRate*, *SplashRadius*).
 - **Lights**: islands are lit so that sunlit ground lands on the shade rows the original's baked
   terrain lighting uses (from the island's terrain data), with the sun at the original's angle, and
   ground in the shade keeps most of that (the original has no cast shadows). The storm is
@@ -206,7 +213,8 @@ Customizing (material instances in `<Root>/Rendering`, children inherit what the
 | `MI_LBA_Enhanced_<Palette>` | levels using that palette (per island tweaks) | yes, same rule |
 | `MI_LBA_Original_<Palette>`, level `MI_<Level>_<Look>Look` (fog, contrast pivot) | generated | no |
 | level `MI_<Level>_Clouds` (child of Unreal's `m_SimpleVolumetricCloud_Inst`) | generated | no |
-| level `MI_<Level>_Rain` (child of `M_LBA_Rain`) | generated | no |
+| level `MI_<Level>_Rain` (child of `M_LBA_Rain`), `MI_<Level>_RainDrops` (child of `M_LBA_RainDrop`) | generated | no |
+| plugin `Effects/NS_LBA_Rain` (rain particles) | levels with rain | yes (plugin content, not generated) |
 | island `MI_<Island>_Ocean` / `_OceanFar` (children of the clipped ocean material / the plugin's far mesh material) | generated | no |
 | `Water/M_LBA_Water`, `MI_LBA_Water`, `MI_LBA_Water_Ocean` (copies of the Water plugin's ocean chain, clipped) | every water level | yes, unless a newer importer changes them |
 | `Water/Waves_LBA_Calm`, `Water/Waves_LBA_Storm` (Gerstner wave assets) | every water level | yes, unless a newer importer changes their defaults |
@@ -217,7 +225,7 @@ Main parameters: *LightContrast*, *RowStep*, *Exposure*, *Contrast*, *Saturation
 use only the ramps' hue), *LightTint* (Palette); *WaterStrength* (0 = Unreal's water), *WaterLightTint*,
 *WaterHighlightRange* (Water); *SeaDrift* (cm/s), *SeaWobble*, *WaterSmoothing* (band calmness),
 *FoamWidth*, *FoamSpeed*, *FoamBrightness*, *SparkleLight* (Water Cartoon). To try values live, `lba.Look.Set <Parameter> <Value>`
-(or `R G B` for colors; no value removes the override; it reaches the rain's parameters too). Other console variables:
+(or `R G B` for colors; no value removes the override; it reaches the rain splashes' parameters too). Other console variables:
 `lba.Look.Palette 0|1`, `lba.Look.Dither 0|1`, `lba.Look.Debug 1|2|3|4` (base color, matched palette
 color, shade row / light, surfaces without fog).
 
@@ -251,8 +259,8 @@ color, shade row / light, surfaces without fog).
 - [x] Sea with Unreal's Water plugin on Twinsun: ocean, calm or storm waves, cartoon water with the
   original sea textures, foam lines and sparkles
 - [x] Citadel's lampposts give light during the storm (glowing glass + soft point light with a halo)
-- [x] Citadel's storm: dense dark fog, rain streaks and splashes
-- [ ] Look, next: Citadel storm (lightning, wet surfaces), cloud shadows, interior lights,
+- [x] Citadel's storm: dense dark fog, rain (Niagara drops) and splashes
+- [ ] Look, next: Citadel storm (Niagara splashes like the original's spray, lightning, wet surfaces), cloud shadows, interior lights,
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
 - [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off
