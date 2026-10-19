@@ -2,9 +2,25 @@
 
 #include "CoreMinimal.h"
 
+class AActor;
 class FLBAImportContext;
 class UTexture2D;
 class UWorld;
+
+/**
+ * Island decor that gives light (lampposts), by island object (.OBL entry): its polygons of palette color GlowColor
+ * glow, and a point light at their center gives surfaces facing it the light Light from 3 m away (1 = shows their
+ * base color), fading out at Radius (cm). The light casts no shadows: a soft pool of light around the decor. Halo is
+ * how much it lights the fog around it (volumetric scattering; 0: none).
+ */
+struct FLBADecorLight
+{
+	int32 Body = 0;
+	int32 GlowColor = 0;
+	float Light = 1.f;
+	float Radius = 1500.f;
+	float Halo = 0.15f;
+};
 
 /** Lighting and atmosphere for a generated level. Presets follow the original island moods. */
 struct FLBAEnvironmentPreset
@@ -60,10 +76,21 @@ struct FLBAEnvironmentPreset
 
 	/**
 	 * Height fog, with volumetric fog: it starts at HeightFogStart (cm from the camera; the original drew everything
-	 * up to its fog distance crisp) and hides 95% of a surface at sea level FogVisibility further. 0: no height fog.
+	 * up to its fog distance crisp) and hides 95% of a surface at sea level FogVisibility further. 0: no height fog;
+	 * islands set both from the original's fog distance unless their preset sets FogVisibility. Its density halves
+	 * every 1 / (FogHeightFalloff / 1000) cm above sea level (0.5: every 20 m). HeightFogColor replaces the palette's
+	 * fog color (the original look keeps the palette's).
 	 */
 	float HeightFogStart = 0.f;
 	float FogVisibility = 0.f;
+	float FogHeightFalloff = 0.5f;
+	TOptional<FLinearColor> HeightFogColor;
+
+	/**
+	 * Rain (M_LBA_Rain, both looks): share of the rain's cells that hold a drop, 0 for none. The original's rain:
+	 * speed, wind and palette colors.
+	 */
+	float Rain = 0.f;
 
 	/** Unreal's sky atmosphere; without it the sky is black, like space. */
 	bool bAtmosphere = true;
@@ -95,6 +122,10 @@ struct FLBAEnvironmentPreset
 	float SeaTileSize = 1024.f;
 	float WaterNeutralLight = 1.f;
 
+	/** Lit decor (none: lamps off). */
+	TArray<FLBADecorLight> DecorLights;
+	const FLBADecorLight* FindDecorLight(int32 Body) const { return DecorLights.FindByPredicate([Body](const FLBADecorLight& Light) { return Light.Body == Body; }); }
+
 	/** Preset for an island file name (CITABAU, DESERT, EMERAUDE...). */
 	static FLBAEnvironmentPreset ForIsland(const FString& IslandName);
 	/** Neutral preset for isometric interiors. */
@@ -125,6 +156,13 @@ namespace LBAEnvironment
 	 * a level.
 	 */
 	void Spawn(FLBAImportContext& Context, UWorld* World, const FLBAEnvironmentPreset& Preset, const FRotator& SunRotation);
+
+	/**
+	 * Spawns the point light of lit decor, attached to the decor actor, at LocalPosition (mesh space) with the light's
+	 * color and source radius (cm).
+	 */
+	void SpawnDecorLight(FLBAImportContext& Context, AActor* Decor, const FLBADecorLight& DecorLight, const FVector& LocalPosition,
+		const FLinearColor& Color, float SourceRadius);
 
 	/** Sun rotation from LBA light angles (alpha = elevation, beta = heading, 1/4096 turns). */
 	FRotator SunRotationFromLbaAngles(int32 Alpha, int32 Beta);

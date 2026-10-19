@@ -483,7 +483,9 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 		return LBAGrade(SceneColor, S);
 	}
 
-	// Take Unreal's fog off the surface. Surfaces lost in it are left as they are.
+	// Take Unreal's fog off the surface. Surfaces lost in it are left as they are, in the original's fog when Unreal's
+	// is taken off.
+	const float Fog = S.FogEnd > S.FogStart ? saturate((Depth - S.FogStart) / (S.FogEnd - S.FogStart)) : 0.0;
 	const float2 ViewportUV = GetViewportUV(Parameters);
 	const float3 CameraToReceiver = LBATranslatedPositionAt(ViewportUV, Depth) - PrimaryView.TranslatedWorldCameraOrigin;
 	const float4 HeightFog = LBAHeightFog(CameraToReceiver, DFHackToFloat(PrimaryView.WorldCameraOrigin).z,
@@ -491,11 +493,9 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 	BRANCH
 	if (HeightFog.a < 0.02)
 	{
-		return LBAGrade(SceneColor, S);
+		return LBAGrade(lerp(SceneColor, S.FogColor, Fog * (1.0 - S.HeightFogAmount)), S);
 	}
 	const float3 Display = max(SceneColor - HeightFog.rgb, 0.0) / HeightFog.a;
-
-	const float Fog = S.FogEnd > S.FogStart ? saturate((Depth - S.FogStart) / (S.FogEnd - S.FogStart)) : 0.0;
 	BRANCH
 	if (S.Strength <= 0.0 || Fog >= 1.0 || S.DebugView > 3.5)
 	{

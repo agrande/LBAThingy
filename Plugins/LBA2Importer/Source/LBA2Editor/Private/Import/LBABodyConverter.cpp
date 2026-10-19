@@ -36,7 +36,7 @@ FVector4f LBABodyConverter::ToVertexColor(const FColor& Color, float BakedLight)
 	return FVector4f(Linear.R, Linear.G, Linear.B, BakedLight);
 }
 
-bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams& Params, FLBAMeshBuilder& Out)
+bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams& Params, FLBAMeshBuilder& Out, FBox3f* OutGlowBounds)
 {
 	check(Params.Palette);
 	const TArray<FColor>& Palette = *Params.Palette;
@@ -61,6 +61,21 @@ bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams
 
 	const int32 ColorSection = Out.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Color), Params.ColorMaterial);
 	int32 TranslucentSection = INDEX_NONE;
+	int32 GlowSection = INDEX_NONE;
+	FBox3f GlowBounds(ForceInit);
+	// Section of an untextured polygon or sphere: its own when it glows.
+	auto ColorSectionFor = [&](uint16 Color)
+	{
+		if (!Params.GlowMaterial || !Params.GlowColors.Contains(Color & 0xFF))
+		{
+			return ColorSection;
+		}
+		if (GlowSection == INDEX_NONE)
+		{
+			GlowSection = Out.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Glow), Params.GlowMaterial);
+		}
+		return GlowSection;
+	};
 
 	for (const FLBABodyPoly& Poly : Body.Polys)
 	{
@@ -85,6 +100,10 @@ bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams
 				TranslucentSection = Out.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Translucent), Params.TranslucentMaterial);
 			}
 			Section = TranslucentSection;
+		}
+		else
+		{
+			Section = ColorSectionFor(Poly.Color);
 		}
 
 		const FVector4f VertexColor = ToVertexColor(Albedo);
@@ -119,6 +138,12 @@ bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams
 				V[0].Normal = V[1].Normal = V[2].Normal = Face;
 			}
 			Out.AddTriangle(Section, V[0], V[1], V[2]);
+			if (Section == GlowSection)
+			{
+				GlowBounds += V[0].Position;
+				GlowBounds += V[1].Position;
+				GlowBounds += V[2].Position;
+			}
 		}
 	}
 
@@ -133,6 +158,11 @@ bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams
 		const float Radius = Sphere.Radius * Params.Scale;
 		const FVector4f VertexColor = ToVertexColor(GetAlbedo(Palette, Sphere.Color, ELBAPolyType::Gouraud));
 		const int32 SphereBone = Bone(Sphere.Point);
+		const int32 SphereSection = ColorSectionFor(Sphere.Color);
+		if (SphereSection == GlowSection)
+		{
+			GlowBounds += FBox3f(Center - FVector3f(Radius), Center + FVector3f(Radius));
+		}
 		constexpr int32 Segments = 10;
 		constexpr int32 Rings = 6;
 		auto MakeVertex = [&](int32 Ring, int32 Segment)
@@ -158,11 +188,11 @@ bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams
 				const FVector3f Outward = ((A.Position + B.Position + C.Position + D.Position) * 0.25f) - Center;
 				if (Ring > 0)
 				{
-					Out.AddTriangleFacing(ColorSection, A, B, D, Outward);
+					Out.AddTriangleFacing(SphereSection, A, B, D, Outward);
 				}
 				if (Ring < Rings - 1)
 				{
-					Out.AddTriangleFacing(ColorSection, B, C, D, Outward);
+					Out.AddTriangleFacing(SphereSection, B, C, D, Outward);
 				}
 			}
 		}
@@ -207,5 +237,9 @@ bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams
 		}
 	}
 
+	if (OutGlowBounds)
+	{
+		*OutGlowBounds = GlowBounds;
+	}
 	return !Out.IsEmpty();
 }

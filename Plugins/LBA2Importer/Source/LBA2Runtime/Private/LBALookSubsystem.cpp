@@ -41,6 +41,7 @@ namespace
 		}));
 
 	const TCHAR* PaletteShadingMaster = TEXT("M_LBA_PaletteShading");
+	const TCHAR* RainMaster = TEXT("M_LBA_Rain");
 	const TCHAR* EnhancedLook = TEXT("MI_LBA_Look_Enhanced");
 
 	bool IsEnhancedLook(const UMaterialInterface* Material)
@@ -189,6 +190,13 @@ void ULBALookSubsystem::ApplyControls()
 					Instances.Add(Instance);
 					Blendables.Add({ *It, Index, Instance, Array[Index].Weight, IsEnhancedLook(Material) });
 				}
+				else if (Base && Base->GetName() == RainMaster)
+				{
+					UMaterialInstanceDynamic* Instance = UMaterialInstanceDynamic::Create(Material, this);
+					Array[Index].Object = Instance;
+					Instances.Add(Instance);
+					Effects.Add(Instance);
+				}
 			}
 		}
 	}
@@ -222,6 +230,13 @@ void ULBALookSubsystem::ApplyControls()
 		Instance->SetScalarParameterValue(TEXT("DebugView"), float(AppliedDebug));
 		ApplyOverrides(Instance);
 	}
+	for (const TWeakObjectPtr<UMaterialInstanceDynamic>& Effect : Effects)
+	{
+		if (UMaterialInstanceDynamic* Instance = Effect.Get())
+		{
+			ApplyOverrides(Instance);
+		}
+	}
 }
 
 void ULBALookSubsystem::ApplyOverrides(UMaterialInstanceDynamic* Instance) const
@@ -250,6 +265,13 @@ void ULBALookSubsystem::SetParameterOverride(FName Name, const TArray<float>& Va
 		for (const FLookBlendable& Look : Blendables)
 		{
 			if (UMaterialInstanceDynamic* Instance = Look.Instance.Get())
+			{
+				Instance->ClearParameterValues();
+			}
+		}
+		for (const TWeakObjectPtr<UMaterialInstanceDynamic>& Effect : Effects)
+		{
+			if (UMaterialInstanceDynamic* Instance = Effect.Get())
 			{
 				Instance->ClearParameterValues();
 			}

@@ -29,8 +29,8 @@ struct LBA2RUNTIME_API FLBAHeightFogParameters
  *   lba.Look.Dither <0..1>    world-space dither amount (-1: as set on the material)
  *   lba.Look.Debug <0..3>     0 off, 1 G-buffer base color, 2 matched palette color, 3 shade path position
  *   lba.Look.Set <Parameter> <Value...>   overrides any scalar (one value) or vector (3-4 values) parameter of both
- *                             looks; without a value, removes the override. To try settings before putting them in
- *                             MI_LBA_Look_Enhanced.
+ *                             looks and of the rain; without a value, removes the override. To try settings before
+ *                             putting them in MI_LBA_Look_Enhanced (or the level's MI_<Level>_Rain).
  *
  * The volume's blendables are swapped for dynamic instances when play starts. The look's copy of the height fog
  * settings (which it needs to take the fog off surfaces before shading them) then follows the level's fog actor.
@@ -64,6 +64,8 @@ private:
 		bool bEnhanced = false;
 	};
 	TArray<FLookBlendable> Blendables;
+	/** Other post-process effects of generated levels (M_LBA_Rain): lba.Look.Set reaches their parameters too. */
+	TArray<TWeakObjectPtr<UMaterialInstanceDynamic>> Effects;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> Instances;

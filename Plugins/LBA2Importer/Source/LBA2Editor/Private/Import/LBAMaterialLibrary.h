@@ -35,6 +35,8 @@ enum class ELBAMaterial : uint8
 	Invisible,
 	/** Translucent texture * vertex color (remake glass, water...). */
 	TexturedTranslucent,
+	/** Opaque vertex color that also glows (lit lamp glass): emissive = albedo * GlowStrength. */
+	Glow,
 	Count
 };
 

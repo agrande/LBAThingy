@@ -31,6 +31,8 @@ struct FLBAStaticMeshOptions
 	bool bDeferBuild = true;
 	/** Fills simple collision shapes (boxes, convex hulls) in Unreal units. */
 	TFunction<void(struct FKAggregateGeom&)> SimpleCollision;
+	/** Material slots whose sections cast no shadow (a lamp's glass, around its light). */
+	TArray<FName> NoShadowSlots;
 };
 
 /**

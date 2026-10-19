@@ -34,9 +34,10 @@ public:
 private:
 	UStaticMesh* BuildGroundMesh(const FLBAIsland& Island, const FLBAIslandSection& Section, const FString& Folder,
 		UMaterialInterface* GroundMaterial, UMaterialInterface* ColorMaterial);
-	TArray<UStaticMesh*> BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder);
+	/** Also returns the bounds of the glowing parts of lit decor (FLBADecorLight), by body, in mesh space. */
+	TArray<UStaticMesh*> BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder, TMap<int32, FBox3f>& OutGlowBounds);
 	void BuildLevel(const FLBAIsland& Island, const FString& IslandFolder, const TArray<UStaticMesh*>& GroundMeshes,
-		const TArray<UStaticMesh*>& DecorMeshes);
+		const TArray<UStaticMesh*>& DecorMeshes, const TMap<int32, FBox3f>& GlowBounds);
 
 	FLBAImportContext& Context;
 };

@@ -1,12 +1,14 @@
 #include "Import/LBAEnvironment.h"
 
 #include "Components/DirectionalLightComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/VolumetricCloudComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
+#include "Engine/PointLight.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/SkyLight.h"
 #include "Engine/Texture2D.h"
@@ -18,6 +20,7 @@
 #include "LBALookSubsystem.h"
 #include "LBATypes.h"
 #include "MaterialEditingLibrary.h"
+#include "Materials/Material.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Misc/PackageName.h"
 
@@ -44,10 +47,15 @@ namespace
 	 */
 	constexpr float UniformSkyLuminance = 0.41f;
 
-	/** Height fog: density halves every 20 m above sea level (FogHeightFalloff in 1/1000 of 1/cm), so the sky clears quickly above the horizon. */
-	constexpr float FogHeightFalloff = 0.5f;
-	/** Volumetric fog reach (cm): light shafts around the player. */
+	/**
+	 * Volumetric fog reach (cm): light shafts and lamp halos around the player. No further than twice the fog's
+	 * visibility, beyond which nothing shows: its slices then stay fine near the camera.
+	 */
 	constexpr float VolumetricFogDistance = 20000.f;
+
+	/** The original's rain (RAIN.CPP): palette colors of the nearest and furthest drops. */
+	constexpr int32 RainNearColor = 58;
+	constexpr int32 RainFarColor = 51;
 
 	bool IsZeelichUnderGas(const FString& Name)
 	{
@@ -77,6 +85,18 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::ForIsland(const FString& IslandName
 		Preset.bOvercast = true;
 		Preset.AmbientLight = 1.f;
 		Preset.MaxAmbientFraction = 0.9f;
+		// Foggy and wet: a dark grey soup from a few meters past the player, hiding everything about 60 m away at
+		// any height (the original's storm fog is black and ends at 67 m), and the original's fast rain.
+		Preset.HeightFogStart = 600.f;
+		Preset.FogVisibility = 6000.f;
+		Preset.FogHeightFalloff = 0.05f;
+		Preset.HeightFogColor = FLinearColor(0.055f, 0.058f, 0.066f);
+		Preset.Rain = 0.5f;
+		// The lampposts are lit during the storm (yellow glass globe; the sunny Citabau's stay off).
+		FLBADecorLight Lamppost;
+		Lamppost.Body = 26;
+		Lamppost.GlowColor = 108;
+		Preset.DecorLights.Add(Lamppost);
 	}
 	if (Name == TEXT("CITABAU") || Name == TEXT("CITADEL") || Name == TEXT("DESERT"))
 	{
@@ -113,6 +133,34 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::Interior()
 	return Preset;
 }
 
+void LBAEnvironment::SpawnDecorLight(FLBAImportContext& Context, AActor* Decor, const FLBADecorLight& DecorLight, const FVector& LocalPosition,
+	const FLinearColor& Color, float SourceRadius)
+{
+	const FVector Location = Decor->GetActorTransform().TransformPosition(LocalPosition);
+	APointLight* Actor = Context.SpawnGeneratedActor<APointLight>(Decor->GetWorld(), FTransform(Location),
+		Decor->GetActorLabel() + TEXT("_Light"), Decor->GetFolderPath());
+	if (!Actor)
+	{
+		return;
+	}
+	// A surface facing the light d meters away gets I / d^2 lux from it: a light of I * MeasuredSunGain / (pi d^2), like
+	// the sun's.
+	constexpr float ReferenceDistance = 3.f;
+	UPointLightComponent* Light = CastChecked<UPointLightComponent>(Actor->GetLightComponent());
+	Light->SetMobility(EComponentMobility::Movable);
+	Light->SetIntensityUnits(ELightUnits::Candelas);
+	Light->SetIntensity(DecorLight.Light * UE_PI * FMath::Square(ReferenceDistance) / MeasuredSunGain);
+	Light->SetLightColor(Color);
+	Light->SetAttenuationRadius(DecorLight.Radius);
+	Light->SetSourceRadius(SourceRadius);
+	// A soft pool of light: the decor's own pole and arms would cut it into hard wedges.
+	Light->SetCastShadows(false);
+	// The halo in the fog. The palette shading only takes the fog's own color off surfaces: what the halo adds in
+	// front of them reads as light on them, so they brighten through it.
+	Light->SetVolumetricScatteringIntensity(DecorLight.Halo);
+	Actor->AttachToActor(Decor, FAttachmentTransformRules::KeepWorldTransform);
+}
+
 FRotator LBAEnvironment::SunRotationFromLbaAngles(int32 Alpha, int32 Beta)
 {
 	// SetLightVector (LIGHT.CPP): the direction towards the light is the inverse rotation of +Z by (alpha, beta), so
@@ -141,6 +189,54 @@ namespace
 	bool HasTintedSky(const FLBAEnvironmentPreset& Preset)
 	{
 		return Preset.bAtmosphere && Preset.SkyColor.GetLuminance() > 0.f;
+	}
+
+	/** Display color (sRGB values, as the rain material wants them) of a palette entry. */
+	FLinearColor GetDisplayColor(const FLBAXpl* Xpl, int32 Index)
+	{
+		const FColor Color = Xpl ? Xpl->Palette[Index] : FColor(128, 128, 128);
+		return FLinearColor(Color.R / 255.f, Color.G / 255.f, Color.B / 255.f);
+	}
+
+	/** The level's rain (M_LBA_Rain instance), or null without rain. */
+	UMaterialInterface* GetRain(FLBAImportContext& Context, const FLBAEnvironmentPreset& Preset, const FLBAXpl* Xpl,
+		const FString& LevelFolder, const FString& LevelName)
+	{
+		UMaterial* Master = Preset.Rain > 0.f ? Context.GetRendering().GetRainMaster() : nullptr;
+		UMaterialInstanceConstant* Rain = Master ? Context.CreateOrReuseAsset<UMaterialInstanceConstant>(LevelFolder,
+			FString::Printf(TEXT("MI_%s_Rain"), *LevelName)) : nullptr;
+		if (!Rain)
+		{
+			return nullptr;
+		}
+		auto Scalar = [Rain](const TCHAR* Name, float Value)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Rain, Name, Value);
+		};
+		auto Vector = [Rain](const TCHAR* Name, const FLinearColor& Value)
+		{
+			UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Rain, Name, Value);
+		};
+		UMaterialEditingLibrary::SetMaterialInstanceParent(Rain, Master);
+		UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(Rain);
+		// RAIN.CPP, per second: drops fall 10000 LBA units and drift 5000 along LBA X and Z; streaks are (128, 256, 128).
+		const float Scale = Context.GetScale();
+		Scalar(TEXT("RainAmount"), Preset.Rain);
+		Scalar(TEXT("FallSpeed"), 10000.f * Scale);
+		Vector(TEXT("Wind"), FLinearColor(LBA::DirToUnreal(5000.0, 0.0, 5000.0) * Scale));
+		Scalar(TEXT("StreakLength"), FVector(128.0, 256.0, 128.0).Size() * Scale);
+		Vector(TEXT("NearColor"), GetDisplayColor(Xpl, RainNearColor));
+		Vector(TEXT("FarColor"), GetDisplayColor(Xpl, RainFarColor));
+		Vector(TEXT("SplashColor"), GetDisplayColor(Xpl, RainNearColor));
+		// Streaks fade in the height fog (at sea level): its natural extinction is ln 20 per FogVisibility.
+		if (Preset.FogVisibility > 0.f)
+		{
+			Scalar(TEXT("FogDensity"), FMath::Loge(20.f) / Preset.FogVisibility);
+			Scalar(TEXT("FogStart"), Preset.HeightFogStart);
+		}
+		UMaterialEditingLibrary::UpdateMaterialInstance(Rain);
+		Context.MarkForSave(Rain);
+		return Rain;
 	}
 }
 
@@ -307,14 +403,15 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 			FogComponent = Fog->GetComponent();
 			// Transmittance at sea level is exp2(-Density * ln 2 * Distance), Density being FogDensity / 1000 per cm.
 			FogComponent->SetFogDensity(1000.f * FMath::Log2(20.f) / (UE_LN2 * Preset.FogVisibility));
-			FogComponent->SetFogHeightFalloff(FogHeightFalloff);
+			FogComponent->SetFogHeightFalloff(Preset.FogHeightFalloff);
 			FogComponent->SetStartDistance(Preset.HeightFogStart);
-			FogComponent->SetFogInscatteringColor(Preset.FogColor);
+			FogComponent->SetFogInscatteringColor(Preset.HeightFogColor.Get(Preset.FogColor));
 			FogComponent->SkyAtmosphereAmbientContributionColorScale = FLinearColor::Black;
-			FogComponent->SetDirectionalInscatteringColor(Preset.SunColor);
+			// No sun glow in an overcast sky's fog.
+			FogComponent->SetDirectionalInscatteringColor(Preset.bOvercast ? FLinearColor::Black : Preset.SunColor);
 			FogComponent->SetVolumetricFog(true);
 			FogComponent->SetVolumetricFogStartDistance(Preset.HeightFogStart);
-			FogComponent->SetVolumetricFogDistance(Preset.HeightFogStart + VolumetricFogDistance);
+			FogComponent->SetVolumetricFogDistance(Preset.HeightFogStart + FMath::Min(VolumetricFogDistance, 2.f * Preset.FogVisibility));
 			FogComponent->SetVolumetricFogScatteringDistribution(0.6f);
 			FogComponent->bOverrideLightColorsWithFogInscatteringColors = true;
 			FogComponent->MarkRenderStateDirty();
@@ -411,6 +508,10 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 			{
 				Settings.WeightedBlendables.Array.Add(FWeightedBlendable(Look == ActiveLook ? 1.f : 0.f, LevelLook));
 			}
+		}
+		if (UMaterialInterface* Rain = GetRain(Context, Preset, Xpl, LevelFolder, LevelName))
+		{
+			Settings.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Rain));
 		}
 	}
 }

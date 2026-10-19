@@ -342,7 +342,7 @@ UMaterial* FLBARenderingAssets::GetMaster()
 UMaterial* FLBARenderingAssets::CreateMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 27;
+	constexpr int32 Version = 28;
 
 	CreateDitherTextures();
 	CreateHalftoneRamp();
@@ -561,6 +561,133 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Halftone.Contrast = DotContrast;\n"
 		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture,\n"
 		"    Dither, DitherSampler, DitherRamp, DitherRampSampler, HalftoneRamp, HalftoneRampSampler, S);"), DitherDotsPerSide);
+
+	UMaterialEditingLibrary::ConnectMaterialProperty(Custom, TEXT(""), MP_EmissiveColor);
+	return LBAMaterials::EndRebuild(Context, Material);
+}
+
+UMaterial* FLBARenderingAssets::GetRainMaster()
+{
+	if (!RainMaster)
+	{
+		RainMaster = CreateRainMaster();
+	}
+	return RainMaster;
+}
+
+UMaterial* FLBARenderingAssets::CreateRainMaster()
+{
+	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
+	constexpr int32 Version = 4;
+
+	bool bExisted = false;
+	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_Rain"), &bExisted);
+	if (!Material || (bExisted && LBAMaterials::IsGeneratedVersion(Material, Version)))
+	{
+		return Material;
+	}
+	LBAMaterials::BeginRebuild(Material, Version);
+
+	// After tonemapping (and TSR): thin fast streaks stay crisp, in display colors.
+	Material->MaterialDomain = MD_PostProcess;
+	Material->BlendableLocation = BL_SceneColorAfterTonemapping;
+
+	auto Add = [Material](UClass* Class, int32 X, int32 Y)
+	{
+		return UMaterialEditingLibrary::CreateMaterialExpression(Material, Class, X, Y);
+	};
+	auto SceneTexture = [&](ESceneTextureId Id, int32 Y)
+	{
+		UMaterialExpressionSceneTexture* Node = Cast<UMaterialExpressionSceneTexture>(Add(UMaterialExpressionSceneTexture::StaticClass(), -900, Y));
+		Node->SceneTextureId = Id;
+		return Node;
+	};
+	int32 ParameterY = 0;
+	auto Scalar = [&](const TCHAR* Name, float Default, const TCHAR* Group)
+	{
+		UMaterialExpressionScalarParameter* Node = Cast<UMaterialExpressionScalarParameter>(Add(UMaterialExpressionScalarParameter::StaticClass(), -600, ParameterY));
+		ParameterY += 80;
+		Node->ParameterName = Name;
+		Node->DefaultValue = Default;
+		Node->Group = Group;
+		return Node;
+	};
+	auto Vector = [&](const TCHAR* Name, const FLinearColor& Default, const TCHAR* Group)
+	{
+		UMaterialExpressionVectorParameter* Node = Cast<UMaterialExpressionVectorParameter>(Add(UMaterialExpressionVectorParameter::StaticClass(), -600, ParameterY));
+		ParameterY += 160;
+		Node->ParameterName = Name;
+		Node->DefaultValue = Default;
+		Node->Group = Group;
+		return Node;
+	};
+
+	UMaterialExpressionCustom* Custom = Cast<UMaterialExpressionCustom>(Add(UMaterialExpressionCustom::StaticClass(), -250, 0));
+	Custom->Description = TEXT("LBA rain");
+	Custom->OutputType = CMOT_Float3;
+	Custom->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBARain.ush") };
+	Custom->Inputs.Reset();
+
+	struct FInput
+	{
+		const TCHAR* Name;
+		UMaterialExpression* Expression;
+	};
+	// Defaults follow the original's rain (RAIN.CPP) at the default world scale: drops falling 12.5 m/s, blown 9 m/s
+	// sideways, 40 cm streaks. Colors are display (sRGB) colors; levels set their palette's.
+	const FInput Inputs[] =
+	{
+		{ TEXT("SceneColor"), SceneTexture(PPI_PostProcessInput0, -200) },
+		{ TEXT("Depth"), SceneTexture(PPI_SceneDepth, -80) },
+		{ TEXT("RainAmount"), Scalar(TEXT("RainAmount"), 0.5f, TEXT("Rain")) },
+		{ TEXT("FallSpeed"), Scalar(TEXT("FallSpeed"), 1250.f, TEXT("Rain")) },
+		{ TEXT("Wind"), Vector(TEXT("Wind"), FLinearColor(625.f, 625.f, 0.f), TEXT("Rain")) },
+		{ TEXT("StreakLength"), Scalar(TEXT("StreakLength"), 40.f, TEXT("Rain")) },
+		{ TEXT("StreakWidth"), Scalar(TEXT("StreakWidth"), 0.5f, TEXT("Rain")) },
+		{ TEXT("NearRadius"), Scalar(TEXT("NearRadius"), 150.f, TEXT("Rain")) },
+		{ TEXT("Layers"), Scalar(TEXT("Layers"), 5.f, TEXT("Rain")) },
+		{ TEXT("ColumnSpacing"), Scalar(TEXT("ColumnSpacing"), 0.02f, TEXT("Rain")) },
+		{ TEXT("CellHeight"), Scalar(TEXT("CellHeight"), 0.4f, TEXT("Rain")) },
+		{ TEXT("Opacity"), Scalar(TEXT("Opacity"), 0.6f, TEXT("Rain")) },
+		{ TEXT("NearColor"), Vector(TEXT("NearColor"), FLinearColor(0.53f, 0.53f, 0.47f), TEXT("Rain")) },
+		{ TEXT("FarColor"), Vector(TEXT("FarColor"), FLinearColor(0.17f, 0.17f, 0.13f), TEXT("Rain")) },
+		{ TEXT("FogDensity"), Scalar(TEXT("FogDensity"), 0.f, TEXT("Rain")) },
+		{ TEXT("FogStart"), Scalar(TEXT("FogStart"), 0.f, TEXT("Rain")) },
+		{ TEXT("SplashRate"), Scalar(TEXT("SplashRate"), 40.f, TEXT("Splashes")) },
+		{ TEXT("SplashRadius"), Scalar(TEXT("SplashRadius"), 6.f, TEXT("Splashes")) },
+		{ TEXT("SplashDuration"), Scalar(TEXT("SplashDuration"), 0.25f, TEXT("Splashes")) },
+		{ TEXT("SplashRange"), Scalar(TEXT("SplashRange"), 2500.f, TEXT("Splashes")) },
+		{ TEXT("SplashColor"), Vector(TEXT("SplashColor"), FLinearColor(0.53f, 0.53f, 0.47f), TEXT("Splashes")) },
+	};
+	for (const FInput& Input : Inputs)
+	{
+		FCustomInput& CustomInput = Custom->Inputs.AddDefaulted_GetRef();
+		CustomInput.InputName = Input.Name;
+		CustomInput.Input.Connect(0, Input.Expression);
+	}
+
+	Custom->Code = TEXT(
+		"FLBARainSettings R;\n"
+		"R.Amount = RainAmount;\n"
+		"R.FallSpeed = FallSpeed;\n"
+		"R.Wind = Wind.xy;\n"
+		"R.StreakLength = StreakLength;\n"
+		"R.StreakWidth = max(StreakWidth, 0.01);\n"
+		"R.NearRadius = max(NearRadius, 10.0);\n"
+		"R.Layers = Layers;\n"
+		"R.ColumnSpacing = max(ColumnSpacing, 0.001);\n"
+		"R.CellHeight = max(CellHeight, 0.01);\n"
+		"R.Opacity = Opacity;\n"
+		"R.NearColor = NearColor.rgb;\n"
+		"R.FarColor = FarColor.rgb;\n"
+		"R.FogDensity = FogDensity;\n"
+		"R.FogStart = FogStart;\n"
+		"R.SplashRate = SplashRate;\n"
+		"R.SplashRadius = max(SplashRadius, 0.5);\n"
+		"R.SplashDuration = max(SplashDuration, 0.01);\n"
+		"R.SplashRange = SplashRange;\n"
+		"R.SplashColor = SplashColor.rgb;\n"
+		"return LBARain(GetViewportUV(Parameters), SceneColor.rgb, Depth.r, R);");
 
 	UMaterialEditingLibrary::ConnectMaterialProperty(Custom, TEXT(""), MP_EmissiveColor);
 	return LBAMaterials::EndRebuild(Context, Material);

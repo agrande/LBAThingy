@@ -399,7 +399,9 @@ UStaticMesh* FLBAImportContext::CreateStaticMesh(const FString& Folder, const FS
 	SectionInfo.Clear();
 	for (int32 Index = 0; Index < InMaterials.Num(); ++Index)
 	{
-		SectionInfo.Set(0, Index, FMeshSectionInfo(Index));
+		FMeshSectionInfo Info(Index);
+		Info.bCastShadow = !(SlotNames.IsValidIndex(Index) && Options.NoShadowSlots.Contains(SlotNames[Index]));
+		SectionInfo.Set(0, Index, Info);
 	}
 
 	Mesh->CreateBodySetup();

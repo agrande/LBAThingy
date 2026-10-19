@@ -33,6 +33,7 @@ namespace
 		TEXT("M_LBA_Water"),
 		TEXT("M_LBA_Invisible"),
 		TEXT("M_LBA_TexturedTranslucent"),
+		TEXT("M_LBA_Glow"),
 	};
 	static_assert(UE_ARRAY_COUNT(MasterNames) == uint8(ELBAMaterial::Count), "Keep MasterNames in sync");
 
@@ -203,6 +204,7 @@ FName FLBAMaterialLibrary::GetSlotName(ELBAMaterial Kind)
 	case ELBAMaterial::Ground: return TEXT("Ground");
 	case ELBAMaterial::Water: return TEXT("Water");
 	case ELBAMaterial::Brick: return TEXT("Bricks");
+	case ELBAMaterial::Glow: return TEXT("Glow");
 	default: return TEXT("Textured");
 	}
 }
@@ -249,6 +251,18 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 		UMaterialExpression* Shade = G.BakedShade(VC, 200);
 		G.Column = -150;
 		G.Out(G.Multiply(Albedo, TEXT(""), Shade, TEXT(""), 0), TEXT(""), MP_BaseColor);
+		G.Surface(1.f, 0.f);
+		break;
+	}
+	case ELBAMaterial::Glow:
+	{
+		// The glow is light beyond the brightest shade row for the palette shading, which brightens that shade.
+		UMaterialExpressionVertexColor* VC = G.Add<UMaterialExpressionVertexColor>(0);
+		G.Column = -300;
+		UMaterialExpression* Albedo = G.VertexAlbedo(VC, 0);
+		G.Column = -150;
+		G.Out(Albedo, TEXT(""), MP_BaseColor);
+		G.Out(G.Multiply(Albedo, TEXT(""), G.Scalar(TEXT("GlowStrength"), 3.f, 200), TEXT(""), 200), TEXT(""), MP_EmissiveColor);
 		G.Surface(1.f, 0.f);
 		break;
 	}

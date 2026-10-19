@@ -24,6 +24,8 @@ class UVolumeTexture;
  *    enhanced look go in MI_LBA_Enhanced_<Palette>, which keeps them across imports.
  *  - VT_LBA_Dither3D / T_LBA_DitherRamp: Surface-Stable Fractal Dithering pattern. T_LBA_HalftoneRamp: halftone
  *    screen thresholds.
+ *  - M_LBA_Rain: rain streaks and splashes, a post-process after tonemapping (Shaders/Private/LBARain.ush); levels
+ *    with rain get their own instance (LBAEnvironment).
  */
 class FLBARenderingAssets
 {
@@ -33,10 +35,14 @@ public:
 	/** Palette shading material instance of a look for an island palette (created on first use). */
 	UMaterialInterface* GetPaletteShading(const FLBAXpl& Xpl, ELBALookMode Look);
 
+	/** Rain post-process material (created on first use). */
+	UMaterial* GetRainMaster();
+
 private:
 	FString GetFolder() const;
 	UMaterial* GetMaster();
 	UMaterial* CreateMaster();
+	UMaterial* CreateRainMaster();
 	UMaterialInterface* GetLook(ELBALookMode Look);
 	void CreateDitherTextures();
 	void CreateHalftoneRamp();
@@ -45,6 +51,7 @@ private:
 
 	FLBAImportContext& Context;
 	UMaterial* Master = nullptr;
+	UMaterial* RainMaster = nullptr;
 	UMaterialInterface* Looks[2] = {};
 	UVolumeTexture* DitherTexture = nullptr;
 	UTexture2D* DitherRamp = nullptr;

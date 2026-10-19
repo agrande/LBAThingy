@@ -1,0 +1,184 @@
+// LBARain.ush
+//
+// Rain, cheaply, as a post-process after tonemapping (M_LBA_Rain): drawn on the final image, after TSR, so thin fast
+// streaks neither smear nor shimmer. Colors are display colors (sRGB), like the original's palette.
+//
+// The original (RAIN.CPP) draws 200 drops as Z-buffered lines in a box around the camera, falling fast and slanted by
+// the wind, darker with distance (palette 58 near to 51 far), with a little splash where they hit something. Here:
+//  - Streaks live on a few vertical cylinders around the camera, each twice as far as the previous one. Every
+//    cylinder is cut into columns slanted by the wind, every column into cells that may hold one drop falling at
+//    FallSpeed. Columns and cells grow with the cylinder, so every layer has about as many drops on screen, smaller
+//    and fainter further away. Streaks behind the scene are hidden (scene depth), and fade in the fog.
+//  - Splashes are rings on upward surfaces (ground, water) near the camera: each world cell has its own random
+//    drops, and a ring grows and fades where each one lands.
+
+#pragma once
+
+struct FLBARainSettings
+{
+	float Amount;			// 0..1: share of cells that hold a drop (0: no rain)
+	float FallSpeed;		// cm/s
+	float2 Wind;			// horizontal speed of the drops, cm/s
+	float StreakLength;		// cm
+	float StreakWidth;		// cm (thinner than a pixel: fainter)
+	float NearRadius;		// cm, first cylinder
+	float Layers;
+	float ColumnSpacing;	// column width per cm of cylinder radius
+	float CellHeight;		// cell height per cm of cylinder radius
+	float Opacity;
+	float3 NearColor;		// sRGB, nearest and furthest layers
+	float3 FarColor;
+	float FogDensity;		// natural extinction per cm, and where it starts (cm from the camera)
+	float FogStart;
+	float SplashRate;		// drops per m^2 per second hitting the ground near the camera
+	float SplashRadius;		// cm, at the end of a splash
+	float SplashDuration;	// seconds
+	float SplashRange;		// cm from the camera
+	float3 SplashColor;		// sRGB
+};
+
+uint LBARainHashU(uint X)
+{
+	X ^= X >> 16;
+	X *= 0x7feb352du;
+	X ^= X >> 15;
+	X *= 0x846ca68bu;
+	X ^= X >> 16;
+	return X;
+}
+
+float LBARainHash(int3 P, uint Salt)
+{
+	return LBARainHashU(asuint(P.x) ^ LBARainHashU(asuint(P.y) ^ LBARainHashU(asuint(P.z) ^ Salt))) / 4294967296.0;
+}
+
+// Coverage of a line of world width Width at a distance Distance from its axis, with the pixel's world size: thinner
+// than a pixel, it is drawn one pixel wide and fainter.
+float LBARainLine(float Distance, float Width, float Pixel)
+{
+	const float Drawn = max(Width, Pixel);
+	return saturate((0.5 * Drawn + 0.5 * Pixel - Distance) / Pixel) * sqrt(Width / Drawn);
+}
+
+// Size of a pixel in viewport UV (see LBAViewportPixelSize: the cook also compiles the material's other shader types,
+// so post-process only identifiers and screen derivatives stay under the guard).
+float2 LBARainPixelSize()
+{
+#if POST_PROCESS_MATERIAL
+	return PostProcessOutput_ViewportSizeInverse;
+#else
+	return View.ViewSizeAndInvSize.zw;
+#endif
+}
+
+// Normal of the surface at a position, from screen derivatives.
+float3 LBARainSurfaceNormal(float3 P)
+{
+#if POST_PROCESS_MATERIAL
+	return normalize(cross(ddx(P), ddy(P)) + 1e-6);
+#else
+	return float3(0.0, 0.0, 1.0);
+#endif
+}
+
+float3 LBARain(float2 ViewportUV, float3 SceneColor, float SceneDepth, FLBARainSettings R)
+{
+	BRANCH
+	if (R.Amount <= 0.0)
+	{
+		return SceneColor;
+	}
+	const float Time = View.GameTime;
+
+	// View ray without the frame's jitter: the streaks are drawn after TSR.
+	const float2 Ndc = (ViewportUV * 2.0 - 1.0) * float2(1.0, -1.0);
+	const float3 ViewRay = float3(Ndc.x / View.ViewToClip[0][0], Ndc.y / View.ViewToClip[1][1], 1.0);
+	const float3 Dir = normalize(mul(ViewRay, (float3x3)View.ViewToTranslatedWorld));
+	const float ForwardCosine = dot(Dir, View.ViewForward);
+	const float3 Camera = DFHackToFloat(PrimaryView.WorldCameraOrigin);
+	// World size of a pixel per cm of view depth.
+	const float PixelPerDepth = 2.0 * LBARainPixelSize().y / View.ViewToClip[1][1];
+
+	float3 Color = SceneColor;
+
+	// Splashes on what the pixel shows (its normal from screen derivatives, outside any branch).
+	const float3 P = Camera + Dir * (SceneDepth / max(ForwardCosine, 1e-3));
+	const float3 Normal = LBARainSurfaceNormal(P);
+	BRANCH
+	if (R.SplashRate > 0.0 && SceneDepth < R.SplashRange)
+	{
+		BRANCH
+		if (abs(Normal.z) > 0.7)
+		{
+			const float CellSize = 4.0 * R.SplashRadius;
+			const int2 Cell = int2(floor(P.xy / CellSize));
+			// Drops per second in this cell; each cell keeps its own rhythm.
+			const float Rate = R.SplashRate * Pow2(CellSize / 100.0);
+			const float Clock = Time * Rate + LBARainHash(int3(Cell, 0), 11u);
+			const int Drop = int(floor(Clock));
+			const float Age = frac(Clock) / Rate;
+			if (Age < R.SplashDuration)
+			{
+				const float2 Center = (float2(Cell) + 0.25 + 0.5 * float2(LBARainHash(int3(Cell, Drop), 12u), LBARainHash(int3(Cell, Drop), 13u))) * CellSize;
+				const float Life = Age / R.SplashDuration;
+				const float Ring = LBARainLine(abs(length(P.xy - Center) - R.SplashRadius * sqrt(Life)), 0.4, SceneDepth * PixelPerDepth);
+				const float Fade = (1.0 - Life) * saturate(2.0 - 2.0 * SceneDepth / R.SplashRange);
+				Color = lerp(Color, R.SplashColor, Ring * Fade * R.Opacity);
+			}
+		}
+	}
+
+	// Streaks, from the furthest layer to the nearest. They all lean by the wind across the view (a lean following the
+	// wind around each cylinder would bend columns into arcs), measured from the camera's height so turning the
+	// camera hardly moves them.
+	const float Horizontal = length(Dir.xy);
+	const float2 ViewRight = normalize(float2(-View.ViewForward.y, View.ViewForward.x) + 1e-6);
+	const float Slope = dot(R.Wind, ViewRight) / max(R.FallSpeed, 1.0);
+	const int Layers = clamp(int(R.Layers), 1, 8);
+	LOOP
+	for (int Layer = Layers - 1; Layer >= 0; --Layer)
+	{
+		const float Radius = R.NearRadius * exp2(float(Layer));
+		const float Distance = Radius / max(Horizontal, 1e-3);
+		const float Depth = Distance * ForwardCosine;
+		if (Horizontal < 0.05 || Depth >= SceneDepth)
+		{
+			continue;
+		}
+		const float3 Q = Camera + Dir * Distance;
+		const float Angle = atan2(Dir.y, Dir.x);
+
+		// Columns around the cylinder (a whole number of them, so the pattern closes behind the camera); rows follow
+		// the fall, each column's rows shifted so drops don't line up across columns.
+		const float Columns = max(round(2.0 * PI / R.ColumnSpacing), 3.0);
+		const float ColumnWidth = 2.0 * PI * Radius / Columns;
+		const float Across = Angle * Radius + Slope * (Q.z - Camera.z);
+		const float CellHeight = R.CellHeight * Radius;
+		const int Column = int(floor(Across / ColumnWidth));
+		const int WrappedColumn = (Column % int(Columns) + int(Columns)) % int(Columns);
+		const float Along = Q.z + R.FallSpeed * Time + LBARainHash(int3(WrappedColumn, 0, Layer), 4u) * CellHeight;
+		const int Row = int(floor(Along / CellHeight));
+		const int3 Cell = int3(WrappedColumn, Row, Layer);
+		if (LBARainHash(Cell, 1u) >= R.Amount)
+		{
+			continue;
+		}
+
+		// The drop: its column offset and height in the cell; the streak trails above it.
+		const float Offset = (0.2 + 0.6 * LBARainHash(Cell, 2u)) * ColumnWidth;
+		const float Length = min(R.StreakLength, 0.9 * CellHeight);
+		const float Head = LBARainHash(Cell, 3u) * (CellHeight - Length);
+		const float InCell = Along - Row * CellHeight - Head;
+		const float AcrossDistance = abs(Across - Column * ColumnWidth - Offset) / sqrt(1.0 + Slope * Slope);
+		const float Pixel = Depth * PixelPerDepth;
+		const float Tail = saturate(InCell / Length);
+		const float Coverage = LBARainLine(AcrossDistance, R.StreakWidth, Pixel)
+			* step(0.0, InCell) * step(InCell, Length)
+			* (0.4 + 0.6 * (1.0 - Tail));	// brightest at the drop, fading along its trail
+
+		const float Fog = exp(-R.FogDensity * max(Distance - R.FogStart, 0.0));
+		const float3 StreakColor = lerp(R.NearColor, R.FarColor, Layers > 1 ? Layer / float(Layers - 1) : 0.0);
+		Color = lerp(Color, StreakColor, saturate(Coverage * Fog * R.Opacity));
+	}
+	return Color;
+}

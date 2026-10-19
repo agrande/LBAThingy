@@ -179,13 +179,24 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   (`lba.Look.Debug 4` shows surfaces without fog). Its copy of the fog settings follows the level's fog
   actor during play. The original look replaces it with the original's linear distance fog, from each
   section's fog distances (scaled by *Fog Distance Scale*), applied after shading like the original's
-  fog tables.
+  fog tables. An island's preset can set its own fog instead: Citadel's storm is a dark grey soup from
+  6 m past the camera, nearly the same at every height, hiding everything about 60 m away.
+- **Rain** (Citadel's storm, both looks): `M_LBA_Rain`, a cheap post-process after tonemapping (crisp,
+  no TSR smearing): streaks on a few cylinders around the camera, hidden behind the scene and fading in
+  the fog, with the original's speed, wind and palette colors (RAIN.CPP), and splash rings on the
+  ground and water near the camera. Level instance `MI_<Level>_Rain`; *RainAmount*, *Opacity*,
+  *FallSpeed*, *Wind*, *Layers*, *NearRadius*, *CellHeight*, *SplashRate*, *SplashRadius*.
 - **Lights**: islands are lit so that sunlit ground lands on the shade rows the original's baked
   terrain lighting uses (from the island's terrain data), with the sun at the original's angle, and
   ground in the shade keeps most of that (the original has no cast shadows). The storm is
   lit evenly by a uniform overcast sky. Characters (lighting channel 1) also get a key light along the
   sun, as bright on their lit side as the original's objects (lit by N.L alone), and a shadowless fill
   light from the other side.
+- **Lamps**: lit decor is listed per island in the environment preset (`FLBADecorLight`: .OBL object,
+  glass palette color, light, radius, halo). Citadel's lampposts are lit during the storm: their glass uses
+  `M_LBA_Glow` (emissive, *GlowStrength*; casts no shadow) and a point light in the glass's color sits at
+  its center, attached to the lamppost. The light casts no shadows (a soft pool around the lamppost)
+  and lights the volumetric fog a little (a halo in the storm's fog). Citabau's stay off.
 
 Customizing (material instances in `<Root>/Rendering`, children inherit what they don't override):
 
@@ -195,6 +206,7 @@ Customizing (material instances in `<Root>/Rendering`, children inherit what the
 | `MI_LBA_Enhanced_<Palette>` | levels using that palette (per island tweaks) | yes, same rule |
 | `MI_LBA_Original_<Palette>`, level `MI_<Level>_<Look>Look` (fog, contrast pivot) | generated | no |
 | level `MI_<Level>_Clouds` (child of Unreal's `m_SimpleVolumetricCloud_Inst`) | generated | no |
+| level `MI_<Level>_Rain` (child of `M_LBA_Rain`) | generated | no |
 | island `MI_<Island>_Ocean` / `_OceanFar` (children of the clipped ocean material / the plugin's far mesh material) | generated | no |
 | `Water/M_LBA_Water`, `MI_LBA_Water`, `MI_LBA_Water_Ocean` (copies of the Water plugin's ocean chain, clipped) | every water level | yes, unless a newer importer changes them |
 | `Water/Waves_LBA_Calm`, `Water/Waves_LBA_Storm` (Gerstner wave assets) | every water level | yes, unless a newer importer changes their defaults |
@@ -205,7 +217,7 @@ Main parameters: *LightContrast*, *RowStep*, *Exposure*, *Contrast*, *Saturation
 use only the ramps' hue), *LightTint* (Palette); *WaterStrength* (0 = Unreal's water), *WaterLightTint*,
 *WaterHighlightRange* (Water); *SeaDrift* (cm/s), *SeaWobble*, *WaterSmoothing* (band calmness),
 *FoamWidth*, *FoamSpeed*, *FoamBrightness*, *SparkleLight* (Water Cartoon). To try values live, `lba.Look.Set <Parameter> <Value>`
-(or `R G B` for colors; no value removes the override). Other console variables:
+(or `R G B` for colors; no value removes the override; it reaches the rain's parameters too). Other console variables:
 `lba.Look.Palette 0|1`, `lba.Look.Dither 0|1`, `lba.Look.Debug 1|2|3|4` (base color, matched palette
 color, shade row / light, surfaces without fog).
 
@@ -238,7 +250,9 @@ color, shade row / light, surfaces without fog).
   into account by the palette shading, sun and sky light calibrated against them
 - [x] Sea with Unreal's Water plugin on Twinsun: ocean, calm or storm waves, cartoon water with the
   original sea textures, foam lines and sparkles
-- [ ] Look, next: Citadel storm (lamppost lights, rain, lightning), cloud shadows, interior lights,
+- [x] Citadel's lampposts give light during the storm (glowing glass + soft point light with a halo)
+- [x] Citadel's storm: dense dark fog, rain streaks and splashes
+- [ ] Look, next: Citadel storm (lightning, wet surfaces), cloud shadows, interior lights,
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
 - [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off

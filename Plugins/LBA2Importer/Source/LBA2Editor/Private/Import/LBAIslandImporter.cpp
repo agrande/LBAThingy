@@ -603,7 +603,8 @@ bool FLBAIslandImporter::ImportIsland(const FString& IslandName)
 	UMaterialInterface* GroundMaterial = Materials.GetTextured(ELBAMaterial::Ground, GroundTexture, MaterialFolder);
 	UMaterialInterface* ColorMaterial = Materials.GetMaster(ELBAMaterial::Color);
 
-	TArray<UStaticMesh*> DecorMeshes = BuildDecorMeshes(Island, IslandFolder);
+	TMap<int32, FBox3f> GlowBounds;
+	TArray<UStaticMesh*> DecorMeshes = BuildDecorMeshes(Island, IslandFolder, GlowBounds);
 
 	TArray<UStaticMesh*> GroundMeshes;
 	for (const FLBAIslandSection& Section : Island.Sections)
@@ -614,12 +615,12 @@ bool FLBAIslandImporter::ImportIsland(const FString& IslandName)
 
 	if (Context.GetSettings().bCreateIslandLevels)
 	{
-		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes);
+		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes, GlowBounds);
 	}
 	return true;
 }
 
-TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder)
+TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder, TMap<int32, FBox3f>& OutGlowBounds)
 {
 	TArray<UStaticMesh*> Meshes;
 	const FLBAHqrFile* Obl = Context.GetHqr(Island.Name + TEXT(".OBL"));
@@ -652,15 +653,32 @@ TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Isla
 		return Materials.GetTextured(bMasked ? ELBAMaterial::TexturedMasked : ELBAMaterial::Textured, Texture, MaterialFolder);
 	};
 
+	const FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::ForIsland(Island.Name);
 	for (int32 Index = 0; Index < Obl->Num(); ++Index)
 	{
 		FLBABody Body;
 		FLBAMeshBuilder Builder;
 		Params.DebugIndex = Index;
-		if (!Body.Parse(Obl->GetEntry(Index)) || !LBABodyConverter::Convert(Body, Params, Builder))
+		const FLBADecorLight* DecorLight = Preset.FindDecorLight(Index);
+		Params.GlowColors.Reset();
+		Params.GlowMaterial = DecorLight ? Materials.GetMaster(ELBAMaterial::Glow) : nullptr;
+		if (DecorLight)
+		{
+			Params.GlowColors.Add(DecorLight->GlowColor);
+		}
+		FBox3f Glow(ForceInit);
+		if (!Body.Parse(Obl->GetEntry(Index)) || !LBABodyConverter::Convert(Body, Params, Builder, &Glow))
 		{
 			Meshes.Add(nullptr);
 			continue;
+		}
+		if (DecorLight && !Glow.IsValid)
+		{
+			Context.Warn(FString::Printf(TEXT("Island %s: lit decor %d has no polygon of color %d"), *Island.Name, Index, DecorLight->GlowColor));
+		}
+		else if (Glow.IsValid)
+		{
+			OutGlowBounds.Add(Index, Glow);
 		}
 
 		FMeshDescription Description;
@@ -670,6 +688,8 @@ TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Isla
 
 		FLBAStaticMeshOptions Options;
 		Options.bComplexAsSimple = true;
+		// The light sits inside the glowing part.
+		Options.NoShadowSlots.Add(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Glow));
 		Meshes.Add(Context.CreateStaticMesh(IslandFolder / TEXT("Decor"), FString::Printf(TEXT("SM_%s_Decor_%03d"), *Island.Name, Index),
 			MoveTemp(Description), MeshMaterials, Slots, Options));
 	}
@@ -764,7 +784,7 @@ UStaticMesh* FLBAIslandImporter::BuildGroundMesh(const FLBAIsland& Island, const
 }
 
 void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& IslandFolder, const TArray<UStaticMesh*>& GroundMeshes,
-	const TArray<UStaticMesh*>& DecorMeshes)
+	const TArray<UStaticMesh*>& DecorMeshes, const TMap<int32, FBox3f>& GlowBounds)
 {
 	UWorld* World = Context.BeginLevel(IslandFolder, TEXT("L_") + Island.Name);
 	if (!World)
@@ -772,6 +792,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		return;
 	}
 	const float Scale = Context.GetScale();
+	FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::ForIsland(Island.Name);
 
 	FBox IslandBounds(ForceInit);
 	TArray<AActor*> GroundActors;
@@ -824,13 +845,21 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 				{
 					Actor->Tags.Add(*FString::Printf(TEXT("LBA_Var_%d=%d"), Decor.ConditionVar, Decor.ConditionValue));
 				}
+				const FLBADecorLight* DecorLight = Preset.FindDecorLight(Decor.Body);
+				const FBox3f* Glow = GlowBounds.Find(Decor.Body);
+				if (DecorLight && Glow)
+				{
+					// The light has the glass's color at full brightness.
+					const FLinearColor GlassColor = FLinearColor::FromSRGBColor(LBABodyConverter::GetAlbedo(Context.GetPalette(), DecorLight->GlowColor, ELBAPolyType::Gouraud));
+					const FLinearColor LightColor = GlassColor / FMath::Max(FMath::Max3(GlassColor.R, GlassColor.G, GlassColor.B), 1e-4f);
+					LBAEnvironment::SpawnDecorLight(Context, Actor, *DecorLight, FVector(Glow->GetCenter()), LightColor, Glow->GetExtent().GetMin());
+				}
 			}
 		}
 	}
 
 	// Sky and sea textures, fog: from the island's palette, sky/sea texture page and first section (the original
 	// sets them per section, but they hardly vary within an island).
-	FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::ForIsland(Island.Name);
 	const FLBAIslandSection& FirstSection = Island.Sections[0];
 	const FLBAXpl* Xpl = Context.GetActiveXpl();
 	if (Xpl)
@@ -906,9 +935,9 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 	Preset.bWater &= Preset.SeaColor.GetLuminance() > 0.f;
 
 	// Modern fog: the original drew everything crisp up to its fog distance and nothing beyond; the height fog keeps
-	// that range clear and lets you see the rest of the island fading into the palette's fog color. Overcast skies
-	// light the scene in the clouds' color.
-	if (Preset.bAtmosphere)
+	// that range clear and lets you see the rest of the island fading into the palette's fog color, unless the
+	// island's preset has its own fog. Overcast skies light the scene in the clouds' color.
+	if (Preset.bAtmosphere && Preset.FogVisibility <= 0.f)
 	{
 		Preset.HeightFogStart = Preset.FogEnd;
 		Preset.FogVisibility = 8.f * FirstSection.ClipFar * Scale;
