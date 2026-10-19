@@ -34,6 +34,7 @@ namespace
 		TEXT("M_LBA_Invisible"),
 		TEXT("M_LBA_TexturedTranslucent"),
 		TEXT("M_LBA_Glow"),
+		TEXT("M_LBA_TexturedGlow"),
 	};
 	static_assert(UE_ARRAY_COUNT(MasterNames) == uint8(ELBAMaterial::Count), "Keep MasterNames in sync");
 
@@ -227,8 +228,8 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	// Bump when a graph below changes. v2: BakedShading off by default, opaque textured sea, sky. v3: sky brightness.
 	// v4: vertex colors decoded from sRGB. v5: duller sea. v6: cloud clearance.
 	// v7: no specular on palette surfaces (the original has none, and it would read as light in the palette shading).
-	// v8: unshaded sea, like the original's.
-	constexpr int32 Version = 8;
+	// v8: unshaded sea, like the original's. v9: textured glow (lit windows).
+	constexpr int32 Version = 9;
 
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(Folder, Name, &bExisted);
@@ -275,6 +276,22 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 		G.Out(G.VertexAlbedo(VC, 0), TEXT(""), MP_BaseColor);
 		G.Out(G.Scalar(TEXT("Opacity"), 0.45f, 200), TEXT(""), MP_Opacity);
 		G.Surface(0.15f, 0.6f);
+		break;
+	}
+	case ELBAMaterial::TexturedGlow:
+	{
+		// Like M_LBA_Glow, on the texels the texture's alpha marks, a little dimmer: lit windows keep their panes.
+		UMaterialExpressionTextureSampleParameter2D* Tex = G.Texture(0);
+		UMaterialExpressionVertexColor* VC = G.Add<UMaterialExpressionVertexColor>(260);
+		G.Column = -450;
+		UMaterialExpression* Albedo = G.VertexAlbedo(VC, 160);
+		G.Column = -300;
+		UMaterialExpression* Tinted = G.Multiply(Tex, TEXT("RGB"), Albedo, TEXT(""), 0);
+		UMaterialExpression* Mask = G.Multiply(Tex, TEXT("A"), G.Scalar(TEXT("GlowStrength"), 1.5f, 400), TEXT(""), 400);
+		G.Column = -150;
+		G.Out(Tinted, TEXT(""), MP_BaseColor);
+		G.Out(G.Multiply(Tinted, TEXT(""), Mask, TEXT(""), 200), TEXT(""), MP_EmissiveColor);
+		G.Surface(1.f, 0.f);
 		break;
 	}
 	case ELBAMaterial::Textured:

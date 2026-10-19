@@ -9,6 +9,26 @@ class UStaticMesh;
 class UTexture2D;
 class UMaterialInterface;
 
+/** The light of glowing decor texels (FLBAGlowTexels), in mesh space. */
+struct FLBADecorGlowLight
+{
+	int32 Glow = INDEX_NONE;
+	FVector3f Center = FVector3f::ZeroVector;
+	/** Windows: the direction they face and their size (width, height). Lamps: no normal, the source radius in Size.X. */
+	FVector3f Normal = FVector3f::ZeroVector;
+	FVector2f Size = FVector2f::ZeroVector;
+	FLinearColor Color = FLinearColor::White;
+};
+
+/** What glows on the decor meshes, by body. */
+struct FLBADecorGlow
+{
+	/** Bounds of the glowing parts of lit decor (FLBADecorLight). */
+	TMap<int32, FBox3f> LampBounds;
+	/** Lights of glowing texels (FLBAGlowTexels). */
+	TMap<int32, TArray<FLBADecorGlowLight>> TexelLights;
+};
+
 /**
  * Islands (*.ILE / *.OBL) -> textures, decor static meshes, one terrain static mesh per section and a
  * playable level with everything placed, a sea plane, lighting and a player start.
@@ -34,10 +54,10 @@ public:
 private:
 	UStaticMesh* BuildGroundMesh(const FLBAIsland& Island, const FLBAIslandSection& Section, const FString& Folder,
 		UMaterialInterface* GroundMaterial, UMaterialInterface* ColorMaterial);
-	/** Also returns the bounds of the glowing parts of lit decor (FLBADecorLight), by body, in mesh space. */
-	TArray<UStaticMesh*> BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder, TMap<int32, FBox3f>& OutGlowBounds);
+	/** Also returns what glows on them (lit decor, glowing texels). */
+	TArray<UStaticMesh*> BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder, FLBADecorGlow& OutGlow);
 	void BuildLevel(const FLBAIsland& Island, const FString& IslandFolder, const TArray<UStaticMesh*>& GroundMeshes,
-		const TArray<UStaticMesh*>& DecorMeshes, const TMap<int32, FBox3f>& GlowBounds);
+		const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow);
 
 	FLBAImportContext& Context;
 };

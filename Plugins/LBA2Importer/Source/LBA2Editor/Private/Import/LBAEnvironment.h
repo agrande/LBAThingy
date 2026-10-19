@@ -22,6 +22,28 @@ struct FLBADecorLight
 	float Halo = 0.15f;
 };
 
+/**
+ * Texels of an island's object texture page that glow wherever decor uses them (lit windows, the lighthouse's lamp
+ * room): Texels is a rectangle of the 256x256 page; with bGlassOnly only its cool texels (the glass, not the wooden or
+ * brass frames) glow. RecolorBank moves the glowing texels to that palette ramp, keeping their shade (lamplight
+ * behind the windows: the palette shading takes a pixel's hue from its base color, the glow only brightens it);
+ * INDEX_NONE keeps their colors. ExcludedBodies are objects (.OBL entries) that use the texels for something else
+ * and stay unlit. Each window (glowing polygons of a decor in one plane) gets a rect light in front of
+ * it, facing out; with bWindow false the decor's glowing parts get one point light at their center instead (a
+ * lamp). Light, Radius and Halo as in FLBADecorLight.
+ */
+struct FLBAGlowTexels
+{
+	FIntRect Texels;
+	bool bGlassOnly = false;
+	int32 RecolorBank = INDEX_NONE;
+	bool bWindow = true;
+	TArray<int32> ExcludedBodies;
+	float Light = 1.f;
+	float Radius = 1500.f;
+	float Halo = 0.15f;
+};
+
 /** Lighting and atmosphere for a generated level. Presets follow the original island moods. */
 struct FLBAEnvironmentPreset
 {
@@ -125,6 +147,8 @@ struct FLBAEnvironmentPreset
 	/** Lit decor (none: lamps off). */
 	TArray<FLBADecorLight> DecorLights;
 	const FLBADecorLight* FindDecorLight(int32 Body) const { return DecorLights.FindByPredicate([Body](const FLBADecorLight& Light) { return Light.Body == Body; }); }
+	/** Glowing texels of the object texture page (none: windows dark). */
+	TArray<FLBAGlowTexels> GlowTexels;
 
 	/** Preset for an island file name (CITABAU, DESERT, EMERAUDE...). */
 	static FLBAEnvironmentPreset ForIsland(const FString& IslandName);
@@ -163,6 +187,13 @@ namespace LBAEnvironment
 	 */
 	void SpawnDecorLight(FLBAImportContext& Context, AActor* Decor, const FLBADecorLight& DecorLight, const FVector& LocalPosition,
 		const FLinearColor& Color, float SourceRadius);
+
+	/**
+	 * Spawns the light of a glowing window, attached to the decor actor: a rect light of the window's size (cm) at
+	 * LocalPosition (mesh space), facing LocalNormal.
+	 */
+	void SpawnWindowLight(FLBAImportContext& Context, AActor* Decor, const FLBAGlowTexels& Glow, const FVector& LocalPosition,
+		const FVector& LocalNormal, const FVector2D& Size, const FLinearColor& Color);
 
 	/** Sun rotation from LBA light angles (alpha = elevation, beta = heading, 1/4096 turns). */
 	FRotator SunRotationFromLbaAngles(int32 Alpha, int32 Beta);

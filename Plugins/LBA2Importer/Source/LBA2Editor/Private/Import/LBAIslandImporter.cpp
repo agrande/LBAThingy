@@ -603,8 +603,8 @@ bool FLBAIslandImporter::ImportIsland(const FString& IslandName)
 	UMaterialInterface* GroundMaterial = Materials.GetTextured(ELBAMaterial::Ground, GroundTexture, MaterialFolder);
 	UMaterialInterface* ColorMaterial = Materials.GetMaster(ELBAMaterial::Color);
 
-	TMap<int32, FBox3f> GlowBounds;
-	TArray<UStaticMesh*> DecorMeshes = BuildDecorMeshes(Island, IslandFolder, GlowBounds);
+	FLBADecorGlow Glow;
+	TArray<UStaticMesh*> DecorMeshes = BuildDecorMeshes(Island, IslandFolder, Glow);
 
 	TArray<UStaticMesh*> GroundMeshes;
 	for (const FLBAIslandSection& Section : Island.Sections)
@@ -615,12 +615,152 @@ bool FLBAIslandImporter::ImportIsland(const FString& IslandName)
 
 	if (Context.GetSettings().bCreateIslandLevels)
 	{
-		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes, GlowBounds);
+		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes, Glow);
 	}
 	return true;
 }
 
-TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder, TMap<int32, FBox3f>& OutGlowBounds)
+namespace
+{
+	/** The glowing texels of an island's object texture page (FLBAGlowTexels). */
+	struct FLBATexelGlowMap
+	{
+		/** The glow of each texel (256 x 256), INDEX_NONE where nothing glows. */
+		TArray<int8> Glow;
+		/** The page with the glowing texels moved to their palette ramp. */
+		TArray<uint8> Recolored;
+		/** By glow: the average color of its texels, brightest channel 1. */
+		TArray<FLinearColor> LightColors;
+	};
+
+	FLBATexelGlowMap BuildTexelGlowMap(const TArray<uint8>& Page, const TArray<FColor>& Palette, const TArray<FLBAGlowTexels>& Glows)
+	{
+		FLBATexelGlowMap Map;
+		Map.Glow.Init(INDEX_NONE, 256 * 256);
+		Map.Recolored = Page;
+		for (int32 GlowIndex = 0; GlowIndex < Glows.Num(); ++GlowIndex)
+		{
+			const FLBAGlowTexels& Glow = Glows[GlowIndex];
+			FLinearColor Sum = FLinearColor::Black;
+			int32 Count = 0;
+			for (int32 Y = FMath::Max(Glow.Texels.Min.Y, 0); Y < FMath::Min(Glow.Texels.Max.Y, 256); ++Y)
+			{
+				for (int32 X = FMath::Max(Glow.Texels.Min.X, 0); X < FMath::Min(Glow.Texels.Max.X, 256); ++X)
+				{
+					const int32 Texel = Y * 256 + X;
+					const uint8 Index = Page[Texel];
+					// Glass is cool; window frames are wood, brass or stone. Index 0 is black (the color key).
+					if (Index == 0 || (Glow.bGlassOnly && Palette[Index].B < Palette[Index].R))
+					{
+						continue;
+					}
+					Map.Glow[Texel] = int8(GlowIndex);
+					if (Glow.RecolorBank != INDEX_NONE)
+					{
+						Map.Recolored[Texel] = uint8(Glow.RecolorBank * 16 + (Index & 15));
+					}
+					Sum += FLinearColor::FromSRGBColor(Palette[Map.Recolored[Texel]]);
+					++Count;
+				}
+			}
+			const FLinearColor Average = Count > 0 ? Sum / float(Count) : FLinearColor::White;
+			Map.LightColors.Add(Average / FMath::Max(Average.GetMax(), 1e-4f));
+		}
+		return Map;
+	}
+
+	/**
+	 * The lights of a decor's glow patches: one per window (touching patches of one glow in one plane) or, for lamps,
+	 * one per glow.
+	 */
+	TArray<FLBADecorGlowLight> GroupGlowPatches(const TArray<FLBAGlowPatch>& Patches, const TArray<FLBAGlowTexels>& Glows,
+		const TArray<FLinearColor>& LightColors)
+	{
+		constexpr float MinPlaneCos = 0.95f;
+		constexpr float PlaneTolerance = 10.f;
+		constexpr float Gap = 30.f;
+		TArray<int32> Parent;
+		for (int32 Index = 0; Index < Patches.Num(); ++Index)
+		{
+			Parent.Add(Index);
+		}
+		auto Root = [&Parent](int32 Index)
+		{
+			while (Parent[Index] != Index)
+			{
+				Index = Parent[Index] = Parent[Parent[Index]];
+			}
+			return Index;
+		};
+		for (int32 A = 0; A < Patches.Num(); ++A)
+		{
+			for (int32 B = A + 1; B < Patches.Num(); ++B)
+			{
+				const FLBAGlowPatch& PA = Patches[A];
+				const FLBAGlowPatch& PB = Patches[B];
+				if (PA.Glow != PB.Glow)
+				{
+					continue;
+				}
+				const bool bSameWindow = (PA.Normal | PB.Normal) > MinPlaneCos
+					&& FMath::Abs((PA.Bounds.GetCenter() - PB.Bounds.GetCenter()) | PA.Normal) < PlaneTolerance
+					&& PA.Bounds.ExpandBy(Gap).Intersect(PB.Bounds);
+				if (!Glows[PA.Glow].bWindow || bSameWindow)
+				{
+					Parent[Root(A)] = Root(B);
+				}
+			}
+		}
+
+		TArray<FLBADecorGlowLight> Lights;
+		TArray<FBox3f> Bounds;
+		TMap<int32, int32> LightByRoot;
+		for (int32 Index = 0; Index < Patches.Num(); ++Index)
+		{
+			const FLBAGlowPatch& Patch = Patches[Index];
+			const int32* Found = LightByRoot.Find(Root(Index));
+			const int32 LightIndex = Found ? *Found : LightByRoot.Add(Root(Index), Lights.Num());
+			if (!Found)
+			{
+				FLBADecorGlowLight& Light = Lights.AddDefaulted_GetRef();
+				Light.Glow = Patch.Glow;
+				Light.Color = LightColors[Patch.Glow];
+				Bounds.Add(FBox3f(ForceInit));
+			}
+			Bounds[LightIndex] += Patch.Bounds;
+			Lights[LightIndex].Normal += Patch.Normal * Patch.Area;
+		}
+		for (int32 Index = 0; Index < Lights.Num(); ++Index)
+		{
+			FLBADecorGlowLight& Light = Lights[Index];
+			Light.Center = Bounds[Index].GetCenter();
+			if (!Glows[Light.Glow].bWindow)
+			{
+				Light.Normal = FVector3f::ZeroVector;
+				Light.Size = FVector2f(Bounds[Index].GetExtent().GetMin(), 0.f);
+				continue;
+			}
+			// The window's width along the horizontal of its plane, its height across.
+			Light.Normal = Light.Normal.GetSafeNormal();
+			const FVector3f Across = (FMath::Abs(Light.Normal.Z) < 0.9f ? FVector3f::UpVector ^ Light.Normal : FVector3f::ForwardVector ^ Light.Normal).GetSafeNormal();
+			const FVector3f Up = Light.Normal ^ Across;
+			FVector3f Corners[8];
+			Bounds[Index].GetVertices(Corners);
+			FFloatInterval Width, Height;
+			for (const FVector3f& Corner : Corners)
+			{
+				Width.Include(Corner | Across);
+				Height.Include(Corner | Up);
+			}
+			Light.Size = FVector2f(Width.Size(), Height.Size());
+		}
+		// Glass seen from both sides faces nowhere.
+		Lights.RemoveAll([&Glows](const FLBADecorGlowLight& Light) { return Glows[Light.Glow].bWindow && Light.Normal.IsZero(); });
+		return Lights;
+	}
+}
+
+TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder, FLBADecorGlow& OutGlow)
 {
 	TArray<UStaticMesh*> Meshes;
 	const FLBAHqrFile* Obl = Context.GetHqr(Island.Name + TEXT(".OBL"));
@@ -654,6 +794,38 @@ TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Isla
 	};
 
 	const FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::ForIsland(Island.Name);
+	const FLBATexelGlowMap TexelGlow = BuildTexelGlowMap(Island.ObjectTexture, Context.GetPalette(), Preset.GlowTexels);
+	TMap<FString, UTexture2D*> GlowTextures;
+	if (!Preset.GlowTexels.IsEmpty())
+	{
+		Params.TexelGlow = &TexelGlow.Glow;
+		Params.GlowRects.SetNum(Preset.GlowTexels.Num());
+		Params.GetGlowMaterial = [&](const FLBATextureRegion& Region) -> UMaterialInterface*
+		{
+			UTexture2D*& Texture = GlowTextures.FindOrAdd(Region.GetKey());
+			if (!Texture)
+			{
+				// The region with its glowing texels recolored and marked in alpha.
+				const TArray<FColor>& Palette = Context.GetPalette();
+				TArray<FColor> Pixels;
+				Pixels.SetNumUninitialized(Region.Width * Region.Height);
+				for (int32 Y = 0; Y < Region.Height; ++Y)
+				{
+					for (int32 X = 0; X < Region.Width; ++X)
+					{
+						const int32 Texel = ((Region.Y + Y) & 255) * 256 + ((Region.X + X) & 255);
+						FColor Color = Palette[TexelGlow.Recolored[Texel]];
+						Color.A = TexelGlow.Glow[Texel] != INDEX_NONE ? 255 : 0;
+						Pixels[Y * Region.Width + X] = Color;
+					}
+				}
+				Texture = Context.CreateTexture(TextureFolder, FString::Printf(TEXT("T_%s_Obj_%s_Glow"), *Island.Name, *Region.GetKey()),
+					Region.Width, Region.Height, Pixels, true);
+			}
+			return Materials.GetTextured(ELBAMaterial::TexturedGlow, Texture, MaterialFolder);
+		};
+	}
+
 	for (int32 Index = 0; Index < Obl->Num(); ++Index)
 	{
 		FLBABody Body;
@@ -666,8 +838,14 @@ TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Isla
 		{
 			Params.GlowColors.Add(DecorLight->GlowColor);
 		}
+		for (int32 GlowIndex = 0; GlowIndex < Params.GlowRects.Num(); ++GlowIndex)
+		{
+			const FLBAGlowTexels& Texels = Preset.GlowTexels[GlowIndex];
+			Params.GlowRects[GlowIndex] = Texels.ExcludedBodies.Contains(Index) ? FIntRect() : Texels.Texels;
+		}
 		FBox3f Glow(ForceInit);
-		if (!Body.Parse(Obl->GetEntry(Index)) || !LBABodyConverter::Convert(Body, Params, Builder, &Glow))
+		TArray<FLBAGlowPatch> GlowPatches;
+		if (!Body.Parse(Obl->GetEntry(Index)) || !LBABodyConverter::Convert(Body, Params, Builder, &Glow, &GlowPatches))
 		{
 			Meshes.Add(nullptr);
 			continue;
@@ -678,7 +856,11 @@ TArray<UStaticMesh*> FLBAIslandImporter::BuildDecorMeshes(const FLBAIsland& Isla
 		}
 		else if (Glow.IsValid)
 		{
-			OutGlowBounds.Add(Index, Glow);
+			OutGlow.LampBounds.Add(Index, Glow);
+		}
+		if (!GlowPatches.IsEmpty())
+		{
+			OutGlow.TexelLights.Add(Index, GroupGlowPatches(GlowPatches, Preset.GlowTexels, TexelGlow.LightColors));
 		}
 
 		FMeshDescription Description;
@@ -784,7 +966,7 @@ UStaticMesh* FLBAIslandImporter::BuildGroundMesh(const FLBAIsland& Island, const
 }
 
 void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& IslandFolder, const TArray<UStaticMesh*>& GroundMeshes,
-	const TArray<UStaticMesh*>& DecorMeshes, const TMap<int32, FBox3f>& GlowBounds)
+	const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow)
 {
 	UWorld* World = Context.BeginLevel(IslandFolder, TEXT("L_") + Island.Name);
 	if (!World)
@@ -846,13 +1028,29 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 					Actor->Tags.Add(*FString::Printf(TEXT("LBA_Var_%d=%d"), Decor.ConditionVar, Decor.ConditionValue));
 				}
 				const FLBADecorLight* DecorLight = Preset.FindDecorLight(Decor.Body);
-				const FBox3f* Glow = GlowBounds.Find(Decor.Body);
-				if (DecorLight && Glow)
+				const FBox3f* LampBounds = Glow.LampBounds.Find(Decor.Body);
+				if (DecorLight && LampBounds)
 				{
 					// The light has the glass's color at full brightness.
 					const FLinearColor GlassColor = FLinearColor::FromSRGBColor(LBABodyConverter::GetAlbedo(Context.GetPalette(), DecorLight->GlowColor, ELBAPolyType::Gouraud));
 					const FLinearColor LightColor = GlassColor / FMath::Max(FMath::Max3(GlassColor.R, GlassColor.G, GlassColor.B), 1e-4f);
-					LBAEnvironment::SpawnDecorLight(Context, Actor, *DecorLight, FVector(Glow->GetCenter()), LightColor, Glow->GetExtent().GetMin());
+					LBAEnvironment::SpawnDecorLight(Context, Actor, *DecorLight, FVector(LampBounds->GetCenter()), LightColor, LampBounds->GetExtent().GetMin());
+				}
+				for (const FLBADecorGlowLight& Light : Glow.TexelLights.FindRef(Decor.Body))
+				{
+					const FLBAGlowTexels& Texels = Preset.GlowTexels[Light.Glow];
+					if (Texels.bWindow)
+					{
+						LBAEnvironment::SpawnWindowLight(Context, Actor, Texels, FVector(Light.Center), FVector(Light.Normal), FVector2D(Light.Size), Light.Color);
+					}
+					else
+					{
+						FLBADecorLight Lamp;
+						Lamp.Light = Texels.Light;
+						Lamp.Radius = Texels.Radius;
+						Lamp.Halo = Texels.Halo;
+						LBAEnvironment::SpawnDecorLight(Context, Actor, Lamp, FVector(Light.Center), Light.Color, Light.Size.X);
+					}
 				}
 			}
 		}

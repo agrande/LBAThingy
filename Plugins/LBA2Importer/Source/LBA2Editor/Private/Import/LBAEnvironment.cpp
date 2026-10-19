@@ -2,6 +2,7 @@
 
 #include "Components/DirectionalLightComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/RectLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
@@ -10,6 +11,7 @@
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PointLight.h"
 #include "Engine/PostProcessVolume.h"
+#include "Engine/RectLight.h"
 #include "Engine/SkyLight.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureCube.h"
@@ -116,6 +118,29 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::ForIsland(const FString& IslandName
 		Lamppost.Body = 26;
 		Lamppost.GlowColor = 108;
 		Preset.DecorLights.Add(Lamppost);
+		// So are the windows, lamplight behind the glass (the lamp glass's yellow ramp), and the lighthouse's lamp room.
+		// The telescope's lens is window glass too.
+		constexpr int32 LampRamp = 6;
+		constexpr int32 Telescope = 40;
+		for (const FIntRect& Glass : { FIntRect(181, 0, 207, 48), FIntRect(207, 0, 256, 25), FIntRect(224, 49, 256, 93), FIntRect(209, 151, 245, 187) })
+		{
+			FLBAGlowTexels Window;
+			Window.Texels = Glass;
+			Window.bGlassOnly = true;
+			Window.RecolorBank = LampRamp;
+			Window.Light = 0.5f;
+			Window.Radius = 1000.f;
+			Window.Halo = 0.1f;
+			Window.ExcludedBodies.Add(Telescope);
+			Preset.GlowTexels.Add(Window);
+		}
+		FLBAGlowTexels LampRoom;
+		LampRoom.Texels = FIntRect(128, 64, 160, 96);
+		LampRoom.bWindow = false;
+		LampRoom.Light = 3.f;
+		LampRoom.Radius = 4000.f;
+		LampRoom.Halo = 0.3f;
+		Preset.GlowTexels.Add(LampRoom);
 	}
 	if (Name == TEXT("CITABAU") || Name == TEXT("CITADEL") || Name == TEXT("DESERT"))
 	{
@@ -177,6 +202,35 @@ void LBAEnvironment::SpawnDecorLight(FLBAImportContext& Context, AActor* Decor, 
 	// The halo in the fog. The palette shading only takes the fog's own color off surfaces: what the halo adds in
 	// front of them reads as light on them, so they brighten through it.
 	Light->SetVolumetricScatteringIntensity(DecorLight.Halo);
+	Actor->AttachToActor(Decor, FAttachmentTransformRules::KeepWorldTransform);
+}
+
+void LBAEnvironment::SpawnWindowLight(FLBAImportContext& Context, AActor* Decor, const FLBAGlowTexels& Glow, const FVector& LocalPosition,
+	const FVector& LocalNormal, const FVector2D& Size, const FLinearColor& Color)
+{
+	// A little in front of the glass, so the window's own wall doesn't sit in the light's plane.
+	constexpr float Offset = 5.f;
+	const FTransform& DecorTransform = Decor->GetActorTransform();
+	const FVector Normal = DecorTransform.TransformVectorNoScale(LocalNormal).GetSafeNormal();
+	const FVector Location = DecorTransform.TransformPosition(LocalPosition) + Normal * Offset;
+	ARectLight* Actor = Context.SpawnGeneratedActor<ARectLight>(Decor->GetWorld(), FTransform(Normal.Rotation(), Location),
+		Decor->GetActorLabel() + TEXT("_Window"), Decor->GetFolderPath());
+	if (!Actor)
+	{
+		return;
+	}
+	// Same brightness rule as the lamps: Light at 3 m in front of the window.
+	constexpr float ReferenceDistance = 3.f;
+	URectLightComponent* Light = CastChecked<URectLightComponent>(Actor->GetLightComponent());
+	Light->SetMobility(EComponentMobility::Movable);
+	Light->SetIntensityUnits(ELightUnits::Candelas);
+	Light->SetIntensity(Glow.Light * UE_PI * FMath::Square(ReferenceDistance) / MeasuredSunGain);
+	Light->SetLightColor(Color);
+	Light->SetAttenuationRadius(Glow.Radius);
+	Light->SetSourceWidth(FMath::Max(Size.X, 1.f));
+	Light->SetSourceHeight(FMath::Max(Size.Y, 1.f));
+	Light->SetCastShadows(false);
+	Light->SetVolumetricScatteringIntensity(Glow.Halo);
 	Actor->AttachToActor(Decor, FAttachmentTransformRules::KeepWorldTransform);
 }
 

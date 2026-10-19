@@ -37,6 +37,8 @@ enum class ELBAMaterial : uint8
 	TexturedTranslucent,
 	/** Opaque vertex color that also glows (lit lamp glass): emissive = albedo * GlowStrength. */
 	Glow,
+	/** Opaque texture * vertex color whose texels with alpha glow (lit windows): emissive = texel * alpha * GlowStrength. */
+	TexturedGlow,
 	Count
 };
 

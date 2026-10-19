@@ -204,6 +204,16 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   `M_LBA_Glow` (emissive, *GlowStrength*; casts no shadow) and a point light in the glass's color sits at
   its center, attached to the lamppost. The light casts no shadows (a soft pool around the lamppost)
   and lights the volumetric fog a little (a halo in the storm's fog). Citabau's stay off.
+  Lit windows and the lighthouse's lamp room are texels of the island's object texture page instead
+  (`FLBAGlowTexels`: a rectangle of the page, glass only or not, the palette ramp the glow takes, window
+  or lamp, light, radius, halo, objects excluded), so every object showing them glows, except the
+  excluded ones (Citadel's telescope, whose lens is window glass). On Citadel the window glass takes the
+  lamp glass's yellow ramp (lamplight behind it; the palette shading takes a pixel's hue from its base
+  color) and keeps its shades. Polygons showing them use `MI_<ISLAND>_Obj_<region>_Glow` (child of
+  `M_LBA_TexturedGlow`: the region's texture with the glowing texels recolored and marked in alpha,
+  emissive *GlowStrength*), and each window gets a rect light of its size just in front of it, facing
+  out, the lamp room a point light at its center. A polygon only glows when its texture region holds the
+  whole rectangle (some objects use a neighbor texture that bleeds into a window's edge).
 
 Customizing (material instances in `<Root>/Rendering`, children inherit what they don't override):
 

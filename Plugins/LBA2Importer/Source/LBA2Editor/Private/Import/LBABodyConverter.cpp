@@ -16,6 +16,74 @@ namespace
 	{
 		return FVector3f(LBA::DirToUnreal(N.X, N.Y, N.Z)).GetSafeNormal();
 	}
+
+	/**
+	 * Looks up the texels a textured polygon shows (a grid of samples over each of its triangles) in the glowing texels
+	 * of the texture page. Returns false when none glows.
+	 */
+	bool FindGlowPatch(const FLBABodyPoly& Poly, const FLBATextureRegion& Region, const TArray<FVector3f>& Positions,
+		const TArray<int8>& TexelGlow, const TArray<FIntRect>& GlowRects, FLBAGlowPatch& OutPatch)
+	{
+		const FIntRect RegionRect(Region.X, Region.Y, Region.X + Region.Width, Region.Y + Region.Height);
+		struct FSample
+		{
+			int32 Glow;
+			float Area;
+			FVector3f Position;
+		};
+		constexpr int32 Steps = 8;
+		TArray<FSample, TInlineAllocator<128>> Samples;
+		FVector3f Normal = FVector3f::ZeroVector;
+		for (int32 Tri = 0; Tri + 2 < Poly.NumVertices; ++Tri)
+		{
+			const int32 Corners[3] = { 0, Tri + 1, Tri + 2 };
+			const FVector3f P[3] = { Positions[Poly.Vertices[0]], Positions[Poly.Vertices[Tri + 1]], Positions[Poly.Vertices[Tri + 2]] };
+			const FVector3f Cross = (P[1] - P[0]) ^ (P[2] - P[0]);
+			const float SampleArea = Cross.Size() * 0.5f / (Steps * (Steps + 1) / 2);
+			Normal += FLBAMeshBuilder::FrontNormal(P[0], P[1], P[2]).GetSafeNormal() * Cross.Size();
+			for (int32 I = 0; I < Steps; ++I)
+			{
+				for (int32 J = 0; I + J < Steps; ++J)
+				{
+					const float B1 = (I + 1.f / 3.f) / Steps;
+					const float B2 = (J + 1.f / 3.f) / Steps;
+					const float B0 = 1.f - B1 - B2;
+					const FVector2f Texel = Poly.UV[Corners[0]] * B0 + Poly.UV[Corners[1]] * B1 + Poly.UV[Corners[2]] * B2;
+					// Texture regions repeat.
+					const int32 X = Region.X + FMath::Modulo(FMath::FloorToInt32(Texel.X), Region.Width);
+					const int32 Y = Region.Y + FMath::Modulo(FMath::FloorToInt32(Texel.Y), Region.Height);
+					const int32 Glow = TexelGlow[(Y & 255) * 256 + (X & 255)];
+					if (Glow != INDEX_NONE && GlowRects.IsValidIndex(Glow) && !GlowRects[Glow].IsEmpty() && RegionRect.Contains(GlowRects[Glow]))
+					{
+						Samples.Add({ Glow, SampleArea, P[0] * B0 + P[1] * B1 + P[2] * B2 });
+					}
+				}
+			}
+		}
+		if (Samples.IsEmpty())
+		{
+			return false;
+		}
+
+		TMap<int32, float> AreaByGlow;
+		for (const FSample& Sample : Samples)
+		{
+			AreaByGlow.FindOrAdd(Sample.Glow) += Sample.Area;
+		}
+		AreaByGlow.ValueSort(TGreater<float>());
+		OutPatch = FLBAGlowPatch();
+		OutPatch.Glow = AreaByGlow.CreateConstIterator().Key();
+		for (const FSample& Sample : Samples)
+		{
+			if (Sample.Glow == OutPatch.Glow)
+			{
+				OutPatch.Bounds += Sample.Position;
+				OutPatch.Area += Sample.Area;
+			}
+		}
+		OutPatch.Normal = Normal.GetSafeNormal();
+		return true;
+	}
 }
 
 FColor LBABodyConverter::GetAlbedo(const TArray<FColor>& Palette, uint16 Color, uint8 PolyType)
@@ -36,7 +104,8 @@ FVector4f LBABodyConverter::ToVertexColor(const FColor& Color, float BakedLight)
 	return FVector4f(Linear.R, Linear.G, Linear.B, BakedLight);
 }
 
-bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams& Params, FLBAMeshBuilder& Out, FBox3f* OutGlowBounds)
+bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams& Params, FLBAMeshBuilder& Out, FBox3f* OutGlowBounds,
+	TArray<FLBAGlowPatch>* OutGlowPatches)
 {
 	check(Params.Palette);
 	const TArray<FColor>& Palette = *Params.Palette;
@@ -88,9 +157,21 @@ bool LBABodyConverter::Convert(const FLBABody& Body, const FLBABodyConvertParams
 		{
 			Region = Body.Textures[Poly.TextureHandle];
 			const bool bMasked = Poly.UsesColorKey();
-			UMaterialInterface* Material = Params.GetTexturedMaterial(Region, bMasked);
-			const FName Slot(*FString::Printf(TEXT("Tex_%s%s"), *Region.GetKey(), bMasked ? TEXT("_Masked") : TEXT("")));
-			Section = Out.GetSection(Slot, Material);
+			FLBAGlowPatch Patch;
+			if (!bMasked && Params.TexelGlow && Params.GetGlowMaterial && FindGlowPatch(Poly, Region, Positions, *Params.TexelGlow, Params.GlowRects, Patch))
+			{
+				Section = Out.GetSection(*FString::Printf(TEXT("Tex_%s_Glow"), *Region.GetKey()), Params.GetGlowMaterial(Region));
+				if (OutGlowPatches)
+				{
+					OutGlowPatches->Add(Patch);
+				}
+			}
+			else
+			{
+				UMaterialInterface* Material = Params.GetTexturedMaterial(Region, bMasked);
+				const FName Slot(*FString::Printf(TEXT("Tex_%s%s"), *Region.GetKey(), bMasked ? TEXT("_Masked") : TEXT("")));
+				Section = Out.GetSection(Slot, Material);
+			}
 			Albedo = FColor::White;
 		}
 		else if (Poly.IsTransparent())
