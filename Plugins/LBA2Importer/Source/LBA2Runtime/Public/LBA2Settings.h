@@ -55,4 +55,8 @@ public:
 	/** Packaged and standalone games open the island menu when they start (Play In Editor does not). */
 	UPROPERTY(Config, EditAnywhere, Category = "Island Menu")
 	bool bIslandMenuAtStartup = true;
+
+	/** Folder scanned for scene assets (ULBASceneAsset), used by doors and lba.Scene to find the scene to go to. */
+	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
+	FString ScenesPath = TEXT("/Game/LBA2/Scenes");
 };

@@ -8,10 +8,12 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerStart.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
@@ -22,6 +24,7 @@
 #include "LBAAnimNotifies.h"
 #include "LBADinofly.h"
 #include "LBAPlayerController.h"
+#include "LBASceneTravelSubsystem.h"
 #include "LBATypes.h"
 
 namespace
@@ -404,6 +407,11 @@ void ALBACharacter::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+	if (IsClimbing() || TryStartClimb())
+	{
+		UpdateClimb(DeltaSeconds);
+		return;
+	}
 	if (ControlMode == ELBAControlMode::Authentic)
 	{
 		UpdateAuthentic(DeltaSeconds);
@@ -472,6 +480,20 @@ void ALBACharacter::UpdateAuthentic(float DeltaSeconds)
 	{
 		PlaySlot(int32(ELBAAnimType::Idle), true, 0.2f);
 	}
+}
+
+FVector ALBACharacter::GetMoveIntent() const
+{
+	if (ControlMode == ELBAControlMode::Authentic)
+	{
+		return FMath::Abs(MoveInput.Y) > AxisThreshold ? GetActorForwardVector() * FMath::Sign(MoveInput.Y) : FVector::ZeroVector;
+	}
+	if (!Controller || MoveInput.IsNearlyZero(0.01f))
+	{
+		return FVector::ZeroVector;
+	}
+	const FRotationMatrix Axes(FRotator(0.f, Controller->GetControlRotation().Yaw, 0.f));
+	return (Axes.GetUnitAxis(EAxis::X) * MoveInput.Y + Axes.GetUnitAxis(EAxis::Y) * MoveInput.X).GetClampedToMaxSize(1.0);
 }
 
 // Modern mode ----------------------------------------------------------------------------------------------
@@ -630,7 +652,7 @@ bool ALBACharacter::ModernJump()
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	ULBAAnimInstance* Anim = GetLBAAnimInstance();
-	if (!Anim || ActionSlot != INDEX_NONE || Movement->IsFalling() || ModernState == EModernState::Land)
+	if (!Anim || IsClimbing() || ActionSlot != INDEX_NONE || Movement->IsFalling() || ModernState == EModernState::Land)
 	{
 		return false;
 	}
@@ -1006,7 +1028,7 @@ void ALBACharacter::OnUse(const FInputActionValue& Value)
 
 void ALBACharacter::DoBehaviourAction()
 {
-	if (ActionSlot != INDEX_NONE || GetCharacterMovement()->IsFalling())
+	if (IsClimbing() || ActionSlot != INDEX_NONE || GetCharacterMovement()->IsFalling())
 	{
 		return;
 	}
@@ -1057,7 +1079,7 @@ void ALBACharacter::OnToggleControlMode(const FInputActionValue& Value)
 
 ALBADinofly* ALBACharacter::SummonDinofly()
 {
-	if (ActionSlot != INDEX_NONE || GetCharacterMovement()->IsFalling())
+	if (IsClimbing() || ActionSlot != INDEX_NONE || GetCharacterMovement()->IsFalling())
 	{
 		return nullptr;
 	}
@@ -1069,4 +1091,40 @@ ALBAGameMode::ALBAGameMode()
 {
 	DefaultPawnClass = ALBACharacter::StaticClass();
 	PlayerControllerClass = ALBAPlayerController::StaticClass();
+}
+
+void ALBAGameMode::RestartPlayer(AController* NewPlayer)
+{
+	ULBASceneTravelSubsystem* Travel = GetGameInstance() ? GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>() : nullptr;
+	if (NewPlayer && Travel && !NewPlayer->GetPawn())
+	{
+		const UClass* PawnClass = GetDefaultPawnClassForController(NewPlayer);
+		const ACharacter* Default = PawnClass ? Cast<ACharacter>(PawnClass->GetDefaultObject()) : nullptr;
+		const float HalfHeight = Default ? Default->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 90.f;
+		FTransform Arrival;
+		if (Travel->ConsumeArrival(GetWorld(), HalfHeight, Arrival))
+		{
+			RestartPlayerAtTransform(NewPlayer, Arrival);
+			return;
+		}
+	}
+	Super::RestartPlayer(NewPlayer);
+}
+
+AActor* ALBAGameMode::ChoosePlayerStart_Implementation(AController* Player)
+{
+	// Scene hero starts are tagged LBAScene_NNN: start at the first scene's (an interior has one; an island starts
+	// where its lowest-numbered scene does), else at the level's own PlayerStart.
+	APlayerStart* SceneStart = nullptr;
+	int32 SceneStartIndex = TNumericLimits<int32>::Max();
+	for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It)
+	{
+		FString Tag = It->PlayerStartTag.ToString();
+		if (Tag.RemoveFromStart(TEXT("LBAScene_")) && FCString::Atoi(*Tag) < SceneStartIndex)
+		{
+			SceneStart = *It;
+			SceneStartIndex = FCString::Atoi(*Tag);
+		}
+	}
+	return SceneStart ? SceneStart : Super::ChoosePlayerStart_Implementation(Player);
 }

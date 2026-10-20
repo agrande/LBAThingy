@@ -147,6 +147,20 @@ FString FLBAImportContext::GetCommunityName(const FString& Table, int32 Index) c
 	return FString();
 }
 
+FString FLBAImportContext::GetCommunitySceneName(const FString& Table, int32 Scene, int32 Index) const
+{
+	const TSharedPtr<FJsonObject>* Object = nullptr;
+	const TArray<TSharedPtr<FJsonValue>>* Array = nullptr;
+	FString Name;
+	if (CommunityNames.IsValid() && CommunityNames->TryGetObjectField(Table, Object) && Object
+		&& (*Object)->TryGetArrayField(FString::FromInt(Scene), Array) && Array && Array->IsValidIndex(Index)
+		&& (*Array)[Index].IsValid())
+	{
+		(*Array)[Index]->TryGetString(Name);
+	}
+	return Name;
+}
+
 FLBAMaterialLibrary& FLBAImportContext::GetMaterials()
 {
 	check(Materials.IsValid());
@@ -472,7 +486,20 @@ void FLBAImportContext::FinishPendingBuilds()
 
 UWorld* FLBAImportContext::BeginLevel(const FString& Folder, const FString& Name)
 {
-	const FString PackageName = Folder / Name;
+	return LoadLevel(Folder / Name, Name, true);
+}
+
+UWorld* FLBAImportContext::OpenLevel(const FString& PackageName)
+{
+	if (!FindPackage(nullptr, *PackageName) && !FPackageName::DoesPackageExist(PackageName))
+	{
+		return nullptr;
+	}
+	return LoadLevel(PackageName, FPackageName::GetShortName(PackageName), false);
+}
+
+UWorld* FLBAImportContext::LoadLevel(const FString& PackageName, const FString& Name, bool bRegenerate)
+{
 
 	// Never rebuild the level that is open in the editor from under the user.
 	if (GEditor && !IsRunningCommandlet())
@@ -515,7 +542,7 @@ UWorld* FLBAImportContext::BeginLevel(const FString& Folder, const FString& Name
 			World->InitWorld(InitValues);
 		}
 		TArray<AActor*> ToDestroy;
-		for (TActorIterator<AActor> It(World); It; ++It)
+		for (TActorIterator<AActor> It(World); It && bRegenerate; ++It)
 		{
 			if (It->Tags.Contains(GeneratedActorTag))
 			{

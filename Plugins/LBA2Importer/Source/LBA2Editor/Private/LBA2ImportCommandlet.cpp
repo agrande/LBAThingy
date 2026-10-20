@@ -49,6 +49,21 @@ int32 ULBA2ImportCommandlet::Main(const FString& Params)
 		}
 	}
 
+	if (FParse::Value(*Params, TEXT("Scenes="), Value, false))
+	{
+		TArray<FString> Parts;
+		Value.ParseIntoArray(Parts, TEXT(","));
+		Settings->SceneFilter.Reset();
+		for (const FString& Part : Parts)
+		{
+			Settings->SceneFilter.Add(FCString::Atoi(*Part));
+		}
+	}
+	if (FParse::Param(*Params, TEXT("DemoScenes")))
+	{
+		Settings->bImportDemoScenes = true;
+	}
+
 	if (FParse::Value(*Params, TEXT("Entities="), Value, false))
 	{
 		TArray<FString> Parts;

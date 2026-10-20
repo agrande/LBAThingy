@@ -22,7 +22,7 @@ void SLBA2ImporterPanel::Construct(const FArguments& InArgs)
 	Settings->AutoDetectGameDirectory();
 
 	// Layers that are implemented are selected by default.
-	SelectedLayers = { ELBAImportLayer::Islands, ELBAImportLayer::Interiors, ELBAImportLayer::Characters };
+	SelectedLayers = { ELBAImportLayer::Islands, ELBAImportLayer::Interiors, ELBAImportLayer::Characters, ELBAImportLayer::Scenes };
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	FDetailsViewArgs Args;

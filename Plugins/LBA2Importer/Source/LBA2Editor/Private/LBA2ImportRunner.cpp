@@ -5,6 +5,7 @@
 #include "Import/LBAIsoImporter.h"
 #include "Import/LBAAudioImporter.h"
 #include "Import/LBACharacterImporter.h"
+#include "Import/LBASceneImporter.h"
 #include "LBA2Runtime.h"
 #include "Misc/ScopedSlowTask.h"
 
@@ -83,6 +84,13 @@ bool FLBA2ImportRunner::Run(const ULBA2ImporterSettings& Settings, const TArray<
 			FLBACharacterImporter Importer(Context, Audio);
 			const int32 Count = Importer.ImportAll();
 			Lines.Add(FString::Printf(TEXT("Characters: %d entities imported"), Count));
+			break;
+		}
+		case ELBAImportLayer::Scenes:
+		{
+			FLBASceneImporter Importer(Context);
+			const int32 Count = Importer.ImportAll();
+			Lines.Add(FString::Printf(TEXT("Scenes: %d imported"), Count));
 			break;
 		}
 		case ELBAImportLayer::Audio:

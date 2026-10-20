@@ -2,6 +2,8 @@
 #include "GameDelegates.h"
 #include "LBA2Runtime.h"
 #include "LBAIslandTravelSubsystem.h"
+#include "LBASceneAsset.h"
+#include "LBASceneTravelSubsystem.h"
 #include "Modules/ModuleManager.h"
 #include "SLBA2ImporterPanel.h"
 #include "ToolMenus.h"
@@ -30,7 +32,8 @@ public:
 
 		UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FLBA2EditorModule::RegisterMenus));
 
-		// The island menu opens levels nothing references: cook them all, or packaged builds only have the startup map.
+		// The island menu and scene changes open levels nothing references: cook them all (and the scene assets doors
+		// look up by number), or packaged builds only have the startup map.
 		ModifyCookHandle = FGameDelegates::Get().GetModifyCookDelegate().AddLambda(
 			[](TConstArrayView<const ITargetPlatform*> TargetPlatforms, TArray<FName>& PackagesToCook, TArray<FName>& PackagesToNeverCook)
 			{
@@ -39,6 +42,24 @@ public:
 					PackagesToCook.AddUnique(Island.Level.ToSoftObjectPath().GetLongPackageFName());
 					UE_LOG(LogLBA2, Display, TEXT("Cooking island level %s"), *Island.Level.ToSoftObjectPath().GetLongPackageName());
 				}
+				int32 NumScenes = 0;
+				for (const FAssetData& Scene : ULBASceneTravelSubsystem::FindSceneAssets())
+				{
+					PackagesToCook.AddUnique(Scene.PackageName);
+					if (const ULBASceneAsset* Asset = Cast<ULBASceneAsset>(Scene.GetAsset()))
+					{
+						for (const TSoftObjectPtr<UWorld>& Level : Asset->SceneryLevels)
+						{
+							PackagesToCook.AddUnique(Level.ToSoftObjectPath().GetLongPackageFName());
+						}
+						if (!Asset->Level.IsNull())
+						{
+							PackagesToCook.AddUnique(Asset->Level.ToSoftObjectPath().GetLongPackageFName());
+						}
+					}
+					++NumScenes;
+				}
+				UE_LOG(LogLBA2, Display, TEXT("Cooking %d scenes and their levels"), NumScenes);
 			});
 	}
 

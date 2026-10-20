@@ -177,6 +177,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void SetMoveInput(FVector2D Input) { MoveInput = Input; }
 
+	/**
+	 * Where the player pushes, in world space (length up to 1): camera-relative in modern mode, along the facing
+	 * (forward or backward) in authentic mode. Zero without input.
+	 */
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	FVector GetMoveIntent() const;
+
+	/** On a ladder (climbing up or down, getting on or off it). */
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	bool IsClimbing() const { return ClimbState != EClimbState::None; }
+
 	/** Performs the current behaviour's action (Space in the original game). */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void DoBehaviourAction();
@@ -203,6 +214,29 @@ protected:
 private:
 	void LoadDefaultBehaviours();
 	void ApplyEntity();
+
+	// Ladders (ALBALadderVolume, LBACharacterLadder.cpp): the original's climb clips with root motion, flying.
+	enum class EClimbState : uint8
+	{
+		None,
+		/** Climbing up (slot 12, loops). */
+		Up,
+		/** Climbing out at the top onto the ledge (slot 13). */
+		TopOut,
+		/** Getting onto the ladder from the ledge, backwards (slot 31). */
+		TopIn,
+		/** Climbing down (slot 30, loops). */
+		Down,
+	};
+	bool TryStartClimb();
+	void UpdateClimb(float DeltaSeconds);
+	void SetClimbState(EClimbState NewState);
+	void EndClimb();
+	EClimbState ClimbState = EClimbState::None;
+	TWeakObjectPtr<class ALBALadderVolume> ClimbLadder;
+	/** Horizontal normal of the climbed wall (pointing away from it); Twinsen faces the other way. */
+	FVector ClimbWallNormal = FVector::ZeroVector;
+	bool bClimbWasOrientingToMovement = false;
 	void CreateInput();
 	void UpdateAuthentic(float DeltaSeconds);
 	void UpdateModern(float DeltaSeconds);
@@ -317,7 +351,11 @@ private:
 	TArray<float> FootHeights;
 };
 
-/** Game mode that spawns an ALBACharacter (Twinsen) as the player. */
+/**
+ * Game mode that spawns an ALBACharacter (Twinsen) as the player. After a scene change (a door, lba.Scene) the player
+ * arrives where ULBASceneTravelSubsystem says; otherwise at the hero start of the level's lowest-numbered scene
+ * (PlayerStart tagged LBAScene_NNN), or its plain PlayerStart when it has no scenes.
+ */
 UCLASS()
 class LBA2RUNTIME_API ALBAGameMode : public AGameModeBase
 {
@@ -325,4 +363,7 @@ class LBA2RUNTIME_API ALBAGameMode : public AGameModeBase
 
 public:
 	ALBAGameMode();
+
+	virtual void RestartPlayer(AController* NewPlayer) override;
+	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 };

@@ -21,6 +21,9 @@
 #include "LBACharacter.h"
 #include "LBADinofly.h"
 #include "LBAFlightMovementComponent.h"
+#include "LBASceneAsset.h"
+#include "LBASceneTravelSubsystem.h"
+#include "LBAZoneVolume.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
@@ -60,6 +63,37 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	{
 		bDinofly = true;
 		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("ladder"), ESearchCase::IgnoreCase))
+	{
+		bLadder = true;
+		bPosesReady = true;
+		FString Ladder;
+		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2Ladder="), Ladder, false))
+		{
+			FString Scene, Zone;
+			if (Ladder.Split(TEXT(":"), &Scene, &Zone))
+			{
+				LadderScene = FCString::Atoi(*Scene);
+				LadderZone = FCString::Atoi(*Zone);
+			}
+		}
+	}
+	else if (Spec.Equals(TEXT("scenes"), ESearchCase::IgnoreCase))
+	{
+		bScenes = true;
+		bPosesReady = true;
+		FString Doors;
+		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2Doors="), Doors, false))
+		{
+			TArray<FString> Parts;
+			Doors.ParseIntoArray(Parts, TEXT(","));
+			for (const FString& Part : Parts)
+			{
+				SceneDoors.Add(FCString::Atoi(*Part));
+			}
+		}
+		FParse::Value(FCommandLine::Get(), TEXT("LBA2SceneEnd="), SceneEnd);
 	}
 	else
 	{
@@ -486,6 +520,221 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 	return true;
 }
 
+bool ULBA2SnapshotSubsystem::TickScenes(UWorld* World, float DeltaTime)
+{
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (World != SceneWorld.Get())
+	{
+		// A new level: let it settle, then screenshot from the player's camera.
+		if (!Pawn)
+		{
+			return true;
+		}
+		SceneWorld = World;
+		SceneStepStart = Elapsed;
+		bSceneShotTaken = false;
+		bWalkingIntoDoor = false;
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots scenes: in %s, hero at %s yaw %.0f"), *World->GetMapName(), *Pawn->GetActorLocation().ToString(), Pawn->GetActorRotation().Yaw);
+		return true;
+	}
+	if (!Pawn || Elapsed - SceneStepStart < 3.0)
+	{
+		return true;
+	}
+	if (!bSceneShotTaken)
+	{
+		const FString File = ShotDirectory / FString::Printf(TEXT("scenes_%02d_%s.png"), SceneStep, *World->GetMapName());
+		FScreenshotRequest::RequestScreenshot(File, false, false);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots scenes: %s, hero at %s"), *File, *Pawn->GetActorLocation().ToString());
+		bSceneShotTaken = true;
+		return true;
+	}
+	if (Elapsed - SceneStepStart < 4.0)
+	{
+		return true;
+	}
+
+	ULBASceneTravelSubsystem* Travel = GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>();
+	if (bWalkingIntoDoor)
+	{
+		// Waiting for the door (walked into) to change the level.
+		if (Elapsed - SceneStepStart > 12.0)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots scenes: walking into the door did nothing (hero at %s)"), *Pawn->GetActorLocation().ToString());
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+	const int32 Door = SceneStep;
+	++SceneStep;
+	if (SceneDoors.IsValidIndex(Door))
+	{
+		// Step into the door leading to the next scene (its bottom center), as if walking in.
+		for (TActorIterator<ALBACubeChangeVolume> It(World); It; ++It)
+		{
+			if (It->TargetScene == SceneDoors[Door] && It->bEnabled)
+			{
+				const FBox Box = It->GetComponentsBoundingBox(true);
+				const FVector Feet(Box.GetCenter().X, Box.GetCenter().Y, Box.Min.Z);
+				Pawn->TeleportTo(Feet + FVector(0.0, 0.0, Pawn->GetSimpleCollisionHalfHeight() + 2.0), Pawn->GetActorRotation(), false, true);
+				UE_LOG(LogLBA2, Display, TEXT("LBA2Shots scenes: door %s (zone %d of scene %d) to scene %d%s"), *It->GetName(), It->ZoneIndex,
+					It->Scene ? It->Scene->SceneIndex : -1, It->TargetScene, It->bRequireWalkingIn ? TEXT(", walking into it") : TEXT(""));
+				ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+				if (It->bRequireWalkingIn && Hero)
+				{
+					// Walk into the closest wall around the door zone, like a player would; the zone does the rest.
+					FCollisionQueryParams Params(SCENE_QUERY_STAT(LBA2ShotsDoor), false, Pawn);
+					const FVector Start = Pawn->GetActorLocation();
+					FHitResult Best;
+					Best.Distance = UE_BIG_NUMBER;
+					const FVector Axes[4] = { FVector::ForwardVector, -FVector::ForwardVector, FVector::RightVector, -FVector::RightVector };
+					for (const FVector& Axis : Axes)
+					{
+						FHitResult Hit;
+						if (World->LineTraceSingleByChannel(Hit, Start, Start + Axis * 300.0, ECC_Visibility, Params) && Hit.Distance < Best.Distance)
+						{
+							Best = Hit;
+						}
+					}
+					const FVector Toward = Best.bBlockingHit ? -Best.ImpactNormal.GetSafeNormal2D() : Pawn->GetActorForwardVector();
+					PC->SetControlRotation(FRotator(-15.0, Toward.Rotation().Yaw, 0.0));
+					Hero->SetMoveInput(FVector2D(0.0, 1.0));
+					bWalkingIntoDoor = true;
+					SceneStepStart = Elapsed;
+					return true;
+				}
+				Travel->OnCubeChangeZone(*It, Pawn);
+				return true;
+			}
+		}
+		UE_LOG(LogLBA2, Error, TEXT("LBA2Shots scenes: no door to scene %d in %s"), SceneDoors[Door], *World->GetMapName());
+	}
+	else if (Door == SceneDoors.Num() && SceneEnd >= 0)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots scenes: lba.Scene %d"), SceneEnd);
+		if (Travel->TravelToScene(SceneEnd))
+		{
+			return true;
+		}
+	}
+	UE_LOG(LogLBA2, Display, TEXT("LBA2Shots scenes: done"));
+	FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+	return false;
+}
+
+bool ULBA2SnapshotSubsystem::TickLadder(UWorld* World, float DeltaTime)
+{
+	APlayerController* PC = World->GetFirstPlayerController();
+	ALBACharacter* Hero = PC ? Cast<ALBACharacter>(PC->GetPawn()) : nullptr;
+	if (!Hero)
+	{
+		return true;
+	}
+	auto Report = [&](const TCHAR* Label)
+	{
+		const UAnimSequence* Anim = Hero->GetLBAAnimInstance() ? Hero->GetLBAAnimInstance()->GetCurrentAnimation() : nullptr;
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots ladder %s t=%.2f loc=(%.0f %.0f %.0f) yaw=%.0f climbing=%d mode=%d anim=%s@%.2f"), Label, Elapsed - LadderStart,
+			Hero->GetActorLocation().X, Hero->GetActorLocation().Y, Hero->GetActorLocation().Z, Hero->GetActorRotation().Yaw, Hero->IsClimbing() ? 1 : 0,
+			int32(Hero->GetCharacterMovement()->MovementMode), Anim ? *Anim->GetName() : TEXT("none"),
+			Hero->GetLBAAnimInstance() ? Hero->GetLBAAnimInstance()->GetCurrentAnimationTime() : 0.f);
+	};
+
+	if (LadderPhase == 0)
+	{
+		// Stand at the foot of the ladder, facing its wall (the closest wall around the zone's bottom center).
+		const ALBALadderVolume* Ladder = nullptr;
+		for (TActorIterator<ALBALadderVolume> It(World); It; ++It)
+		{
+			if (!Ladder || (It->Scene && It->Scene->SceneIndex == LadderScene && It->ZoneIndex == LadderZone))
+			{
+				Ladder = *It;
+			}
+		}
+		if (!Ladder)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots ladder: no ladder volume in %s"), *World->GetMapName());
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		const FBox Box = Ladder->GetComponentsBoundingBox(true);
+		const FVector Start(Box.GetCenter().X, Box.GetCenter().Y, Box.Min.Z + 60.0);
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(LBA2ShotsLadder), false, Hero);
+		FHitResult Best;
+		Best.Distance = UE_BIG_NUMBER;
+		const FVector Axes[4] = { FVector::ForwardVector, -FVector::ForwardVector, FVector::RightVector, -FVector::RightVector };
+		for (const FVector& Axis : Axes)
+		{
+			FHitResult Hit;
+			if (World->LineTraceSingleByChannel(Hit, Start, Start + Axis * 600.0, ECC_Visibility, Params) && Hit.Distance < Best.Distance)
+			{
+				Best = Hit;
+			}
+		}
+		const FVector Normal = Best.bBlockingHit ? Best.ImpactNormal.GetSafeNormal2D() : FVector::ForwardVector;
+		const FVector Foot = (Best.bBlockingHit ? Best.ImpactPoint : Start) + Normal * (Hero->GetSimpleCollisionRadius() + 8.0);
+		const FRotator Facing(0.0, (-Normal).Rotation().Yaw, 0.0);
+		Hero->TeleportTo(FVector(Foot.X, Foot.Y, Box.Min.Z + Hero->GetSimpleCollisionHalfHeight() + 30.0), Facing, false, true);
+		PC->SetControlRotation(FRotator(-15.0, Facing.Yaw + 50.0, 0.0));
+		Hero->SetMoveInput(FVector2D::ZeroVector);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots ladder: zone %d of scene %d, top %.0f, wall normal %s"), Ladder->ZoneIndex,
+			Ladder->Scene ? Ladder->Scene->SceneIndex : -1, Ladder->GetTopHeight(), *Normal.ToString());
+		LadderStart = Elapsed;
+		LadderPhase = 1;
+		return true;
+	}
+
+	const double T = Elapsed - LadderStart;
+	if (Elapsed >= NextReport)
+	{
+		Report(LadderPhase == 1 ? TEXT("up") : TEXT("down"));
+		NextReport = Elapsed + 0.25;
+	}
+	if (Elapsed >= NextBurst)
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("ladder_%02d.png"), BurstIndex++), false, false);
+		NextBurst = Elapsed + 1.0;
+	}
+	if (LadderPhase == 1)
+	{
+		// Push towards the wall (camera-relative: the camera looks 50 degrees off the wall).
+		if (T > 1.0)
+		{
+			Hero->SetMoveInput(FVector2D(-0.77, 0.64));
+		}
+		if (T > 2.0 && !Hero->IsClimbing() && Hero->GetCharacterMovement()->IsMovingOnGround())
+		{
+			Report(TEXT("climbed"));
+			Hero->SetMoveInput(FVector2D::ZeroVector);
+			LadderPhase = 2;
+			LadderStart = Elapsed;
+		}
+	}
+	else if (LadderPhase == 2)
+	{
+		// Back off the ledge over the ladder.
+		if (T > 1.0)
+		{
+			Hero->SetMoveInput(FVector2D(0.77, -0.64));
+		}
+		if (T > 2.0 && !Hero->IsClimbing() && Hero->GetCharacterMovement()->IsMovingOnGround())
+		{
+			Report(TEXT("down"));
+			Hero->SetMoveInput(FVector2D::ZeroVector);
+			LadderPhase = 3;
+			LadderStart = Elapsed;
+		}
+	}
+	if (T > 20.0 || (LadderPhase == 3 && T > 1.5))
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots ladder: done (phase %d)"), LadderPhase);
+		FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+		return false;
+	}
+	return true;
+}
+
 bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
@@ -509,6 +758,14 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bDinofly)
 	{
 		return TickDinofly(World, DeltaTime);
+	}
+	if (bScenes)
+	{
+		return TickScenes(World, DeltaTime);
+	}
+	if (bLadder)
+	{
+		return TickLadder(World, DeltaTime);
 	}
 	if (!bPosesReady)
 	{

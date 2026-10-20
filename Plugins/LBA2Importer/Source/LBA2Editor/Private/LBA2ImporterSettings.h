@@ -110,6 +110,14 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Characters")
 	TArray<int32> EntityFilter;
 
+	/** Scene numbers (SCENE.HQR) to import. Empty imports all of them (demo copies only with Import Demo Scenes). */
+	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
+	TArray<int32> SceneFilter;
+
+	/** Also import the demo (attract mode) copies of scenes, 193-221. They are streamed unloaded. */
+	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
+	bool bImportDemoScenes = false;
+
 	/**
 	 * Optional local checkout of https://github.com/LBALab/lba2remake (MIT). When set, its hand-made 3D
 	 * models replace isometric layouts in interiors and are imported as reusable static meshes.

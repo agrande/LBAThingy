@@ -19,8 +19,8 @@ Headless (batch) import:
 
 ```
 UnrealEditor-Cmd.exe LBAThingy.uproject -run=LBA2Import [-GameDir="..."] [-RemakeDir="..."]
-    [-Layers=Islands,Interiors,Characters,Audio] [-Islands=CITABAU,DESERT] [-Grids=0,3] [-Entities=0,1]
-    [-NoRemake] [-Root=/Game/LBA2]
+    [-Layers=Islands,Interiors,Characters,Scenes,Audio] [-Islands=CITABAU,DESERT] [-Grids=0,3] [-Entities=0,1]
+    [-Scenes=0,43] [-DemoScenes] [-NoRemake] [-Root=/Game/LBA2]
 ```
 
 World scale lives in **Project Settings > Plugins > LBA2** (default 0.125 cm per LBA unit: a brick is
@@ -34,6 +34,7 @@ World scale lives in **Project Settings > Plugins > LBA2** (default 0.125 cm per
 | Interiors | `LBA_BKG.HQR` | Brick atlas per library, one static mesh per library layout (kit pieces with convex collision), one mesh per grid with exact slope collision, level `L_Grid_NNN_<Scene>` |
 | Remake models | lba2remake checkout | GLB replacement models as static meshes under `Remake/`, placed in interiors instead of the matching bricks |
 | Characters | `RESS.HQR` (entities), `BODY.HQR`, `ANIM.HQR` | One skeleton per character family, skeletal meshes per body, animation sequences with root motion and notifies (footsteps, hits, sounds, throws), `ULBAEntityAsset` per entity, `L_CharacterGallery` |
+| Scenes | `SCENE.HQR`, `SPRITES.HQR`, `SPRIRAW.HQR`, `ANIM3DS.HQR` | Per scene: a scene asset and a level with its objects, sprites, zones, track points and hero start, streamed into its island or interior level (see [Scenes](#scenes)) |
 | Audio | `SAMPLES.HQR` | Sound waves (converted to 16-bit PCM) |
 
 ## Playing as Twinsen
@@ -59,6 +60,7 @@ the normal walk.
 | Tab | Switch to authentic mode | Switch to modern mode |
 | F / gamepad Y | Ride the Dinofly (see below) | Ride the Dinofly |
 | M / gamepad Start | Island menu (see below) | Island menu |
+| Walk into a ladder | Climb it (see [Scenes](#scenes)) | Climb it |
 
 In modern mode the LBA animations play in place and are kept in step with the movement:
 
@@ -128,13 +130,62 @@ flight state and screenshots each step.
 
 M or gamepad Start (on foot or riding) pauses the game and lists every island level found under
 **Project Settings > Plugins > LBA2 > Island Menu > Islands Path** (`/Game/LBA2/Islands`), in story order;
-picking one opens its level at its PlayerStart. Mouse, keyboard (arrows, Enter) and gamepad (d-pad, A) all
+picking one opens its level at its start (its first scene's hero start, see [Scenes](#scenes)). Mouse, keyboard (arrows, Enter) and gamepad (d-pad, A) all
 work; Esc, B, M or Start close it. Packaged and standalone games open it at startup (*Island Menu At
 Startup*; Play In Editor and `-LBA2Shots` runs do not). Nothing references the island levels, so the
 LBA2Editor module adds every level the menu lists to each cook (`ModifyCook` delegate). It lives in `ALBAPlayerController` (the controller
 of `LBAGameMode`), `ULBAIslandMenu` (a UMG widget built in C++, `IslandMenuClass` takes a Blueprint
 subclass) and `ULBAIslandTravelSubsystem` (`GetIslands`, `TravelToIsland`). Console: `lba.Travel DESERT`,
 `lba.Travel` (lists the islands), `lba.IslandMenu`.
+
+## Scenes
+
+A scene (a "cube" of the original) is what lives in a place: its objects (characters, animals, props, doors),
+its zones and its track points. The Scenes layer imports all 193 story scenes (the demo copies, 193-221, with
+*Import Demo Scenes* or `-DemoScenes`); run it after Islands, Interiors and Characters. Each scene becomes:
+
+- a **scene asset** `Scenes/DA_Scene_NNN_<Name>` (`ULBASceneAsset`, a Primary Data Asset): ambience, hero start,
+  every object with its original settings and its life and track script bytecode (kept for a script interpreter),
+  zones and track points, in LBA units local to the scene, with `ToWorld()` to place them;
+- a **level** `Scenes/L_Scene_NNN_<Name>` holding its actors, streamed into its scenery level as a sub-level
+  (Levels window). The cubes of an island are all always loaded with the island level, so the whole island is
+  alive at once and walking from cube to cube needs nothing. Citadel's scenes are in both the storm (`L_CITADEL`)
+  and the sunny island (`L_CITABAU`). An interior scene is streamed into its grid's level. A second scene on an
+  island cube already taken (the sea-travel scene, demo copies) is added unloaded (Blueprint streaming).
+
+In a scene level (outliner folders under *Scene*):
+
+| Original | Actor |
+|---|---|
+| Object with a 3D body | `ALBASceneActor` (an `ACharacter`): the entity's body and its start animation (in place: root motion waits for scripts), capsule fitted in the body's box and the exact box blocking pawns. Objects the original hides at start are hidden in game but still block, like the original. The meca-penguin slot (object 1) is skipped. |
+| Sprite object (interiors: doors, signs, pickups) | `ALBASceneSprite`: a static mesh per sprite (`Sprites/SM_Sprite_NNN`, `SM_SpriteRaw_NNN`, `SM_SpriteAnim_NNN`, one atlas `T_Sprites`) with the sprite projected onto the visible faces of its box like the interior bricks: pixel exact from the original angle, solid from the others, the box as collision. Animated sprites (ANIM3DS) flip through their frames. |
+| Zone | A volume per zone type, sized to its box, with the original settings as properties: `ALBACubeChangeVolume`, `ALBACameraZoneVolume`, `ALBAScenarioZoneVolume`, `ALBAGridZoneVolume`, `ALBAGiverZoneVolume`, `ALBAMessageZoneVolume`, `ALBALadderVolume`, `ALBAEscalatorVolume`, `ALBARailVolume`, and `ALBAHitVolume` (Unreal's `APainCausingVolume`). Cube changes between cubes of the same island are left out (the island is one level). |
+| Track point | `ATargetPoint` `Point_NN` (tag `LBAPoint_NN`) |
+| Hero start | `APlayerStart` tagged `LBAScene_NNN` |
+
+What works in game:
+
+- **Doors and exits** (cube change zones): Twinsen entering one travels to the target scene
+  (`ULBASceneTravelSubsystem`). Like the original (`GereZoneChangeCube`), he keeps his offset in the zone, turned
+  by the zone's quarter turns, around the arrival point, and lands on the floor below it. Doors in walls fire only
+  when he walks into them. The target's level opens (or, already loaded, he is teleported) and `ALBAGameMode`
+  spawns him there. Coming out of an interior on Citadel goes back to the island variant (storm or sunny) he left.
+  Zones he spawns or arrives in do not fire.
+- **Ladders**: walking into the wall in a ladder zone climbs it with the original clips (grab, climb, climb out at
+  the top of the zone onto the ledge); walking off the ledge over a ladder climbs down it backwards. Up and down
+  with the stick on the way, otherwise he keeps going like the original. Both control modes.
+- **Starting**: a level starts at the hero start of its lowest-numbered scene (islands: Citadel at the Lupin-Burg
+  landing zone, scene 42), or at its plain `PlayerStart` without scenes.
+- `lba.Scene <number>` goes to a scene's hero start; `lba.Scene` lists the imported scenes.
+
+Not yet: scripts (objects stand in their start state, so some show that the story would hide or move), camera
+zones (data only: the modern camera ignores them), givers, messages, escalators, rails, ambient sounds and music.
+Doors and `lba.Scene` find scenes under **Project Settings > Plugins > LBA2 > Scenes Path**, and the LBA2Editor
+module cooks every scene asset and its levels.
+
+`-LBA2Shots=scenes -LBA2Doors=49,0 -LBA2SceneEnd=43` takes the doors to those scenes in turn (walking into the
+ones that need it), then `lba.Scene 43`, with a shot in each level; `-LBA2Shots=ladder -LBA2Ladder=44:7` climbs a
+ladder zone (scene:zone) up and back down.
 
 ## Look
 
@@ -303,7 +354,9 @@ color, shade row / light, surfaces without fog).
 - [x] L3c Modern controls (third-person template style; procedural layer over the LBA clips rather than motion matching, too few clips)
 - [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
-- [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels
+- [x] L4 Scenes: per-scene levels streamed into islands and interiors, objects, sprites, typed zone volumes,
+  track points, hero starts; doors and ladders work in game
+- [ ] Scenes, next: ambient sounds, givers and messages, escalators, camera zones (as hints for the modern camera)
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)
 - [ ] L6 Text (String Tables), voices, music, sprites, inventory objects, holomap, screens
 - [ ] Procedural wall/pattern builder using interior kit pieces

@@ -1,0 +1,137 @@
+#pragma once
+
+#include "GameFramework/Actor.h"
+#include "GameFramework/Character.h"
+#include "LBASceneActor.generated.h"
+
+class UBoxComponent;
+class UStaticMesh;
+class UStaticMeshComponent;
+class ULBAAnimInstance;
+class ULBAEntityAsset;
+class ULBASceneAsset;
+
+/**
+ * An object of a scene with a 3D body: characters, animals, vehicles, props. The importer places one per
+ * scene object at its start position, with the entity, body and animation it starts with. Without scripts it
+ * stands there playing that animation (in place: root motion is off until scripts drive it).
+ *
+ * The capsule is fitted inside the body's authored collision box, and a box with the exact authored size
+ * blocks other pawns, like the original's object collisions.
+ */
+UCLASS(Blueprintable)
+class LBA2RUNTIME_API ALBASceneActor : public ACharacter
+{
+	GENERATED_BODY()
+
+public:
+	ALBASceneActor();
+
+	/** Scene and object number this actor was imported from (FLBASceneObjectData in the scene asset). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Scene")
+	TObjectPtr<ULBASceneAsset> Scene;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Scene")
+	int32 ObjectIndex = INDEX_NONE;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	TObjectPtr<ULBAEntityAsset> Entity;
+
+	/** Body type (outfit) of the entity. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	int32 BodyType = 0;
+
+	/** Animation slot played at start (see ELBAAnimType). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	int32 AnimType = 0;
+
+	/** The original hides it at start (scripts show it later); it still blocks, like the original. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	bool bStartHidden = false;
+
+	/** Falls under gravity (OBJ_FALLABLE); other objects keep their height. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	bool bFallable = false;
+
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void SetBodyType(int32 NewBodyType);
+
+	/** Plays an animation slot of the entity. */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void PlayAnimSlot(int32 NewAnimType, bool bLoop = true);
+
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	ULBAAnimInstance* GetLBAAnimInstance() const;
+
+	/** Sets the mesh of the current body and fits the capsule and collision box to it. */
+	void ApplyBody();
+
+	/** Height of the actor's origin (capsule center) above the entity's origin (its feet). */
+	float GetOriginHeight() const { return OriginHeight; }
+
+	virtual void OnConstruction(const FTransform& Transform) override;
+
+protected:
+	virtual void BeginPlay() override;
+
+	/** The authored collision box (the capsule only approximates it). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LBA")
+	TObjectPtr<UBoxComponent> CollisionBox;
+
+private:
+	void PlayStartAnimation();
+
+	UPROPERTY()
+	float OriginHeight = 0.f;
+};
+
+/**
+ * A sprite object of an interior scene (doors, signs, pickups...). The original draws them as flat images
+ * at the object's position; the importer projects each one onto the visible faces of its box (top and the two
+ * sides the isometric camera sees, mirrored on the others), so it is exact from the original angle and solid
+ * from any other. The mesh's simple collision is the sprite's box.
+ *
+ * Animated sprites (ANIM3DS) cycle through one mesh per frame.
+ */
+UCLASS(Blueprintable)
+class LBA2RUNTIME_API ALBASceneSprite : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	ALBASceneSprite();
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Scene")
+	TObjectPtr<ULBASceneAsset> Scene;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Scene")
+	int32 ObjectIndex = INDEX_NONE;
+
+	/** Sprite number (see FLBASceneObjectData::Sprite). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	int32 Sprite = INDEX_NONE;
+
+	/** Frames of an animated sprite; empty for a still one. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	TArray<TObjectPtr<UStaticMesh>> Frames;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA", meta = (ClampMin = "0"))
+	float FramesPerSecond = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	bool bStartHidden = false;
+
+	UStaticMeshComponent* GetSpriteComponent() const { return SpriteComponent; }
+
+	virtual void Tick(float DeltaSeconds) override;
+
+protected:
+	virtual void BeginPlay() override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LBA")
+	TObjectPtr<UStaticMeshComponent> SpriteComponent;
+
+private:
+	float FrameTime = 0.f;
+	int32 CurrentFrame = INDEX_NONE;
+};

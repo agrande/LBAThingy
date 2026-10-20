@@ -78,6 +78,8 @@ public:
 	/** Optional community-authored names (MIT, from the lba2remake project). May be null. */
 	TSharedPtr<FJsonObject> GetCommunityNames() const { return CommunityNames; }
 	FString GetCommunityName(const FString& Table, int32 Index) const;
+	/** Per-scene names: Table = sceneActors or sceneZones, indexed by scene then by object or zone. */
+	FString GetCommunitySceneName(const FString& Table, int32 Scene, int32 Index) const;
 
 	// Assets ------------------------------------------------------------------------------------------
 
@@ -136,6 +138,9 @@ public:
 	 */
 	UWorld* BeginLevel(const FString& Folder, const FString& Name);
 
+	/** Opens an existing level as it is (generated actors kept), e.g. to add sub-levels. Null when it does not exist. */
+	UWorld* OpenLevel(const FString& PackageName);
+
 	/** Saves the level and releases it if this context created/loaded it. */
 	void EndLevel(UWorld* World);
 
@@ -172,6 +177,7 @@ public:
 	static FString SanitizeName(const FString& In);
 
 private:
+	UWorld* LoadLevel(const FString& PackageName, const FString& Name, bool bRegenerate);
 	bool LoadPalette(FString& OutError);
 	void LoadCommunityNames();
 	bool SavePackageFor(UObject* Asset);
