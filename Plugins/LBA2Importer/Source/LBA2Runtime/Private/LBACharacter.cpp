@@ -1,11 +1,13 @@
 #include "LBACharacter.h"
 
 #include "Animation/AnimSequence.h"
+#include "AnimationRuntime.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/World.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -17,6 +19,7 @@
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
 #include "LBAAnimInstance.h"
+#include "LBAAnimNotifies.h"
 #include "LBADinofly.h"
 #include "LBAPlayerController.h"
 #include "LBATypes.h"
@@ -24,6 +27,12 @@
 namespace
 {
 	constexpr float AxisThreshold = 0.3f;
+	constexpr float AnimSampleStep = 1.f / 30.f;
+
+	TAutoConsoleVariable<bool> CVarSmoothKeys(TEXT("lba.Modern.SmoothKeys"), true,
+		TEXT("Modern mode: interpolate LBA keyframes with smooth curves (0 = the original's straight in-betweens)."));
+	TAutoConsoleVariable<bool> CVarProcedural(TEXT("lba.Modern.Procedural"), true,
+		TEXT("Modern mode: lean, foot placement and head turn over the animations."));
 
 	/** Natural speed (cm/s) of an animation's root motion. */
 	float RootMotionSpeed(const UAnimSequence* Sequence)
@@ -34,6 +43,20 @@ namespace
 		}
 		const FTransform Motion = Sequence->ExtractRootMotionFromRange(0.0, Sequence->GetPlayLength(), FAnimExtractContext(0.0, true));
 		return Motion.GetTranslation().Size2D() / Sequence->GetPlayLength();
+	}
+
+	/** Root motion speed (cm/s) of an animation around a time. */
+	float RootMotionSpeedAt(const UAnimSequence* Sequence, float Time)
+	{
+		const float Length = Sequence->GetPlayLength();
+		const float From = FMath::Clamp(Time - AnimSampleStep, 0.f, Length);
+		const float To = FMath::Clamp(Time + AnimSampleStep, 0.f, Length);
+		if (To - From <= 0.f)
+		{
+			return 0.f;
+		}
+		const FTransform Motion = Sequence->ExtractRootMotionFromRange(From, To, FAnimExtractContext(double(From), true));
+		return Motion.GetTranslation().Size2D() / (To - From);
 	}
 }
 
@@ -85,6 +108,11 @@ ALBACharacter::ALBACharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	// Twinsen's skeleton: legs hip -> knee -> ankle, the head on the neck with a little of the turn in the torso.
+	Legs = { { TEXT("bone_08"), TEXT("bone_09"), TEXT("bone_10") }, { TEXT("bone_11"), TEXT("bone_12"), TEXT("bone_13") } };
+	HeadBones.Add(TEXT("bone_03"), 0.25f);
+	HeadBones.Add(TEXT("bone_14"), 0.75f);
 }
 
 void ALBACharacter::BeginPlay()
@@ -183,6 +211,11 @@ void ALBACharacter::SetBehaviour(ELBABehaviour NewBehaviour)
 	Behaviour = NewBehaviour;
 	ActionSlot = INDEX_NONE;
 	ApplyEntity();
+	// The idle (and, in authentic mode, every move) comes from the new entity.
+	if (ModernState == EModernState::Idle)
+	{
+		SetModernState(EModernState::None);
+	}
 }
 
 void ALBACharacter::SetBodyType(int32 NewBodyType)
@@ -195,29 +228,71 @@ void ALBACharacter::SetControlMode(ELBAControlMode NewMode)
 {
 	ControlMode = NewMode;
 	const bool bAuthentic = ControlMode == ELBAControlMode::Authentic;
-	GetCharacterMovement()->bOrientRotationToMovement = !bAuthentic;
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	Movement->bOrientRotationToMovement = !bAuthentic;
 	CameraBoom->bUsePawnControlRotation = !bAuthentic;
 	CameraBoom->bInheritYaw = true;
-	if (!bAuthentic)
+	CameraBoom->bInheritPitch = !bAuthentic;
+	CameraBoom->bInheritRoll = !bAuthentic;
+	CameraBoom->bEnableCameraRotationLag = bAuthentic;
+	if (bAuthentic)
 	{
-		if (AController* PC = GetController())
-		{
-			PC->SetControlRotation(FRotator(-20.f, GetActorRotation().Yaw, 0.f));
-		}
+		CameraBoom->TargetArmLength = 650.f;
+		CameraBoom->SocketOffset = FVector(0.f, 0.f, 60.f);
+		CameraBoom->TargetOffset = FVector::ZeroVector;
+		CameraBoom->bEnableCameraLag = false;
+		CameraBoom->SetRelativeRotation(FRotator(-28.f, 0.f, 0.f));
+		Movement->RotationRate = FRotator(0.f, 540.f, 0.f);
+		Movement->JumpZVelocity = 520.f;
+		Movement->AirControl = 0.2f;
+		Movement->MaxWalkSpeed = 300.f;
+		Movement->MaxAcceleration = 2048.f;
+		Movement->BrakingDecelerationWalking = 2000.f;
 	}
 	else
 	{
-		CameraBoom->SetRelativeRotation(FRotator(-28.f, 0.f, 0.f));
+		// Free camera, like Unreal's third-person template, looking at Twinsen's chest.
+		CameraBoom->TargetArmLength = ModernCameraDistance;
+		CameraBoom->SocketOffset = FVector::ZeroVector;
+		CameraBoom->TargetOffset = FVector(0.f, 0.f, 30.f);
+		CameraBoom->bEnableCameraLag = true;
+		CameraBoom->CameraLagSpeed = 15.f;
+		CameraBoom->SetRelativeRotation(FRotator::ZeroRotator);
+		Movement->RotationRate = FRotator(0.f, ModernTurnRate, 0.f);
+		Movement->JumpZVelocity = ModernJumpSpeed;
+		Movement->AirControl = ModernAirControl;
+		Movement->MaxAcceleration = ModernAcceleration;
+		Movement->BrakingDecelerationWalking = ModernBraking;
+		Movement->MinAnalogWalkSpeed = 40.f;
+		if (AController* PC = GetController())
+		{
+			PC->SetControlRotation(FRotator(-15.f, GetActorRotation().Yaw, 0.f));
+		}
 	}
+	ModernState = EModernState::None;
+	ProceduralWeight = 0.f;
+	LastYaw = GetActorRotation().Yaw;
 	if (ULBAAnimInstance* Anim = GetLBAAnimInstance())
 	{
 		Anim->SetApplyRootMotion(bAuthentic);
+		Anim->SetSmoothKeyframes(!bAuthentic && bSmoothKeyframes);
+		Anim->SetSyncedBlend(nullptr, 0.f, 0.f, 0.f);
+		Anim->SetProceduralPose(FLBAProceduralPose());
 	}
 }
 
 UAnimSequence* ALBACharacter::FindAnim(int32 AnimType, float* OutLoopStart) const
 {
-	const ULBAEntityAsset* Entity = GetEntity();
+	return FindBehaviourAnim(Behaviour, AnimType, OutLoopStart);
+}
+
+UAnimSequence* ALBACharacter::FindBehaviourAnim(ELBABehaviour InBehaviour, int32 AnimType, float* OutLoopStart) const
+{
+	const ULBAEntityAsset* Entity = Behaviours.FindRef(InBehaviour);
+	if (!Entity)
+	{
+		Entity = GetEntity();
+	}
 	const FLBAEntityAnim* Anim = Entity ? Entity->Anims.Find(AnimType) : nullptr;
 	if (!Anim || !Anim->Sequence)
 	{
@@ -230,6 +305,66 @@ UAnimSequence* ALBACharacter::FindAnim(int32 AnimType, float* OutLoopStart) cons
 		*OutLoopStart = Anim ? Anim->LoopStartTime : 0.f;
 	}
 	return Anim ? Anim->Sequence.Get() : nullptr;
+}
+
+const ALBACharacter::FClipInfo& ALBACharacter::GetClipInfo(const UAnimSequence* Sequence, float LoopStart) const
+{
+	if (const FClipInfo* Found = ClipInfos.Find(Sequence))
+	{
+		return *Found;
+	}
+	FClipInfo& Info = ClipInfos.Add(Sequence);
+	const float Length = Sequence->GetPlayLength();
+	Info.LoopStart = LoopStart < Length ? LoopStart : 0.f;
+	Info.LoopLength = FMath::Max(Length - Info.LoopStart, AnimSampleStep);
+	Info.Stride = Sequence->ExtractRootMotionFromRange(Info.LoopStart, Length, FAnimExtractContext(double(Info.LoopStart), true)).GetTranslation().Size2D();
+
+	for (const FAnimNotifyEvent& Event : Sequence->Notifies)
+	{
+		const ULBAAnimNotify_Footstep* Step = Cast<ULBAAnimNotify_Footstep>(Event.Notify);
+		if (Step && Step->Foot == ELBAFoot::Right && Event.GetTriggerTime() >= Info.LoopStart)
+		{
+			Info.StepPhase = (Event.GetTriggerTime() - Info.LoopStart) / Info.LoopLength;
+			break;
+		}
+	}
+
+	// Jumps: the root rises from the ground at takeoff and comes back down at landing.
+	constexpr float GroundTolerance = 2.f;
+	float PeakHeight = 0.f;
+	float PeakTime = 0.f;
+	TArray<float> Heights;
+	for (float Time = 0.f; Time <= Length + KINDA_SMALL_NUMBER; Time += AnimSampleStep)
+	{
+		const float Height = Sequence->ExtractRootMotionFromRange(0.0, FMath::Min(Time, Length), FAnimExtractContext(0.0, true)).GetTranslation().Z;
+		Heights.Add(Height);
+		if (Height > PeakHeight)
+		{
+			PeakHeight = Height;
+			PeakTime = Time;
+		}
+	}
+	Info.LandTime = Length;
+	if (PeakHeight > GroundTolerance)
+	{
+		for (int32 Index = 0; Index < Heights.Num(); ++Index)
+		{
+			if (Heights[Index] > GroundTolerance)
+			{
+				Info.TakeoffTime = FMath::Max(0, Index - 1) * AnimSampleStep;
+				break;
+			}
+		}
+		for (int32 Index = FMath::RoundToInt(PeakTime / AnimSampleStep); Index < Heights.Num(); ++Index)
+		{
+			if (Heights[Index] <= GroundTolerance)
+			{
+				Info.LandTime = FMath::Min(Index * AnimSampleStep, Length);
+				break;
+			}
+		}
+	}
+	return Info;
 }
 
 void ALBACharacter::PlaySlot(int32 AnimType, bool bLoop, float BlendTime, float PlayRate)
@@ -254,6 +389,11 @@ bool ALBACharacter::PlayAction(int32 AnimType)
 	}
 	ActionSlot = AnimType;
 	Anim->PlayLBAAnimation(Sequence, false, 0.f, 0.12f, 1.f, true);
+	if (ControlMode == ELBAControlMode::Modern)
+	{
+		// Actions play in place; locomotion starts over afterwards.
+		SetModernState(EModernState::None);
+	}
 	return true;
 }
 
@@ -334,50 +474,358 @@ void ALBACharacter::UpdateAuthentic(float DeltaSeconds)
 	}
 }
 
+// Modern mode ----------------------------------------------------------------------------------------------
+
+void ALBACharacter::SetModernState(EModernState NewState)
+{
+	ModernState = NewState;
+	ModernStateTime = 0.f;
+}
+
 void ALBACharacter::UpdateModern(float DeltaSeconds)
+{
+	ModernStateTime += DeltaSeconds;
+	if (ULBAAnimInstance* Anim = GetLBAAnimInstance())
+	{
+		if (ActionSlot != INDEX_NONE && Anim->IsCurrentAnimationFinished())
+		{
+			ActionSlot = INDEX_NONE;
+		}
+	}
+
+	// Camera-relative movement, like the template (no moving during one-shot actions).
+	if (Controller && ActionSlot == INDEX_NONE && !MoveInput.IsNearlyZero(0.01f))
+	{
+		const FRotator Yaw(0.f, Controller->GetControlRotation().Yaw, 0.f);
+		const FRotationMatrix Axes(Yaw);
+		AddMovementInput(Axes.GetUnitAxis(EAxis::X), MoveInput.Y);
+		AddMovementInput(Axes.GetUnitAxis(EAxis::Y), MoveInput.X);
+	}
+
+	UpdateModernLocomotion(DeltaSeconds);
+	UpdateProceduralPose(DeltaSeconds);
+}
+
+void ALBACharacter::UpdateModernLocomotion(float DeltaSeconds)
 {
 	ULBAAnimInstance* Anim = GetLBAAnimInstance();
 	if (!Anim)
 	{
 		return;
 	}
-	const UAnimSequence* ForwardAnim = FindAnim(int32(ELBAAnimType::Forward));
-	const float NaturalSpeed = FMath::Max(RootMotionSpeed(ForwardAnim), 50.f);
-	GetCharacterMovement()->MaxWalkSpeed = NaturalSpeed;
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+
+	// Twinsen always runs (athletic run); a half-tilted stick slows down into the normal walk.
+	float RunLoopStart = 0.f;
+	float WalkLoopStart = 0.f;
+	UAnimSequence* Run = FindBehaviourAnim(ELBABehaviour::Athletic, int32(ELBAAnimType::Forward), &RunLoopStart);
+	UAnimSequence* Walk = FindBehaviourAnim(ELBABehaviour::Normal, int32(ELBAAnimType::Forward), &WalkLoopStart);
+	if (!Run || !Walk)
+	{
+		return;
+	}
+	const FClipInfo& RunInfo = GetClipInfo(Run, RunLoopStart);
+	const FClipInfo& WalkInfo = GetClipInfo(Walk, WalkLoopStart);
+	const float RunSpeed = FMath::Max(RunInfo.GetLoopSpeed(), 100.f);
+	const float WalkSpeed = FMath::Clamp(WalkInfo.GetLoopSpeed(), 50.f, RunSpeed * 0.8f);
+	Movement->MaxWalkSpeed = RunSpeed;
 
 	if (ActionSlot != INDEX_NONE)
 	{
-		if (!Anim->IsCurrentAnimationFinished())
-		{
-			return;
-		}
-		ActionSlot = INDEX_NONE;
+		return;
 	}
-	if (GetCharacterMovement()->IsFalling())
+
+	const float Speed = GetVelocity().Size2D();
+	const bool bHasInput = !MoveInput.IsNearlyZero(0.01f);
+
+	if (Movement->IsFalling())
 	{
 		FallTime += DeltaSeconds;
-		if (FallTime > 0.35f)
+		if (ModernState == EModernState::Jump)
 		{
-			PlaySlot(int32(ELBAAnimType::Falling), true);
+			// Past the jump's touchdown pose while still in the air: flail until landing.
+			if (Anim->GetCurrentAnimationTime() >= JumpLandTime - 0.05f)
+			{
+				SetModernState(EModernState::Fall);
+				PlaySlot(int32(ELBAAnimType::Falling), true, 0.3f);
+			}
+		}
+		else if (ModernState != EModernState::Fall && FallTime > 0.2f)
+		{
+			SetModernState(EModernState::Fall);
+			PlaySlot(int32(ELBAAnimType::Falling), true, 0.25f);
 		}
 		return;
 	}
 	FallTime = 0.f;
 
-	const float Speed = GetVelocity().Size2D();
-	if (Speed > 20.f)
+	if (ModernState == EModernState::Jump && ModernStateTime < 0.25f)
 	{
-		PlaySlot(int32(ELBAAnimType::Forward), true, 0.2f, Speed / NaturalSpeed);
+		// The movement component takes off on its next update.
+		return;
+	}
+	if (ModernState == EModernState::Jump || ModernState == EModernState::Fall)
+	{
+		// Back on the ground without the Landed event.
+		SetModernState(EModernState::None);
+	}
+	if (ModernState == EModernState::Land)
+	{
+		// The landing recovery plays out, unless Twinsen runs on.
+		if (!(bHasInput && ModernStateTime > 0.1f) && !Anim->IsCurrentAnimationFinished())
+		{
+			return;
+		}
+		bResumeCycle = bHasInput;
+		SetModernState(EModernState::None);
+	}
+
+	const bool bMoving = bHasInput || Speed > 0.25f * RunSpeed;
+	if (!bMoving)
+	{
+		if (ModernState != EModernState::Idle)
+		{
+			// Coming to a stop: the run fades into the idle while Twinsen brakes.
+			PlaySlot(int32(ELBAAnimType::Idle), true, ModernState == EModernState::Move ? 0.35f : 0.2f);
+			SetModernState(EModernState::Idle);
+		}
+		LocomotionLead = nullptr;
+		return;
+	}
+
+	RunWeight = FMath::Clamp((Speed - WalkSpeed) / (RunSpeed - WalkSpeed), 0.f, 1.f);
+	if (ModernState != EModernState::Move || !LocomotionLead)
+	{
+		// The cycle closest to the intended speed leads; it starts from its lead-in (the run start) from a stand.
+		const float Intended = FMath::Min(MoveInput.Size(), 1.f) * RunSpeed;
+		LocomotionLead = Intended > (WalkSpeed + RunSpeed) * 0.5f ? Run : Walk;
+		const FClipInfo& Lead = LocomotionLead == Run ? RunInfo : WalkInfo;
+		const float StartTime = bResumeCycle ? Lead.LoopStart : 0.f;
+		Anim->PlayLBAAnimation(LocomotionLead, true, Lead.LoopStart, 0.2f, 1.f, true, StartTime);
+		bResumeCycle = false;
+		SetModernState(EModernState::Move);
+	}
+	const bool bRunLeads = LocomotionLead == Run;
+	const FClipInfo& Lead = bRunLeads ? RunInfo : WalkInfo;
+	const FClipInfo& Follow = bRunLeads ? WalkInfo : RunInfo;
+
+	const float Time = Anim->GetCurrentAnimationTime();
+	if (Time < Lead.LoopStart)
+	{
+		// Start: the lead-in plays at the pace of the actual acceleration (its own speed at that moment).
+		LocomotionRate = FMath::Clamp(Speed / FMath::Max(RootMotionSpeedAt(LocomotionLead, Time), 30.f), 0.6f, 2.5f);
 	}
 	else
 	{
-		PlaySlot(int32(ELBAAnimType::Idle), true, 0.25f);
+		// Cycle: one loop per blended stride, so the feet keep up with the ground.
+		const float Stride = FMath::Lerp(WalkInfo.Stride, RunInfo.Stride, RunWeight);
+		LocomotionRate = FMath::Clamp(Speed / FMath::Max(Stride, 1.f) * Lead.LoopLength, 0.3f, 2.f);
 	}
+	Anim->PlayLBAAnimation(LocomotionLead, true, Lead.LoopStart, 0.2f, LocomotionRate);
+	const float FollowWeight = bRunLeads ? 1.f - RunWeight : RunWeight;
+	Anim->SetSyncedBlend(bRunLeads ? Walk : Run, Follow.LoopStart, FollowWeight, FMath::Frac(Follow.StepPhase - Lead.StepPhase + 1.f));
+}
+
+bool ALBACharacter::ModernJump()
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	ULBAAnimInstance* Anim = GetLBAAnimInstance();
+	if (!Anim || ActionSlot != INDEX_NONE || Movement->IsFalling() || ModernState == EModernState::Land)
+	{
+		return false;
+	}
+	float LoopStart = 0.f;
+	const bool bRunning = GetVelocity().Size2D() > 150.f;
+	JumpAnim = FindBehaviourAnim(ELBABehaviour::Athletic, int32(bRunning ? ELBAAnimType::RunningJump : ELBAAnimType::Jump), &LoopStart);
+	if (!JumpAnim)
+	{
+		JumpAnim = FindBehaviourAnim(ELBABehaviour::Athletic, int32(ELBAAnimType::Jump), &LoopStart);
+	}
+	Jump();
+	if (JumpAnim)
+	{
+		// Straight into the air (no wind-up), the airborne part stretched over the actual flight time.
+		const FClipInfo& Info = GetClipInfo(JumpAnim, 0.f);
+		const float FlightTime = 2.f * Movement->JumpZVelocity / FMath::Max(-Movement->GetGravityZ(), 1.f);
+		const float Rate = FMath::Clamp((Info.LandTime - Info.TakeoffTime) / FlightTime, 0.5f, 2.f);
+		JumpLandTime = Info.LandTime;
+		Anim->PlayLBAAnimation(JumpAnim, false, 0.f, 0.1f, Rate, true, Info.TakeoffTime);
+	}
+	SetModernState(EModernState::Jump);
+	return true;
+}
+
+void ALBACharacter::ModernLanded()
+{
+	ULBAAnimInstance* Anim = GetLBAAnimInstance();
+	const float LandingSpeed = -GetVelocity().Z;
+	if (LandingSpeed > HardLandingSpeed)
+	{
+		PlayAction(int32(ELBAAnimType::FallLandingStumble));
+		return;
+	}
+	if (!Anim || (ModernState != EModernState::Jump && ModernState != EModernState::Fall))
+	{
+		// Short drops (down a step) don't interrupt the run.
+		return;
+	}
+	// The touchdown and recovery of the jump animation (the athletic jump's for falls).
+	UAnimSequence* Landing = JumpAnim;
+	if (ModernState != EModernState::Jump || !Landing)
+	{
+		Landing = FindBehaviourAnim(ELBABehaviour::Athletic, int32(ELBAAnimType::Jump));
+	}
+	if (Landing)
+	{
+		const FClipInfo& Info = GetClipInfo(Landing, 0.f);
+		const float From = ModernState == EModernState::Jump ? FMath::Max(Anim->GetCurrentAnimationTime(), Info.LandTime - 0.1f) : Info.LandTime - 0.1f;
+		Anim->PlayLBAAnimation(Landing, false, 0.f, 0.1f, 1.f, true, From);
+		SetModernState(EModernState::Land);
+	}
+	else
+	{
+		SetModernState(EModernState::None);
+	}
+}
+
+void ALBACharacter::UpdateProceduralPose(float DeltaSeconds)
+{
+	ULBAAnimInstance* Anim = GetLBAAnimInstance();
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (!Anim || !MeshComponent->GetSkeletalMeshAsset() || DeltaSeconds <= 0.f)
+	{
+		return;
+	}
+	Anim->SetSmoothKeyframes(bSmoothKeyframes && CVarSmoothKeys.GetValueOnGameThread());
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const bool bGrounded = Movement->IsMovingOnGround();
+	ProceduralWeight = FMath::FInterpConstantTo(ProceduralWeight, bGrounded && CVarProcedural.GetValueOnGameThread() ? 1.f : 0.f, DeltaSeconds, 6.f);
+
+	// Lean into turns (sideways acceleration v * yaw rate) and accelerations, as if balancing on the feet.
+	const float Yaw = GetActorRotation().Yaw;
+	const float YawRate = FMath::DegreesToRadians(FMath::FindDeltaAngleDegrees(LastYaw, Yaw)) / DeltaSeconds;
+	const float Speed = GetVelocity().Size2D();
+	const float ForwardAcceleration = (Speed - LastSpeed) / DeltaSeconds;
+	LastYaw = Yaw;
+	LastSpeed = Speed;
+	const float Gravity = FMath::Max(-Movement->GetGravityZ(), 1.f);
+	const float TargetBank = bGrounded ? FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan(Speed * YawRate / Gravity)) * LeanAmount, -MaxLean, MaxLean) : 0.f;
+	const float TargetPitch = bGrounded ? FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan(ForwardAcceleration / Gravity)) * 0.5f * LeanAmount, -MaxLean * 0.5f, MaxLean * 0.5f) : 0.f;
+	LeanBank = FMath::FInterpTo(LeanBank, TargetBank, DeltaSeconds, 6.f);
+	LeanPitch = FMath::FInterpTo(LeanPitch, TargetPitch, DeltaSeconds, 4.f);
+	const FVector LeanUp = (FVector::UpVector + FVector::ForwardVector * FMath::Tan(FMath::DegreesToRadians(LeanPitch)) + FVector::RightVector * FMath::Tan(FMath::DegreesToRadians(LeanBank))).GetSafeNormal();
+	// Actor space to the mesh's component space.
+	const FQuat MeshRotation = MeshComponent->GetRelativeRotation().Quaternion();
+	const FQuat Lean = MeshRotation.Inverse() * FQuat::FindBetweenNormals(FVector::UpVector, LeanUp) * MeshRotation;
+
+	// Head: towards where Twinsen is going, or standing, where the camera looks.
+	float TargetHead = 0.f;
+	if (Controller)
+	{
+		const float ControlYaw = Controller->GetControlRotation().Yaw;
+		if (!MoveInput.IsNearlyZero(0.01f))
+		{
+			const float InputYaw = ControlYaw + FMath::RadiansToDegrees(FMath::Atan2(MoveInput.X, MoveInput.Y));
+			TargetHead = FMath::Clamp(FMath::FindDeltaAngleDegrees(Yaw, InputYaw), -60.f, 60.f);
+		}
+		else if (ModernState == EModernState::Idle)
+		{
+			const float Delta = FMath::FindDeltaAngleDegrees(Yaw, ControlYaw);
+			TargetHead = FMath::Abs(Delta) < 110.f ? FMath::Clamp(Delta, -60.f, 60.f) : 0.f;
+		}
+	}
+	HeadYaw = FMath::FInterpTo(HeadYaw, TargetHead * HeadTurn, DeltaSeconds, 5.f);
+
+	FLBAProceduralPose Pose;
+	Pose.Weight = ProceduralWeight;
+	Pose.BodyRoot = BodyRootBone;
+	Pose.Lean = Lean;
+	Pose.HeadYaw = HeadYaw;
+	for (const TPair<FName, float>& Bone : HeadBones)
+	{
+		Pose.HeadBones.Add(Bone);
+	}
+
+	if (bFootPlacement)
+	{
+		// Reference heights of the feet above the ground (the mesh origin is at the capsule's bottom).
+		USkeletalMesh* SkeletalMesh = MeshComponent->GetSkeletalMeshAsset();
+		if (FootHeightsMesh != SkeletalMesh)
+		{
+			FootHeightsMesh = SkeletalMesh;
+			FootHeights.Reset();
+			const FReferenceSkeleton& RefSkeleton = SkeletalMesh->GetRefSkeleton();
+			for (const FLBALegBones& Leg : Legs)
+			{
+				const int32 Index = RefSkeleton.FindBoneIndex(Leg.Foot);
+				FootHeights.Add(Index != INDEX_NONE ? FAnimationRuntime::GetComponentSpaceTransformRefPose(RefSkeleton, Index).GetLocation().Z : 0.f);
+			}
+		}
+
+		// Ground under each foot, relative to the bottom of the capsule (the animation's flat ground).
+		const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		const float Bottom = GetActorLocation().Z - HalfHeight;
+		const FQuat ComponentRotation = MeshComponent->GetComponentQuat();
+		FCollisionQueryParams Params(TEXT("LBAFootPlacement"), false, this);
+		float Lowest = 0.f;
+		for (int32 Index = 0; Index < Legs.Num() && Index < 2; ++Index)
+		{
+			float TargetOffset = 0.f;
+			FVector TargetNormal = FVector::UpVector;
+			if (bGrounded)
+			{
+				const FVector Foot = MeshComponent->GetBoneLocation(Legs[Index].Foot);
+				FHitResult Hit;
+				const FVector From(Foot.X, Foot.Y, Bottom + Movement->MaxStepHeight + 10.f);
+				const FVector To(Foot.X, Foot.Y, Bottom - 60.f);
+				if (GetWorld()->LineTraceSingleByChannel(Hit, From, To, ECC_Visibility, Params) && Hit.ImpactNormal.Z > 0.5f)
+				{
+					TargetOffset = FMath::Clamp(Hit.ImpactPoint.Z - Bottom, -45.f, Movement->MaxStepHeight);
+					TargetNormal = Hit.ImpactNormal;
+				}
+			}
+			FootOffsets[Index] = FMath::FInterpTo(FootOffsets[Index], TargetOffset, DeltaSeconds, 15.f);
+			FootNormals[Index] = FMath::VInterpTo(FootNormals[Index], TargetNormal, DeltaSeconds, 10.f).GetSafeNormal();
+			Lowest = FMath::Min(Lowest, FootOffsets[Index]);
+
+			FLBALegPlacement& Placement = Pose.Legs.AddDefaulted_GetRef();
+			Placement.Hip = Legs[Index].Hip;
+			Placement.Knee = Legs[Index].Knee;
+			Placement.Foot = Legs[Index].Foot;
+			Placement.GroundOffset = FootOffsets[Index];
+			Placement.GroundNormal = ComponentRotation.Inverse().RotateVector(FootNormals[Index]);
+			Placement.MinFootHeight = FootHeights.IsValidIndex(Index) ? FootHeights[Index] : 0.f;
+		}
+		// The body drops for the lower foot, the higher one bends its knee.
+		PelvisOffset = FMath::FInterpTo(PelvisOffset, FMath::Max(Lowest, -40.f), DeltaSeconds, 10.f);
+		Pose.PelvisOffset = PelvisOffset;
+	}
+	Anim->SetProceduralPose(Pose);
+}
+
+FString ALBACharacter::GetModernDebugString() const
+{
+	static const TCHAR* StateNames[] = { TEXT("none"), TEXT("idle"), TEXT("move"), TEXT("jump"), TEXT("fall"), TEXT("land") };
+	const ULBAAnimInstance* Anim = GetLBAAnimInstance();
+	const UAnimSequence* Current = Anim ? Anim->GetCurrentAnimation() : nullptr;
+	return FString::Printf(TEXT("state=%s(%.2f) anim=%s@%.2f rate=%.2f run=%.2f speed=%.0f vz=%.0f weight=%.2f lean(bank=%.1f pitch=%.1f) head=%.1f pelvis=%.1f feet=(%.1f %.1f) action=%d"),
+		StateNames[uint8(ModernState)], ModernStateTime, Current ? *Current->GetName() : TEXT("none"), Anim ? Anim->GetCurrentAnimationTime() : 0.f,
+		LocomotionRate, RunWeight, GetVelocity().Size2D(), GetVelocity().Z, ProceduralWeight, LeanBank, LeanPitch, HeadYaw, PelvisOffset,
+		FootOffsets[0], FootOffsets[1], ActionSlot);
 }
 
 void ALBACharacter::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+	if (ControlMode == ELBAControlMode::Modern)
+	{
+		if (ActionSlot == INDEX_NONE)
+		{
+			ModernLanded();
+		}
+		FallTime = 0.f;
+		return;
+	}
 	const bool bEndsJump = ActionSlot == int32(ELBAAnimType::Jump) || ActionSlot == int32(ELBAAnimType::RunningJump);
 	if (bEndsJump)
 	{
@@ -418,25 +866,39 @@ void ALBACharacter::CreateInput()
 	MapMove(EKeys::D, false, false);
 	MapMove(EKeys::Left, false, true);
 	MapMove(EKeys::A, false, true);
-	auto MapStick = [this](UInputAction* Action, const FKey& Key)
+	auto MapStick = [this](UInputAction* Action, const FKey& Key) -> FEnhancedActionKeyMapping&
 	{
 		// Dead zone: resting sticks (or flight sticks/throttles) must not move Twinsen.
 		FEnhancedActionKeyMapping& Mapping = InputContext->MapKey(Action, Key);
 		UInputModifierDeadZone* DeadZone = NewObject<UInputModifierDeadZone>(InputContext);
 		DeadZone->LowerThreshold = 0.25f;
 		Mapping.Modifiers.Add(DeadZone);
+		return Mapping;
 	};
 	MapStick(MoveAction, EKeys::Gamepad_Left2D);
 
 	LookAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Look"));
 	LookAction->ValueType = EInputActionValueType::Axis2D;
 	InputContext->MapKey(LookAction, EKeys::Mouse2D);
-	MapStick(LookAction, EKeys::Gamepad_Right2D);
+	{
+		// Vertical inverted on the stick (pushing up looks down), not on the mouse, like the Dinofly.
+		UInputModifierNegate* InvertY = NewObject<UInputModifierNegate>(InputContext);
+		InvertY->bX = false;
+		InvertY->bZ = false;
+		MapStick(LookAction, EKeys::Gamepad_Right2D).Modifiers.Add(InvertY);
+	}
 
+	// Space: the behaviour action in authentic mode, jump in modern mode.
 	ActionAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Action"));
 	ActionAction->ValueType = EInputActionValueType::Boolean;
 	InputContext->MapKey(ActionAction, EKeys::SpaceBar);
 	InputContext->MapKey(ActionAction, EKeys::Gamepad_FaceButton_Bottom);
+
+	// E: the behaviour action (search, punch/kick, crouch).
+	UseAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Use"));
+	UseAction->ValueType = EInputActionValueType::Boolean;
+	InputContext->MapKey(UseAction, EKeys::E);
+	InputContext->MapKey(UseAction, EKeys::Gamepad_FaceButton_Left);
 
 	ToggleModeAction = NewObject<UInputAction>(this, TEXT("IA_LBA_ToggleMode"));
 	ToggleModeAction->ValueType = EInputActionValueType::Boolean;
@@ -476,6 +938,7 @@ void ALBACharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	Input->BindAction(MoveAction, ETriggerEvent::Completed, this, &ALBACharacter::OnMoveReleased);
 	Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALBACharacter::OnLook);
 	Input->BindAction(ActionAction, ETriggerEvent::Started, this, &ALBACharacter::OnAction);
+	Input->BindAction(UseAction, ETriggerEvent::Started, this, &ALBACharacter::OnUse);
 	Input->BindAction(ToggleModeAction, ETriggerEvent::Started, this, &ALBACharacter::OnToggleControlMode);
 	Input->BindAction(SummonDinoflyAction, ETriggerEvent::Started, this, &ALBACharacter::OnSummonDinofly);
 	for (int32 Index = 0; Index < BehaviourActions.Num(); ++Index)
@@ -503,12 +966,6 @@ void ALBACharacter::PawnClientRestart()
 void ALBACharacter::OnMove(const FInputActionValue& Value)
 {
 	MoveInput = Value.Get<FVector2D>();
-	if (ControlMode == ELBAControlMode::Modern && Controller)
-	{
-		const FRotator Yaw(0.f, Controller->GetControlRotation().Yaw, 0.f);
-		AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::X), MoveInput.Y);
-		AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y), MoveInput.X);
-	}
 }
 
 void ALBACharacter::OnMoveReleased(const FInputActionValue& Value)
@@ -532,6 +989,18 @@ void ALBACharacter::OnLook(const FInputActionValue& Value)
 
 void ALBACharacter::OnAction(const FInputActionValue& Value)
 {
+	if (ControlMode == ELBAControlMode::Modern)
+	{
+		ModernJump();
+	}
+	else
+	{
+		DoBehaviourAction();
+	}
+}
+
+void ALBACharacter::OnUse(const FInputActionValue& Value)
+{
 	DoBehaviourAction();
 }
 
@@ -548,6 +1017,11 @@ void ALBACharacter::DoBehaviourAction()
 		break;
 	case ELBABehaviour::Athletic:
 	{
+		if (ControlMode == ELBAControlMode::Modern)
+		{
+			ModernJump();
+			break;
+		}
 		const bool bRunning = MoveInput.Y > AxisThreshold || GetVelocity().Size2D() > 150.f;
 		if (PlayAction(int32(bRunning ? ELBAAnimType::RunningJump : ELBAAnimType::Jump)) || PlayAction(int32(ELBAAnimType::Jump)))
 		{

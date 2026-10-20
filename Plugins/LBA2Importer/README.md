@@ -41,21 +41,49 @@ World scale lives in **Project Settings > Plugins > LBA2** (default 0.125 cm per
 Generated levels use `LBAGameMode` (toggle with *Play As Twinsen* in the importer settings), so
 pressing Play spawns `ALBACharacter`. Any other map can do the same with a GameMode override.
 
-| Key | Authentic mode (default) |
-|---|---|
-| Up/W, Down/S | Walk forward / backward (movement comes from the animation's root motion) |
-| Left/A, Right/D | Turn in place (turn animations), or steer while walking |
-| Space | Behaviour action: Normal search, Athletic jump (running jump when moving), Aggressive punch/kick, Discreet crouch |
-| F5-F8 or 1-4 | Normal, Athletic, Aggressive, Discreet |
-| Mouse | Orbit the camera (it recenters behind Twinsen when he walks) |
-| Tab | Toggle the experimental Modern mode (camera-relative movement, in-place animations) |
-| F / gamepad Y | Ride the Dinofly (see below) |
-| M / gamepad Start | Island menu (see below) |
+Twinsen has two control modes; Tab switches between them.
+
+**Modern** (default) plays like Unreal's third-person template: a free camera, movement relative to
+the camera, and Twinsen always running (the athletic run). A partly tilted stick slows him down into
+the normal walk.
+
+**Authentic** is the original's "tank" control: every move is an animation with root motion.
+
+| Key | Modern mode (default) | Authentic mode |
+|---|---|---|
+| W/A/S/D, arrows, left stick | Run where you push, relative to the camera | Up/down walk forward/backward; left/right turn in place or steer while walking |
+| Mouse, right stick | Free camera (vertical inverted on the stick) | Orbit the camera (it recenters behind Twinsen when he walks) |
+| Space, gamepad A | Jump (a running jump when moving) | Behaviour action |
+| E, gamepad X | Behaviour action: Normal search, Athletic jump, Aggressive punch/kick, Discreet crouch | Behaviour action |
+| F5-F8 or 1-4 | Normal, Athletic, Aggressive, Discreet (idle and actions; the run stays) | Normal, Athletic, Aggressive, Discreet |
+| Tab | Switch to authentic mode | Switch to modern mode |
+| F / gamepad Y | Ride the Dinofly (see below) | Ride the Dinofly |
+| M / gamepad Start | Island menu (see below) | Island menu |
+
+In modern mode the LBA animations play in place and are kept in step with the movement:
+
+- **Starts and cycles.** From a stand, the run's own lead-in (the run start) plays at the pace of
+  the actual acceleration. After that, the walk and run cycles are blended by speed, in step on the
+  feet (their footstep notifies). One loop is played per stride, so the feet keep up with the ground.
+- **Smooth keyframes.** The original's sparse keyframes are interpolated with monotone cubic curves
+  instead of straight in-betweens (`lba.Modern.SmoothKeys 0` shows the original). The importer
+  stores the key times on each sequence (`ULBAAnimKeyframes` metadata).
+- **Procedural pose** (`lba.Modern.Procedural 0` disables it):
+  - the body leans into turns and accelerations;
+  - the feet stand on the ground with two-bone IK (body lowered for the lower foot, planted feet
+    tilted to the slope);
+  - the head turns towards where Twinsen is going, or, standing, towards where the camera looks.
+- **Jumps.** Jumps take off at once. The athletic jump animations are stretched over the actual
+  flight, then touch down and recover; a hard landing stumbles.
+
+Tunables are under *LBA|Modern* on the character: speeds, jump, camera distance, lean, head turn,
+and the leg/head bones. `-LBA2Shots=modern` runs a scripted test (starts, stops, walk, turns,
+reversal, jumps; side views with bursts of shots and a per-frame log).
 
 `ALBACharacter` loads its behaviour entities from **Project Settings > Plugins > LBA2 > Hero** and can be
 subclassed in Blueprint. `SetMoveInput` and `DoBehaviourAction` let AI or scripts drive it.
-`ULBAAnimInstance` plays LBA animations natively (crossfades, LBA loop frames, root motion) without
-an Animation Blueprint.
+`ULBAAnimInstance` plays LBA animations natively without an Animation Blueprint: crossfades, LBA loop
+frames, root motion, a bone-branch layer, synced cycle blends, smoothed keys and the procedural pose.
 
 ### Riding the Dinofly (prototype)
 
@@ -272,7 +300,7 @@ color, shade row / light, surfaces without fog).
 - [x] Citadel's storm: dense dark fog, rain (Niagara drops) and splashes
 - [ ] Look, next: Citadel storm (Niagara splashes like the original's spray, lightning, wet surfaces), cloud shadows, interior lights,
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
-- [ ] L3c Modern controls for Unreal (motion matching or blendspaces: to be discussed)
+- [x] L3c Modern controls (third-person template style; procedural layer over the LBA clips rather than motion matching, too few clips)
 - [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [ ] L4 Scenes: actors, zones (typed trigger volumes), track points, hero start, ambience, per-scene levels

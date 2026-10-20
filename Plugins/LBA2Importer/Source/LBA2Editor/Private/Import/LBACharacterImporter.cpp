@@ -25,6 +25,7 @@
 #include "Import/LBAMeshBuilder.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
+#include "LBAAnimInstance.h"
 #include "LBAAnimNotifies.h"
 #include "LBAEntityAsset.h"
 #include "LBATypes.h"
@@ -403,6 +404,20 @@ UAnimSequence* FLBACharacterImporter::ImportAnim(int32 AnimIndex, int32 Skeleton
 
 	Sequence->bEnableRootMotion = true;
 	Sequence->RootMotionRootLock = ERootMotionRootLock::RefPose;
+
+	// Key times, for smooth (cubic) interpolation of the keys at runtime (ULBAAnimInstance::SetSmoothKeyframes).
+	ULBAAnimKeyframes* Keyframes = Sequence->FindMetaDataByClass<ULBAAnimKeyframes>();
+	if (!Keyframes)
+	{
+		Keyframes = NewObject<ULBAAnimKeyframes>(Sequence, NAME_None, RF_Transactional);
+		Sequence->AddMetaData(Keyframes);
+	}
+	Keyframes->KeyTimes.Reset();
+	for (const int32 StartMs : KeyStartMs)
+	{
+		Keyframes->KeyTimes.Add(StartMs / 1000.f);
+	}
+	Keyframes->LoopKey = Anim->LoopFrame;
 
 	// Gameplay actions become notifies on an "LBA" track.
 	if (Actions.Num() > 0)

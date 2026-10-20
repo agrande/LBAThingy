@@ -13,6 +13,7 @@ public class LBA2Runtime : ModuleRules
 			"Engine",
 			"DeveloperSettings",
 			"AnimGraphRuntime",
+			"AnimationCore",
 			"InputCore",
 			"EnhancedInput",
 			"Water",

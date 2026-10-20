@@ -8,7 +8,7 @@
  * Development helper for automated visual checks. Inactive unless the game is started with
  *   -LBA2Shots=auto                       frame all imported meshes from a few angles
  *   -LBA2Shots="x,y,z,pitch,yaw;..."      explicit camera poses (Unreal units/degrees)
- *   -LBA2Shots=hero / dinofly             scripted Twinsen / Dinofly flight test (logs + a shot per step)
+ *   -LBA2Shots=hero / modern / dinofly    scripted Twinsen (authentic / modern controls) / Dinofly flight test (logs + shots)
  *   -LBA2ShotDir=<folder>                 where to write PNGs (default Saved/LBA2Shots)
  *   -LBA2HeroAt=x,y,yaw                   with camera poses: stands the player pawn on the ground there first
  * It takes the screenshots once the level has settled, then quits.
@@ -26,11 +26,17 @@ public:
 private:
 	bool Tick(float DeltaTime);
 	bool TickHero(UWorld* World, float DeltaTime);
+	bool TickModern(UWorld* World, float DeltaTime);
 	bool TickDinofly(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
 
 	/** -LBA2Shots=hero: drives the player's ALBACharacter through a scripted test and screenshots each step. */
 	bool bHero = false;
+	/** -LBA2Shots=modern: modern controls test (side views, bursts of shots during starts, stops, turns and jumps). */
+	bool bModern = false;
+	double NextBurst = 0.0;
+	int32 BurstIndex = 0;
+	float ModernBaseYaw = 0.f;
 	/** -LBA2Shots=dinofly: Twinsen summons the Dinofly, which flies a scripted sequence of inputs. */
 	bool bDinofly = false;
 	double NextReport = 0.0;

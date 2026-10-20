@@ -12,6 +12,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "LBA2Runtime.h"
 #include "Animation/AnimSequence.h"
@@ -48,6 +49,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	else if (Spec.Equals(TEXT("hero"), ESearchCase::IgnoreCase))
 	{
 		bHero = true;
+		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("modern"), ESearchCase::IgnoreCase))
+	{
+		bModern = true;
 		bPosesReady = true;
 	}
 	else if (Spec.Equals(TEXT("dinofly"), ESearchCase::IgnoreCase))
@@ -199,6 +205,7 @@ bool ULBA2SnapshotSubsystem::TickHero(UWorld* World, float DeltaTime)
 		{
 			// Only the script drives the hero during the test.
 			Hero->DisableInput(PC);
+			Hero->SetControlMode(ELBAControlMode::Authentic);
 			Report(TEXT("start"));
 		}
 		++HeroStep;
@@ -217,6 +224,135 @@ bool ULBA2SnapshotSubsystem::TickHero(UWorld* World, float DeltaTime)
 		if (Step.bAction)
 		{
 			Hero->DoBehaviourAction();
+		}
+	}
+	return true;
+}
+
+bool ULBA2SnapshotSubsystem::TickModern(UWorld* World, float DeltaTime)
+{
+	struct FStep
+	{
+		const TCHAR* Name;
+		float Duration;
+		/** Stick, relative to Twinsen's starting heading (X right, Y forward). */
+		FVector2D Input;
+		/** Camera yaw relative to the starting heading (90 = side view of a forward run). */
+		float CameraYaw;
+		bool bJump;
+		/** Seconds between shots during the step (0: one shot at its end). */
+		float Burst;
+	};
+	static const FStep Steps[] =
+	{
+		{ TEXT("idle"), 1.5f, { 0, 0 }, 90, false, 0 },
+		{ TEXT("run_start"), 0.6f, { 0, 1 }, 90, false, 0.05f },
+		{ TEXT("run"), 1.2f, { 0, 1 }, 90, false, 0.1f },
+		{ TEXT("stop"), 0.8f, { 0, 0 }, 90, false, 0.1f },
+		{ TEXT("walk_half_tilt"), 2.0f, { 0, -0.45f }, 90, false, 0.2f },
+		{ TEXT("speed_up"), 1.0f, { 0, -1 }, 90, false, 0.1f },
+		{ TEXT("turn_right"), 1.0f, { -1, 0 }, 180, false, 0.1f },
+		{ TEXT("reverse"), 1.2f, { 1, 0 }, 180, false, 0.1f },
+		{ TEXT("stop_again"), 1.0f, { 0, 0 }, 90, false, 0 },
+		{ TEXT("standing_jump"), 1.4f, { 0, 0 }, 90, true, 0.1f },
+		{ TEXT("run_up"), 1.0f, { 0, 1 }, 90, false, 0 },
+		{ TEXT("running_jump"), 1.4f, { 0, 1 }, 90, true, 0.1f },
+		{ TEXT("run_on"), 0.6f, { 0, 1 }, 90, false, 0 },
+		{ TEXT("stop_end"), 1.0f, { 0, 0 }, 90, false, 0 },
+		{ TEXT("look_around"), 1.5f, { 0, 0 }, 140, false, 0 },
+	};
+	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	ALBACharacter* Hero = PC ? Cast<ALBACharacter>(PC->GetPawn()) : nullptr;
+	if (!Hero)
+	{
+		if (Elapsed > 15.0)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots modern: the player pawn is not an ALBACharacter"));
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+	if (HeroStep < 0)
+	{
+		Hero->DisableInput(PC);
+		Hero->SetControlMode(ELBAControlMode::Modern);
+		if (HeroAt)
+		{
+			FVector Location(HeroAt->X, HeroAt->Y, 100000.0);
+			FHitResult Hit;
+			FCollisionQueryParams Params(TEXT("LBA2HeroAt"), false, Hero);
+			if (World->LineTraceSingleByChannel(Hit, Location, FVector(HeroAt->X, HeroAt->Y, -100000.0), ECC_Visibility, Params))
+			{
+				Location.Z = Hit.Location.Z + Hero->GetSimpleCollisionHalfHeight() + 2.0;
+			}
+			Hero->TeleportTo(Location, FRotator(0.0, HeroAt->Z, 0.0), false, true);
+		}
+		// Closer than in play, to see the legs.
+		Hero->GetCameraBoom()->TargetArmLength = 260.f;
+		Hero->GetCameraBoom()->bEnableCameraLag = false;
+		ModernBaseYaw = Hero->GetActorRotation().Yaw;
+		HeroStep = 0;
+		HeroStepStart = Elapsed;
+		NextReport = Elapsed;
+		NextBurst = Elapsed;
+		BurstIndex = 0;
+		if (Steps[0].bJump)
+		{
+			Hero->ModernJump();
+		}
+	}
+	if (HeroStep >= NumSteps)
+	{
+		if (Elapsed - HeroStepStart > 1.0)
+		{
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+
+	const FStep& Step = Steps[HeroStep];
+	// The stick is camera-relative: turn the heading-relative input into the camera's frame.
+	const float CameraYaw = ModernBaseYaw + Step.CameraYaw;
+	PC->SetControlRotation(FRotator(-10.f, CameraYaw, 0.f));
+	const float Angle = FMath::Atan2(Step.Input.X, Step.Input.Y) - FMath::DegreesToRadians(Step.CameraYaw);
+	const float Magnitude = Step.Input.Size();
+	Hero->SetMoveInput(FVector2D(FMath::Sin(Angle), FMath::Cos(Angle)) * Magnitude);
+
+	if (Elapsed >= NextReport)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots modern %s t=%.2f loc=(%.0f %.0f %.0f) yaw=%.0f %s"), Step.Name, Elapsed - HeroStepStart,
+			Hero->GetActorLocation().X, Hero->GetActorLocation().Y, Hero->GetActorLocation().Z, Hero->GetActorRotation().Yaw, *Hero->GetModernDebugString());
+		NextReport = Elapsed + 0.05;
+	}
+	if (Step.Burst > 0.f && Elapsed >= NextBurst)
+	{
+		const FString File = ShotDirectory / FString::Printf(TEXT("Modern_%02d_%s_%02d.png"), HeroStep, Step.Name, BurstIndex++);
+		FScreenshotRequest::RequestScreenshot(File, false, false);
+		NextBurst = Elapsed + Step.Burst;
+	}
+
+	if (Elapsed - HeroStepStart >= Step.Duration)
+	{
+		if (Step.Burst <= 0.f)
+		{
+			const FString File = ShotDirectory / FString::Printf(TEXT("Modern_%02d_%s.png"), HeroStep, Step.Name);
+			FScreenshotRequest::RequestScreenshot(File, false, false);
+		}
+		++HeroStep;
+		HeroStepStart = Elapsed;
+		NextBurst = Elapsed;
+		BurstIndex = 0;
+		if (HeroStep < NumSteps && Steps[HeroStep].bJump)
+		{
+			Hero->ModernJump();
+		}
+		if (HeroStep >= NumSteps)
+		{
+			Hero->SetMoveInput(FVector2D::ZeroVector);
 		}
 	}
 	return true;
@@ -365,6 +501,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bHero)
 	{
 		return TickHero(World, DeltaTime);
+	}
+	if (bModern)
+	{
+		return TickModern(World, DeltaTime);
 	}
 	if (bDinofly)
 	{
