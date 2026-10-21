@@ -31,6 +31,7 @@ private:
 	bool TickHero(UWorld* World, float DeltaTime);
 	bool TickModern(UWorld* World, float DeltaTime);
 	bool TickDinofly(UWorld* World, float DeltaTime);
+	bool TickWind(UWorld* World, float DeltaTime);
 	bool TickScenes(UWorld* World, float DeltaTime);
 	bool TickLadder(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
@@ -44,6 +45,10 @@ private:
 	float ModernBaseYaw = 0.f;
 	/** -LBA2Shots=dinofly: Twinsen summons the Dinofly, which flies a scripted sequence of inputs. */
 	bool bDinofly = false;
+	/** -LBA2Shots=wind: the Dinofly hovers hands-off at places of Citadel's storm, then tries to fly away and climb. */
+	bool bWind = false;
+	bool bStepStarted = false;
+	FVector StepStartLocation = FVector::ZeroVector;
 	/** -LBA2Shots=scenes: scene changes through doors (-LBA2Doors=target scenes) and lba.Scene (-LBA2SceneEnd). */
 	bool bScenes = false;
 	TArray<int32> SceneDoors;

@@ -233,11 +233,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Airflow|Physics", meta = (ClampMin = "0.01"))
 	float WakeTime = 0.6f;
 
-	/** Wind (cm/s), added to the level's (read from its rain, if any). */
+	/** Wind (cm/s), added to the level's (ULBAWindSubsystem). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Airflow|Physics")
 	FVector Wind = FVector::ZeroVector;
 
-	/** Takes the level's wind from its rain system (Citadel's storm). */
+	/** The air moves with the level's wind (Citadel's storm, see ALBAStorm) where the body is. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Airflow|Physics")
 	bool bUseLevelWind = true;
 
@@ -259,8 +259,6 @@ protected:
 private:
 	void CreateStrokes();
 	USceneComponent* GetSourceParent() const;
-	/** Horizontal wind of the level's rain (NS_LBA_Rain's drop drift), zero without rain. */
-	FVector FindLevelWind() const;
 	/** Camera location and the size of a pixel 1 cm in front of it (radians), for the strokes' minimum width. */
 	bool GetCamera(FVector& OutLocation, float& OutPixelAngle) const;
 

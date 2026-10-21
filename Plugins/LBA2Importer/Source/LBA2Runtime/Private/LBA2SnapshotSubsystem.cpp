@@ -23,6 +23,7 @@
 #include "LBAFlightMovementComponent.h"
 #include "LBASceneAsset.h"
 #include "LBASceneTravelSubsystem.h"
+#include "LBAWindSubsystem.h"
 #include "LBAZoneVolume.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
@@ -62,6 +63,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	else if (Spec.Equals(TEXT("dinofly"), ESearchCase::IgnoreCase))
 	{
 		bDinofly = true;
+		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("wind"), ESearchCase::IgnoreCase))
+	{
+		bWind = true;
 		bPosesReady = true;
 	}
 	else if (Spec.Equals(TEXT("ladder"), ESearchCase::IgnoreCase))
@@ -520,6 +526,102 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 	return true;
 }
 
+bool ULBA2SnapshotSubsystem::TickWind(UWorld* World, float DeltaTime)
+{
+	struct FStep
+	{
+		const TCHAR* Name;
+		float Duration;
+		/** The Dinofly starts hovering there (zero: carries on), facing Yaw. */
+		FVector Start;
+		float Yaw;
+		/** X turn right, Y forward. */
+		FVector2D Move;
+		float Vertical;
+	};
+	// Places of Citadel (storm): Lupin-Burg, Twinsen's house, the cliffs, the dome, the wall, far out at sea, the ceiling.
+	static const FStep Steps[] =
+	{
+		{ TEXT("eye_lupinburg"), 5.f, { 35000, 38500, 1500 }, 0, { 0, 0 }, 0 },
+		{ TEXT("house"), 5.f, { 34314, 42746, 1200 }, 90, { 0, 0 }, 0 },
+		{ TEXT("cliffs"), 5.f, { 29614, 30277, 2500 }, 0, { 0, 0 }, 0 },
+		{ TEXT("dome"), 5.f, { 26592, 33832, 1500 }, 0, { 0, 0 }, 0 },
+		{ TEXT("wall_south"), 6.f, { 35000, 47500, 800 }, 90, { 0, 0 }, 0 },
+		{ TEXT("fly_away_south"), 8.f, { 35000, 47500, 800 }, 90, { 0, 1 }, 0 },
+		{ TEXT("far_sea_drift"), 6.f, { 35000, 60000, 800 }, 90, { 0, 0 }, 0 },
+		{ TEXT("climb_to_ceiling"), 14.f, { 34314, 42746, 3500 }, 0, { 0, 0 }, 1 },
+		{ TEXT("hold_high"), 8.f, FVector::ZeroVector, 0, { 0, 0 }, 0 },
+	};
+	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (HeroStep < 0)
+	{
+		ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+		if (!Hero || !Hero->SummonDinofly())
+		{
+			if (Elapsed > 15.0)
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots wind: no Dinofly to ride"));
+				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+				return false;
+			}
+			return true;
+		}
+		HeroStep = 0;
+		HeroStepStart = Elapsed;
+		NextReport = Elapsed;
+		bStepStarted = false;
+		Pawn = PC->GetPawn();
+	}
+	if (HeroStep >= NumSteps)
+	{
+		FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+		return false;
+	}
+
+	const FStep& Step = Steps[HeroStep];
+	ALBADinofly* Dinofly = Cast<ALBADinofly>(Pawn);
+	if (!Dinofly)
+	{
+		return true;
+	}
+	ULBAFlightMovementComponent* Flight = Dinofly->GetFlight();
+	Dinofly->DisableInput(PC);
+	if (!bStepStarted)
+	{
+		bStepStarted = true;
+		if (!Step.Start.IsZero())
+		{
+			Dinofly->SetActorLocationAndRotation(Step.Start, FRotator(0.f, Step.Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+			Flight->StartHovering();
+		}
+		StepStartLocation = Dinofly->GetActorLocation();
+	}
+	Dinofly->SetHoverInput(Step.Move, Step.Vertical);
+	if (Elapsed >= NextReport)
+	{
+		const ULBAWindSubsystem* Wind = World->GetSubsystem<ULBAWindSubsystem>();
+		const FVector Location = Dinofly->GetActorLocation();
+		const FVector Air = Wind ? Wind->GetWindAt(Location) : FVector::ZeroVector;
+		const FVector Drift = Flight->GetWindDrift();
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots wind %s t=%.2f loc=(%.0f %.0f %.0f) moved=%.0f vel=(%.0f %.0f %.0f) drift=(%.0f %.0f %.0f) wind=(%.0f %.0f %.0f) eye=%.2f landed=%d floating=%d"),
+			Step.Name, Elapsed - HeroStepStart, Location.X, Location.Y, Location.Z, FVector::Dist2D(Location, StepStartLocation),
+			Flight->Velocity.X, Flight->Velocity.Y, Flight->Velocity.Z, Drift.X, Drift.Y, Drift.Z, Air.X, Air.Y, Air.Z,
+			Wind ? Wind->GetEyeDistance(Location) : -1.f, Flight->IsLanded() ? 1 : 0, Flight->IsFloating() ? 1 : 0);
+		NextReport = Elapsed + 0.25;
+	}
+	if (Elapsed - HeroStepStart >= Step.Duration)
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Wind_%02d_%s.png"), HeroStep, Step.Name), false, false);
+		++HeroStep;
+		HeroStepStart = Elapsed;
+		bStepStarted = false;
+	}
+	return true;
+}
+
 bool ULBA2SnapshotSubsystem::TickScenes(UWorld* World, float DeltaTime)
 {
 	APlayerController* PC = World->GetFirstPlayerController();
@@ -758,6 +860,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bDinofly)
 	{
 		return TickDinofly(World, DeltaTime);
+	}
+	if (bWind)
+	{
+		return TickWind(World, DeltaTime);
 	}
 	if (bScenes)
 	{

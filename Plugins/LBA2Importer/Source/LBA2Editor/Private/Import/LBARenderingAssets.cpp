@@ -7,6 +7,7 @@
 #include "Import/LBADither3DTextures.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
+#include "LBAStormWind.h"
 #include "LBATypes.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
@@ -18,7 +19,6 @@
 #include "Materials/MaterialExpressionParticleRandom.h"
 #include "Materials/MaterialExpressionParticleRelativeTime.h"
 #include "Materials/MaterialExpressionParticleSize.h"
-#include "Materials/MaterialExpressionParticleSpeed.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSceneTexture.h"
 #include "Materials/MaterialExpressionSubtract.h"
@@ -27,6 +27,7 @@
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
 #include "Materials/MaterialInstanceConstant.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "TextureCompiler.h"
 
 namespace
@@ -711,6 +712,37 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 	return LBAMaterials::EndRebuild(Context, Material);
 }
 
+UMaterialParameterCollection* FLBARenderingAssets::GetWindParameters()
+{
+	if (WindParameters)
+	{
+		return WindParameters;
+	}
+	WindParameters = Context.CreateOrReuseAsset<UMaterialParameterCollection>(GetFolder(), TEXT("MPC_LBA_Wind"));
+	if (!WindParameters)
+	{
+		return nullptr;
+	}
+	// Defaults all zero: no storm, no wind. Existing parameters keep their ids (materials refer to them by id).
+	bool bChanged = false;
+	for (const FName Name : FLBAStormWind::ShaderParameterNames)
+	{
+		if (!WindParameters->GetVectorParameterByName(Name))
+		{
+			FCollectionVectorParameter& Parameter = WindParameters->VectorParameters.AddDefaulted_GetRef();
+			Parameter.ParameterName = Name;
+			Parameter.DefaultValue = FLinearColor::Transparent;
+			bChanged = true;
+		}
+	}
+	if (bChanged)
+	{
+		WindParameters->PostEditChange();
+		Context.MarkForSave(WindParameters);
+	}
+	return WindParameters;
+}
+
 UMaterial* FLBARenderingAssets::GetRainDropMaster()
 {
 	if (!RainDropMaster)
@@ -723,7 +755,7 @@ UMaterial* FLBARenderingAssets::GetRainDropMaster()
 UMaterial* FLBARenderingAssets::CreateRainDropMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 6;
+	constexpr int32 Version = 9;
 
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_RainDrop"), &bExisted);
@@ -800,7 +832,6 @@ UMaterial* FLBARenderingAssets::CreateRainDropMaster()
 	UMaterialExpression* Particle = Add(UMaterialExpressionParticlePositionWS::StaticClass(), -900, -320);
 	UMaterialExpression* Position = Add(UMaterialExpressionWorldPosition::StaticClass(), -900, -240);
 	UMaterialExpression* Direction = Add(UMaterialExpressionParticleDirection::StaticClass(), -900, -160);
-	UMaterialExpression* Speed = Add(UMaterialExpressionParticleSpeed::StaticClass(), -900, -120);
 	UMaterialExpression* Size = Add(UMaterialExpressionParticleSize::StaticClass(), -900, -80);
 	UMaterialExpression* UV = Add(UMaterialExpressionTextureCoordinate::StaticClass(), -900, 0);
 	UMaterialExpression* Random = Add(UMaterialExpressionParticleRandom::StaticClass(), -900, 80);
@@ -818,25 +849,17 @@ UMaterial* FLBARenderingAssets::CreateRainDropMaster()
 		TEXT("return LBARainDropVisibility(LBARainDensity(DensityMap, DensityMapSampler, Particle.xy, DensityBounds), Random);"));
 	ConnectRgba(Visibility, TEXT("DensityBounds"));
 
-	// Vertex: the streak trailing the drop along its motion relative to the camera, at least MinPixels wide.
+	// Vertex: the streak trailing the drop along its path, at least MinPixels wide.
 	UMaterialExpressionCustom* Offset = MakeCustom(TEXT("LBA rain drop offset"), CMOT_Float3, -400,
 		{
 			{ TEXT("ToCamera"), Subtract(Camera, Particle, -400) },
 			{ TEXT("VertexOffset"), Subtract(Position, Particle, -320) },
 			{ TEXT("Direction"), Direction },
-			{ TEXT("Speed"), Speed },
 			{ TEXT("Size"), Size },
 			{ TEXT("MinPixels"), MinPixels },
-			{ TEXT("MaxStretch"), Scalar(TEXT("MaxStretch"), 16.f) },
-			{ TEXT("CameraMotion"), Scalar(TEXT("CameraMotion"), 1.5f) },
-			{ TEXT("MaxCameraSpeed"), Scalar(TEXT("MaxCameraSpeed"), 10000.f) },
-			{ TEXT("TunnelStart"), Scalar(TEXT("TunnelStart"), 500.f) },
-			{ TEXT("TunnelFull"), Scalar(TEXT("TunnelFull"), 2500.f) },
-			{ TEXT("TunnelFall"), Scalar(TEXT("TunnelFall"), 0.1f) },
 			{ TEXT("Visibility"), Visibility },
 		},
-		TEXT("return LBARainDropOffset(ToCamera, VertexOffset, Direction, Speed, Size, MinPixels, MaxStretch, CameraMotion, MaxCameraSpeed, ")
-		TEXT("TunnelStart, TunnelFull, TunnelFall, Visibility);"));
+		TEXT("return LBARainDropOffset(ToCamera, VertexOffset, Direction, Size, MinPixels, Visibility);"));
 	UMaterialEditingLibrary::ConnectMaterialProperty(Offset, TEXT(""), MP_WorldPositionOffset);
 
 	// Pixel: defaults follow the original's rain (RAIN.CPP) colors; levels set their palette's, linear.

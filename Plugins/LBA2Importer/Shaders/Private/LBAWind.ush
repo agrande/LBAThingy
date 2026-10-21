@@ -1,0 +1,92 @@
+// LBAWind.ush
+//
+// The storm wind (FLBAStormWind in LBAStormWind.h/.cpp) on the GPU: the same closed-form function of position and time.
+// Its parameters are packed in eight float4 (FLBAStormWind::GetShaderParameters), which ULBAWindSubsystem writes each
+// frame into the MPC_LBA_Wind parameter collection for materials. Keep in sync with FLBAStormWind::Evaluate.
+
+#pragma once
+
+struct FLBAStormWindParameters
+{
+	float4 Center;	// xyz: the eye's center (z: the sea level), w: 1 when there is a storm, 0 for no wind
+	float4 Axes;	// cos and sin of the eye's yaw, spin (1 or -1), time (s)
+	float4 Radii;	// eye radii (cm): ahead (+X), behind, right (+Y), left
+	float4 Speed;	// calm speed, wall speed (cm/s), eye sharpness, outer decay
+	float4 Shape;	// height gain, gain height (cm), inflow angle (radians), wall width
+	float4 Gusts;	// eye gustiness, outer gustiness, gust angle (radians), ceiling gustiness
+	float4 Ceiling;	// turbulence start, ceiling (cm above the sea), sinking speed, air pocket speed (cm/s)
+	float4 Bumps;	// bump speed (cm/s)
+};
+
+FLBAStormWindParameters LBAMakeStormWindParameters(float4 Center, float4 Axes, float4 Radii, float4 Speed, float4 Shape,
+	float4 Gusts, float4 Ceiling, float4 Bumps)
+{
+	FLBAStormWindParameters W;
+	W.Center = Center;
+	W.Axes = Axes;
+	W.Radii = Radii;
+	W.Speed = Speed;
+	W.Shape = Shape;
+	W.Gusts = Gusts;
+	W.Ceiling = Ceiling;
+	W.Bumps = Bumps;
+	return W;
+}
+
+// One travelling wave of the gust patterns: wavelengths along X and Y (cm, negative: the other way), rad/s, phase.
+float LBAWindWave(float3 P, float Time, float LengthX, float LengthY, float Speed, float Phase)
+{
+	return sin(P.x / LengthX + P.y / LengthY - Speed * Time + Phase);
+}
+
+// Wind velocity (cm/s) at a world position.
+float3 LBAStormWind(float3 Position, FLBAStormWindParameters W)
+{
+	BRANCH
+	if (W.Center.w <= 0.0)
+	{
+		return 0.0;
+	}
+	const float Cos = W.Axes.x;
+	const float Sin = W.Axes.y;
+	const float Time = W.Axes.w;
+
+	// Into the eye's frame, in eye radii along each half axis.
+	const float2 D = Position.xy - W.Center.xy;
+	const float2 L = float2(Cos * D.x + Sin * D.y, -Sin * D.x + Cos * D.y);
+	const float2 R = max(float2(L.x >= 0.0 ? W.Radii.x : W.Radii.y, L.y >= 0.0 ? W.Radii.z : W.Radii.w), 1.0);
+	const float2 Q = L / R;
+	const float Eye = length(Q);
+
+	// Outward across the eye's contours, and the swirl along them.
+	float2 G = Q / R;
+	G /= max(length(G), 1e-9);
+	const float2 Out = float2(Cos * G.x - Sin * G.y, Sin * G.x + Cos * G.y);
+	const float2 Along = float2(-Out.y, Out.x) * W.Axes.z;
+
+	const float WallWidth = W.Shape.w;
+	const float Ramp = saturate((Eye - (1.0 - WallWidth)) / max(WallWidth, 1e-3));
+	float Speed = Eye <= 1.0
+		? W.Speed.x + (W.Speed.y - W.Speed.x) * pow(Eye, W.Speed.z)
+		: W.Speed.y * pow(Eye, -W.Speed.w);
+	const float Height = Position.z - W.Center.z;
+	Speed *= 1.0 + W.Shape.x * smoothstep(0.0, max(W.Shape.y, 1.0), Height);
+	const float Inflow = W.Shape.z * Ramp;
+	const float2 Mean = Speed * (cos(Inflow) * Along - sin(Inflow) * Out);
+
+	// Gusts vary the speed and swing the direction.
+	const float Turbulence = smoothstep(W.Ceiling.x, max(W.Ceiling.y, W.Ceiling.x + 1.0), Height);
+	const float Gustiness = W.Gusts.x + (W.Gusts.y - W.Gusts.x) * smoothstep(0.7, 1.5, Eye) + W.Gusts.w * Turbulence;
+	const float SpeedNoise = (LBAWindWave(Position, Time, 2400.0, 3700.0, 1.1, 0.0) + LBAWindWave(Position, Time, -3100.0, 1900.0, 1.7, 1.3)
+		+ LBAWindWave(Position, Time, 1500.0, -2700.0, 2.3, 4.1)) / 3.0;
+	const float AngleNoise = (LBAWindWave(Position, Time, 2900.0, 2100.0, 0.9, 2.2) + LBAWindWave(Position, Time, -1700.0, -3300.0, 1.9, 5.0)) / 2.0;
+	const float Swing = W.Gusts.z * Gustiness / max(W.Gusts.y, 1e-3) * AngleNoise;
+	const float2 Gust = float2(cos(Swing) * Mean.x - sin(Swing) * Mean.y, sin(Swing) * Mean.x + cos(Swing) * Mean.y) * (1.0 + Gustiness * SpeedNoise);
+
+	// Near the ceiling the air sinks, drops in sudden pockets and bumps up and down.
+	const float PocketWave = saturate(LBAWindWave(Position, Time, 900.0, 1300.0, 2.9, 0.7) * LBAWindWave(Position, Time, -1100.0, 700.0, 2.1, 3.3));
+	const float Pocket = PocketWave * PocketWave;
+	const float Bump = (LBAWindWave(Position, Time, 600.0, -800.0, 4.0, 1.9) + LBAWindWave(Position, Time, -700.0, -500.0, 5.3, 0.4)) / 2.0;
+	const float Vertical = Turbulence * (-W.Ceiling.z - W.Ceiling.w * Pocket + W.Bumps.x * Bump);
+	return float3(Gust, Vertical);
+}

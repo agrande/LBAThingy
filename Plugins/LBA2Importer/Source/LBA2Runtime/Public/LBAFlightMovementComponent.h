@@ -34,6 +34,10 @@ enum class ELBAFlightMode : uint8
  * (like a real stick commands load), the roll input commands the bank, and turning comes from the banked
  * lift. Assists: more trim when banked (level-ish turns), a load factor limit, soft stall protection, and a
  * flight path limit that prevents loops.
+ *
+ * Wind (ULBAWindSubsystem): flying, all of the above happens in the air, and the air carries the Dinofly along
+ * (Velocity = its motion through the air + the drift the wind gives it). Hands-off it drifts with the wind; holding a
+ * place means flying against it. Floating, the wind pushes it gently along the water; on the ground, not at all.
  */
 UCLASS(ClassGroup = Movement, meta = (BlueprintSpawnableComponent))
 class LBA2RUNTIME_API ULBAFlightMovementComponent : public UPawnMovementComponent
@@ -250,6 +254,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Ground")
 	FVector2D TakeoffVelocity = FVector2D(250.f, 450.f);
 
+	/** How much of the wind carries the Dinofly. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Wind")
+	float WindExposure = 1.f;
+
+	/**
+	 * How quickly its drift follows the wind (1/s), horizontally and vertically: gusts push it over about a second,
+	 * air pockets drop it at once.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Wind")
+	FVector2D WindResponse = FVector2D(1.5f, 4.f);
+
+	/** Fraction of the wind that pushes it along the water when floating. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Wind")
+	float FloatingWindDrift = 0.15f;
+
 	/** Glide mode input: pitch [-1 nose down, 1 nose up], roll [-1 left, 1 right], flap and brake [0, 1]. */
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void SetFlightInput(float InPitch, float InRoll, float InFlap, float InBrake);
@@ -336,6 +355,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	float GetTrimSpeed() const;
 
+	/** Velocity the wind gives the Dinofly (cm/s), part of Velocity. */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	FVector GetWindDrift() const { return WindDrift; }
+
+	/** Motion through the air (cm/s): Velocity without the wind's drift. */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	FVector GetAirVelocity() const { return Velocity - WindDrift; }
+
 	/** Horizontal direction of travel (or facing, when still). */
 	FVector GetHeading() const { return Heading; }
 
@@ -373,6 +400,8 @@ private:
 	/** Takeoff requested by the inputs of the current mode. */
 	bool WantsTakeoff() const;
 	void TakeOff();
+	/** The wind carries the Dinofly: updates its drift and moves it by it (after the flight's own move). */
+	void ApplyWind(float DeltaTime);
 
 	float Pitch = 0.f;
 	float Roll = 0.f;
@@ -403,4 +432,6 @@ private:
 	float Bank = 0.f;
 	float Alpha = 0.f;
 	FVector Heading = FVector::ForwardVector;
+	/** Drift the wind gives (cm/s), following it with some lag. */
+	FVector WindDrift = FVector::ZeroVector;
 };

@@ -582,7 +582,8 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 	}
 	if (IsHovering())
 	{
-		const float Horizontal = Flight->Velocity.Size2D();
+		// Through the air: drifting with the wind still looks like hovering.
+		const float Horizontal = Flight->GetAirVelocity().Size2D();
 		if (bDiving)
 		{
 			// Tail steering in the spiral; pulling out of a straight dive beats the wings.
@@ -599,7 +600,7 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 		if (Horizontal < 250.f)
 		{
 			// Hovering in place: the flapping cycle, beating faster when climbing.
-			const float Vertical = Flight->Velocity.Z;
+			const float Vertical = Flight->GetAirVelocity().Z;
 			if (Vertical < -250.f)
 			{
 				PlaySlot(DinoflyAnim::Descend);
@@ -621,7 +622,7 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 		}
 		return;
 	}
-	const float Speed = Flight->Velocity.Size();
+	const float Speed = Flight->GetAirVelocity().Size();
 	const bool bFlapping = Flight->GetFlapInput() > 0.f;
 	const float Bank = Flight->GetBank();
 	if (Speed < 350.f || (bFlapping && Speed < 500.f))
@@ -666,11 +667,7 @@ void ALBADinofly::UpdateCamera(float DeltaSeconds)
 	const FRotator Target(FMath::Clamp(-15.f - MaxCameraDrop * CameraDrop + 0.4f * PathPitch, -60.f, 20.f), Yaw, 0.f);
 	CameraBase = FMath::RInterpTo(CameraBase, Target, DeltaSeconds, bHovering ? CameraFollowSpeed : 2.5f);
 
-	// The look offset eases back behind the Dinofly when the player stops looking around.
-	if (GetWorld()->GetTimeSeconds() - LastLookTime > 1.5f)
-	{
-		LookOffset = FMath::Vector2DInterpTo(LookOffset, FVector2D::ZeroVector, DeltaSeconds, 1.5f);
-	}
+	// The look offset stays where the player left it, turning with the Dinofly.
 	CameraBoom->SetWorldRotation(FRotator(FMath::Clamp(CameraBase.Pitch + LookOffset.Y, -80.f, 60.f), CameraBase.Yaw + LookOffset.X, 0.f));
 
 	// Field of view: wider with speed, accelerations, climbing or descending, and height.
@@ -820,7 +817,7 @@ void ALBADinofly::OnSteerReleased(const FInputActionValue& Value)
 void ALBADinofly::OnLook(const FInputActionValue& Value)
 {
 	const FVector2D Look = Value.Get<FVector2D>();
-	LookOffset.X = FMath::Clamp(LookOffset.X + Look.X, -170.f, 170.f);
+	// All the way around, as many times as wanted.
+	LookOffset.X = FRotator::NormalizeAxis(LookOffset.X + Look.X);
 	LookOffset.Y = FMath::Clamp(LookOffset.Y + Look.Y, -60.f, 60.f);
-	LastLookTime = GetWorld()->GetTimeSeconds();
 }

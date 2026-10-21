@@ -6,7 +6,6 @@
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
@@ -14,7 +13,7 @@
 #include "HAL/IConsoleManager.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
-#include "NiagaraActor.h"
+#include "LBAWindSubsystem.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 
@@ -30,9 +29,6 @@ namespace
 		TEXT("1 logs the airflow (air speeds, downwash, stroke rates), 2 also draws the body parts and their air velocity."));
 
 	constexpr double GravityAcceleration = 981.0;
-	/** The level's rain system: its drops drift with the wind. */
-	const TCHAR* RainSystemName = TEXT("NS_LBA_Rain");
-	const TCHAR* RainVelocityName = TEXT("User.DropVelocity");
 
 	namespace Param
 	{
@@ -140,22 +136,6 @@ void ULBAAirflowComponent::CreateStrokes()
 		Strokes.Add(Stroke);
 	}
 	SourceStates.SetNum(Strokes.Num());
-	LevelWind = bUseLevelWind ? FindLevelWind() : FVector::ZeroVector;
-}
-
-FVector ULBAAirflowComponent::FindLevelWind() const
-{
-	for (TActorIterator<ANiagaraActor> It(GetWorld()); It; ++It)
-	{
-		const UNiagaraComponent* Rain = It->GetNiagaraComponent();
-		if (Rain && Rain->GetAsset() && Rain->GetAsset()->GetName() == RainSystemName)
-		{
-			const FNiagaraVariableBase Velocity(FNiagaraTypeDefinition::GetVec3Def(), RainVelocityName);
-			const FVector3f Drop = Rain->GetOverrideParameters().GetParameterValueOrDefault<FVector3f>(Velocity, FVector3f::ZeroVector);
-			return FVector(Drop.X, Drop.Y, 0.0);
-		}
-	}
-	return FVector::ZeroVector;
 }
 
 bool ULBAAirflowComponent::IsOnScreen(const FLiveStroke& Live, double Now) const
@@ -227,6 +207,9 @@ void ULBAAirflowComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	{
 		return;
 	}
+	// The air around the body moves with the level's wind there (gusts and air pockets included).
+	const ULBAWindSubsystem* WindSubsystem = GetWorld()->GetSubsystem<ULBAWindSubsystem>();
+	LevelWind = bUseLevelWind && WindSubsystem ? WindSubsystem->GetWindAt(Owner->GetActorLocation()) : FVector::ZeroVector;
 	const FVector AirWind = Wind + LevelWind;
 
 	// The whole body's lift (m (a - g) across the path; all of it when hovering) gives the wake's downwash, which

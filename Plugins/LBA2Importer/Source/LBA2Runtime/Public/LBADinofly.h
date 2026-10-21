@@ -30,7 +30,7 @@ struct FInputActionValue;
  * Glide mode (Tab / View): W/S pitch (W dives unless lba.Dinofly.InvertPitch 1), A/D bank, climb = flap,
  * descend = brake. The camera follows behind, rising and looking down when descending or high above the
  * ground; its field of view widens with speed, accelerations and altitude changes. Mouse / right stick look
- * around, easing back behind after a moment. F / Y = get off (when landed on the ground).
+ * all around; the view stays where it was left. F / Y = get off (when landed on the ground).
  */
 UCLASS(Blueprintable)
 class LBA2RUNTIME_API ALBADinofly : public APawn
@@ -195,8 +195,7 @@ private:
 	float LastYaw = 0.f;
 	float SmoothedAcceleration = 0.f;
 	float LastHorizontalSpeed = 0.f;
-	/** Orbit (yaw, pitch) around the camera following the heading, eased back after a while. */
+	/** Orbit (yaw, pitch) around the camera following the heading; kept until the player looks elsewhere. */
 	FVector2D LookOffset = FVector2D::ZeroVector;
-	float LastLookTime = -100.f;
 	FRotator CameraBase = FRotator::ZeroRotator;
 };

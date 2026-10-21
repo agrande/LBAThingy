@@ -4,14 +4,13 @@
 // slanted by the wind, darker with distance (palette 58 near to 51 far), with a little splash where they hit something.
 // Here:
 //  - Drops are particles (NS_LBA_Rain, kept in view around the camera by Niagara's view recycler) drawn as streaks
-//    by M_LBA_RainDrop: a drop's head is where the particle is, whatever the camera does, and its streak trails back
-//    along its motion relative to the camera. Slow cameras see the drops fall as a still camera would; faster ones
-//    progressively stretch them towards the camera, until ("jump to lightspeed") they all point at where the camera
-//    is going. Never thinner than a pixel (fainter instead, so they don't shimmer), darker with distance, fading in
-//    the fog. Translucency after motion blur: composited after the palette shading, which would otherwise read them
+//    by M_LBA_RainDrop: a drop's head is where the particle is, and its streak trails back along its path through the
+//    world, whatever the camera does. Never thinner than a pixel (fainter instead, so they don't shimmer), darker with
+//    distance, fading in the fog. Translucency after motion blur: composited after the palette shading, which would otherwise read them
 //    as light on the surfaces behind.
 //  - The level's density map thins the rain out where it is lighter (low ground): each drop has its own random
 //    threshold, and only shows where the density is above it.
+//  - With a storm (ALBAStorm), the drops fall through its wind: ULBAWindSubsystem gives them the wind at the camera.
 //  - Splashes are rings on upward surfaces (ground, water) near the camera, a post-process after tonemapping
 //    (M_LBA_Rain): each world cell has its own random drops (thinned out like the drops), and a ring grows and fades
 //    where each one lands. Colors are display colors (sRGB), like the original's palette.
@@ -32,22 +31,6 @@ float LBARainDrawnWidth(float Width, float Depth, float MinPixels)
 	return max(Width, MinPixels * LBARainPixelAtDepth(Depth));
 }
 
-// The camera's velocity (cm/s) since the previous frame, at most MaxSpeed; none when paused or after a camera cut.
-// The previous camera origin is in the previous frame's translated world, hence the change of pre-view translation.
-float3 LBARainCameraVelocity(float MaxSpeed)
-{
-	BRANCH
-	if (View.DeltaTime <= 0.0)
-	{
-		return 0.0;
-	}
-	const float3 Moved = (View.TranslatedWorldCameraOrigin - View.PrevTranslatedWorldCameraOrigin)
-		- ((View.PreViewTranslationHigh - View.PrevPreViewTranslationHigh) + (View.PreViewTranslationLow - View.PrevPreViewTranslationLow));
-	const float3 Velocity = Moved / View.DeltaTime;
-	const float Speed = length(Velocity);
-	return Speed > MaxSpeed ? Velocity * (MaxSpeed / Speed) : Velocity;
-}
-
 // Rain density (0 to 1) at a world position, from a level's density map covering Bounds (min XY, 1 / size XY).
 float LBARainDensity(Texture2D Map, SamplerState MapSampler, float2 Position, float4 Bounds)
 {
@@ -62,23 +45,11 @@ float LBARainDropVisibility(float Density, float Random)
 	return saturate((Density * (1.0 + DensitySoftness) - Random) / DensitySoftness);
 }
 
-// How much the camera's motion shapes the streaks, from 0 (TunnelStart, cm/s, and below: the rain looks as it does
-// to a still camera) to 1 (TunnelFull: full speed tunnel).
-float LBARainTunnel(float CameraSpeed, float TunnelStart, float TunnelFull)
-{
-	return smoothstep(TunnelStart, max(TunnelFull, TunnelStart + 1.0), CameraSpeed);
-}
-
-// World position offset that redraws a drop's sprite as what an eye moving with the camera sees: the drop's head
-// stays where the particle is, and its streak trails back along its motion relative to the camera, as long as that
-// motion during the time the drop takes to fall its own length (Size.y; at most MaxStretch times it), and at least
-// MinPixels wide. The camera's motion counts progressively with its speed (see LBARainTunnel), CameraMotion times
-// at full speed, while the drop's own fall drops to TunnelFall of itself: at full speed the streaks point straight
-// at where the camera goes, rather than at where it goes through the rain. Invisible drops collapse to a point.
-// ToCamera: from the particle to the camera; VertexOffset: from the particle to the vertex; Direction and Speed: the
-// particle's velocity, along which Niagara built the sprite (Size: width, length).
-float3 LBARainDropOffset(float3 ToCamera, float3 VertexOffset, float3 Direction, float Speed, float2 Size, float MinPixels,
-	float MaxStretch, float CameraMotion, float MaxCameraSpeed, float TunnelStart, float TunnelFull, float TunnelFall, float Visibility)
+// World position offset that redraws a drop's sprite as a streak: the drop's head stays where the particle is, and its
+// streak trails back along its path (its velocity: Direction), Size.y long and at least MinPixels wide. Invisible drops
+// collapse to a point. ToCamera: from the particle to the camera; VertexOffset: from the particle to the vertex;
+// Direction: the particle's, along which Niagara built the sprite (Size: width, length).
+float3 LBARainDropOffset(float3 ToCamera, float3 VertexOffset, float3 Direction, float2 Size, float MinPixels, float Visibility)
 {
 	BRANCH
 	if (Visibility <= 0.0)
@@ -90,18 +61,10 @@ float3 LBARainDropOffset(float3 ToCamera, float3 VertexOffset, float3 Direction,
 	const float Along = sign(dot(VertexOffset, Direction));
 	const float Across = sign(dot(VertexOffset, SpriteRight));
 
-	const float3 Camera = LBARainCameraVelocity(MaxCameraSpeed);
-	const float Tunnel = LBARainTunnel(length(Camera), TunnelStart, TunnelFull);
-	const float3 Relative = Direction * (Speed * lerp(1.0, TunnelFall, Tunnel)) - Camera * (CameraMotion * Tunnel);
-	const float RelativeSpeed = length(Relative);
-	const float3 Axis = RelativeSpeed > 1.0 ? Relative / RelativeSpeed : Direction;
 	const float Depth = dot(-ToCamera, View.ViewForward);
 	const float Width = LBARainDrawnWidth(Size.x, Depth, MinPixels);
-	const float Length = clamp(RelativeSpeed * Size.y / max(Speed, 1.0), Width, MaxStretch * Size.y);
-	// Seen end-on (rain coming straight at the camera) the streak is a dot: any side will do.
-	const float3 Side = cross(Axis, ToCamera);
-	const float3 Right = dot(Side, Side) > 1e-6 * dot(ToCamera, ToCamera) ? normalize(Side) : SpriteRight;
-	return (Along > 0.0 ? 0.0 : -Length) * Axis + 0.5 * Across * Width * Right - VertexOffset;
+	const float Length = max(Size.y, Width);
+	return (Along > 0.0 ? 0.0 : -Length) * Direction + 0.5 * Across * Width * SpriteRight - VertexOffset;
 }
 
 // Color (linear) and opacity of a drop's pixel. UV: X across the streak, Y along it (1 at the drop's head). ToCamera:

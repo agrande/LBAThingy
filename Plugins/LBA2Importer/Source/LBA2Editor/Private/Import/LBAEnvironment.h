@@ -118,6 +118,15 @@ struct FLBAEnvironmentPreset
 	UTexture2D* RainDensity = nullptr;
 	FBox2D RainDensityBounds = FBox2D(ForceInit);
 
+	/**
+	 * Storm wind (an ALBAStorm, see FLBAStormWind), none without bStorm: a small hurricane whose calm eye is centered on
+	 * StormEye (island cubes: cube (x, y) spans x to x + 1), its wall StormRadii cubes away (ahead +X, behind -X, right
+	 * +Y, left -Y). Its other settings are FLBAStormWind's.
+	 */
+	bool bStorm = false;
+	FVector2D StormEye = FVector2D::ZeroVector;
+	FVector4f StormRadii = FVector4f(2.f, 2.f, 2.f, 2.f);
+
 	/** Unreal's sky atmosphere; without it the sky is black, like space. */
 	bool bAtmosphere = true;
 	/**

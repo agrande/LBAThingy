@@ -8,6 +8,7 @@ struct FLBAXpl;
 class UMaterial;
 class UMaterialInstanceConstant;
 class UMaterialInterface;
+class UMaterialParameterCollection;
 class UTexture;
 class UTexture2D;
 class UVolumeTexture;
@@ -27,6 +28,8 @@ class UVolumeTexture;
  *  - M_LBA_RainDrop: rain streaks on NS_LBA_Rain's sprites (plugin content), translucent after motion blur;
  *    M_LBA_Rain: rain splashes, a post-process after tonemapping (both in Shaders/Private/LBARain.ush). Levels with
  *    rain get their own instances (LBAEnvironment).
+ *  - MPC_LBA_Wind: the storm wind for shaders (FLBAStormWind::ShaderParameterNames, Shaders/Private/LBAWind.ush),
+ *    written each frame by ULBAWindSubsystem; all zero (no wind) without a storm.
  */
 class FLBARenderingAssets
 {
@@ -41,6 +44,9 @@ public:
 
 	/** Rain drop material of NS_LBA_Rain (created on first use). */
 	UMaterial* GetRainDropMaster();
+
+	/** The storm wind's parameter collection (created on first use). */
+	UMaterialParameterCollection* GetWindParameters();
 
 private:
 	FString GetFolder() const;
@@ -58,6 +64,7 @@ private:
 	UMaterial* Master = nullptr;
 	UMaterial* RainMaster = nullptr;
 	UMaterial* RainDropMaster = nullptr;
+	UMaterialParameterCollection* WindParameters = nullptr;
 	UMaterialInterface* Looks[2] = {};
 	UVolumeTexture* DitherTexture = nullptr;
 	UTexture2D* DitherRamp = nullptr;

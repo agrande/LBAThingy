@@ -2,6 +2,7 @@
 
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Pawn.h"
+#include "LBAWindSubsystem.h"
 #include "WaterBodyComponent.h"
 #include "WaterBodyManager.h"
 
@@ -140,6 +141,7 @@ void ULBAFlightMovementComponent::StartHovering()
 	bLanded = false;
 	bOnWater = false;
 	Velocity = FVector::ZeroVector;
+	WindDrift = FVector::ZeroVector;
 	LeanPitch = LeanBank = 0.f;
 	TurnRate = 0.f;
 	DivePhase = EDivePhase::None;
@@ -156,6 +158,7 @@ void ULBAFlightMovementComponent::StartLanded()
 	bLanded = true;
 	bOnWater = false;
 	Velocity = FVector::ZeroVector;
+	WindDrift = FVector::ZeroVector;
 	Bank = LeanPitch = LeanBank = TurnRate = 0.f;
 	DivePhase = EDivePhase::None;
 	TakeoffCountdown = -1.f;
@@ -392,6 +395,7 @@ void ULBAFlightMovementComponent::Launch(float ForwardSpeed)
 	Bank = 0.f;
 	Alpha = FMath::DegreesToRadians(TrimAngle);
 	Velocity = Heading * ForwardSpeed;
+	WindDrift = FVector::ZeroVector;
 	UpdateComponentVelocity();
 }
 
@@ -426,6 +430,8 @@ void ULBAFlightMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	}
 	// Hitches must not explode the integration.
 	DeltaTime = FMath::Min(DeltaTime, 0.1f);
+	// The flight model works in the air; the wind's drift is added back once it moved.
+	Velocity -= WindDrift;
 	if (bLanded && bOnWater)
 	{
 		TickFloating(DeltaTime);
@@ -446,8 +452,50 @@ void ULBAFlightMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		}
 		HandleWater();
 	}
+	ApplyWind(DeltaTime);
+	Velocity += WindDrift;
 	bDivePressed = false;
 	UpdateComponentVelocity();
+}
+
+void ULBAFlightMovementComponent::ApplyWind(float DeltaTime)
+{
+	if (bLanded && !bOnWater)
+	{
+		WindDrift = FVector::ZeroVector;
+		return;
+	}
+	FVector Target = FVector::ZeroVector;
+	const ULBAWindSubsystem* Wind = GetWorld()->GetSubsystem<ULBAWindSubsystem>();
+	if (Wind && Wind->HasWind())
+	{
+		Target = Wind->GetWindAt(UpdatedComponent->GetComponentLocation()) * WindExposure;
+		if (bOnWater)
+		{
+			Target = FVector(Target.X, Target.Y, 0.0) * FloatingWindDrift;
+		}
+	}
+	const float FollowHorizontal = 1.f - FMath::Exp(-WindResponse.X * DeltaTime);
+	const float FollowVertical = 1.f - FMath::Exp(-WindResponse.Y * DeltaTime);
+	WindDrift += (Target - WindDrift) * FVector(FollowHorizontal, FollowHorizontal, FollowVertical);
+
+	const FVector Delta = WindDrift * DeltaTime;
+	if (Delta.IsNearlyZero())
+	{
+		return;
+	}
+	FHitResult Hit;
+	SafeMoveUpdatedComponent(Delta, UpdatedComponent->GetComponentQuat(), true, Hit);
+	if (Hit.IsValidBlockingHit())
+	{
+		// Pushed against something: no drift into it, the rest slides along.
+		const float Into = WindDrift | Hit.Normal;
+		if (Into < 0.f)
+		{
+			WindDrift -= Into * Hit.Normal;
+		}
+		SlideAlongSurface(Delta, 1.f - Hit.Time, Hit.Normal, Hit, true);
+	}
 }
 
 void ULBAFlightMovementComponent::Simulate(float DeltaTime)

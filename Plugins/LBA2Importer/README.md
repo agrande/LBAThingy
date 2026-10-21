@@ -108,8 +108,8 @@ modes:
 The camera stays behind the Dinofly, swinging after it with some lag (`CameraFollowSpeed`). It rises and
 looks down at the Dinofly and the ground when descending or high above the ground (`HighAltitude`,
 `MaxCameraDrop`), and its field of view widens with speed, accelerations (each thrust), climbing or
-descending, and height. Looking around with the mouse or right stick (vertical inverted on the stick) eases
-back behind after a moment. It never
+descending, and height. Looking around with the mouse or right stick (vertical inverted on the stick) turns all the
+way around, and the view stays where it was left. It never
 goes under water: it floats on the sea (and skims off it when gliding in fast).
 
 | Key | Hover | Glide |
@@ -119,12 +119,19 @@ goes under water: it floats on the sea (and skims off it when gliding in fast).
 | Space, gamepad A or right trigger (hold) | Climb (take off) | Flap (take off) |
 | Left Ctrl, C, gamepad B or left trigger (hold) | Descend (land) | Brake |
 | Left Shift, gamepad X or right bumper (tap, repeat) | Thrusters (in the air only) | |
-| Mouse, right stick | Look around (eases back behind) | Look around (eases back behind) |
+| Mouse, right stick | Look around (all around; stays put) | Look around (all around; stays put) |
 | Tab, gamepad View | Switch to glide | Switch to hover |
 | F / gamepad Y | Get off (once landed on the ground, not at sea); the Dinofly waits there | |
 
 `-LBA2Shots=dinofly` runs a scripted ride (mount, walk, takeoff, moves, turns, thrusters, landing at sea, paddling, landing on the ground, dismount) that logs the
 flight state and screenshots each step.
+
+**Wind.** The Dinofly flies through the air and the level's wind carries it (its velocity = its motion through the air +
+a drift that follows the wind over about a second, air pockets at once; Dinofly > Flight > Wind). Hands-off it drifts;
+holding a place means flying against the wind. Floating, the wind pushes it gently along the water; on the ground, not
+at all. Citadel's wind is a small hurricane around the island (`ALBAStorm`, see [Storm wind](#storm-wind)).
+`-LBA2Shots=wind` (on `L_CITADEL`) hovers hands-off at a few places (Lupin-Burg, Twinsen's house, the cliffs, the
+dome, the wall, far out at sea), tries to fly away and to climb to the ceiling, and logs the drift.
 
 **Airflow strokes.** A few short comic speed lines come off the Dinofly where the airflow breaks away from its body
 (`ULBAAirflowComponent`, reusable on any flyer). They start at hotspots (wingtips, wings, tail tip, feet, Twinsen's head,
@@ -143,8 +150,8 @@ towards the camera (none when the flow runs towards or away from it). As long as
 its air speed, like its energy), never more than `MaxStrokes` (6) on screen at once, and none when it stands still.
 Their look blends two styles by air speed (`Slow`, `Fast`: width, opacity, length, life, loop chance and size): small,
 faint, lingering and loopy when it barely moves, quickly fat, opaque and straight (`BoldnessBias` 3: a sixth of
-`FullSpeed` is already 40% of the way). The air is pushed down by the lift (strokes tilt with the downwash) and carried by the wind: on
-Citadel the wind is read from the level's rain, so flying into it gives more strokes blown back. They are white with a
+`FullSpeed` is already 40% of the way). The air is pushed down by the lift (strokes tilt with the downwash) and carried by the level's wind
+where the Dinofly is (`ULBAWindSubsystem`): flying into it gives more strokes blown back, drifting with it hardly any. They are white with a
 dark ink edge, unlit after motion blur (`Effects/M_LBA_Airflow`), and stand out from the rain. Look and physics are
 properties of the component (Dinofly > Airflow: color, width, stroke life and length, density, speeds, mass, wake,
 curvature, loops...); the drawing is the plugin's `Effects/NS_LBA_Airflow` (one ribbon per stroke, closed-form path in
@@ -287,19 +294,31 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   section's fog distances (scaled by *Fog Distance Scale*), applied after shading like the original's
   fog tables. An island's preset can set its own fog instead: Citadel's storm is a dark grey soup from
   6 m past the camera, nearly the same at every height, hiding everything about 60 m away.
+- <a id="storm-wind"></a>**Storm wind** (Citadel): an `ALBAStorm` actor (`Storm`) whose location is the eye of a small
+  hurricane, at sea level. `FLBAStormWind` is the whole wind as one closed-form function of position and time (no
+  textures or state, so it can be computed anywhere; `Shaders/Private/LBAWind.ush` is the same function for shaders):
+  still at the center of the eye (over Lupin-Burg), rising steadily (r^1.5) through a breeze around Twinsen's house
+  (2.6 m/s) to the eye wall (8 m/s at sea level, 12 m/s aloft), which hugs the cliffs and the dome
+  (about 6 m/s there) and lies out at sea elsewhere, then dying off slowly (about 5 m/s far out). The wind swirls
+  around the island and spirals in by 25 degrees from the wall outward, so the wall pushes flyers back toward the
+  island. Gusts (travelling waves) vary its speed and direction, more away from the eye. From 35 m up to the
+  ceiling at 60 m the air sinks, with air pockets and bumps: flying higher gets hard, never dangerous. The eye is an
+  egg, one radius per half axis (*RadiusAhead* +X, *RadiusBehind*, *RadiusRight* +Y, *RadiusLeft*); the importer
+  places it from the island preset (eye and radii in island cubes). `ULBAWindSubsystem::GetWindAt` gives the level's
+  wind anywhere; `lba.Wind.Debug 1` draws it around the player (arrows colored by speed) with the eye wall at the
+  player's height, 2 also logs it. Each frame the subsystem writes the wind into `MPC_LBA_Wind` (generated; the
+  storm's *MaterialParameters*) for materials (`Shaders/Private/LBAWind.ush`), and the rain falls through it: its
+  drops move with the wind at the camera (straight down in the eye, leaning more toward the wall).
 - **Rain** (Citadel's storm, both looks): a `Rain` Niagara actor running the plugin's
   `Effects/NS_LBA_Rain` (edit it with Niagara's editor): GPU drops kept in view around the camera
   (Niagara's view recycler, evenly up to 25 m, so moving doesn't thin them out), falling with the
-  original's wind slant (RAIN.CPP) at 70% of its speed (real heavy rain). A drop's head stays where the
-  drop is (world-stable, whatever the camera does), its streak trailing back along its motion relative to
-  the camera. Below *TunnelStart* (5 m/s camera speed) the rain looks as it does to a still camera; up to
-  *TunnelFull* (25 m/s) the camera's motion counts more and more (*CameraMotion* times at full speed,
-  streaks up to *MaxStretch*) while the drops' own fall fades to *TunnelFall* (10%): at full speed every
-  streak points away from where the camera is heading, which shows the direction of flight. Drops fade in
+  original's fall at 70% of its speed (real heavy rain), blown by the storm's wind (with a storm; else the
+  original's wind slant). A drop's head stays where the drop is and its streak trails back along its path
+  through the world, whatever the camera does. Drops fade in
   and out over *LifeFade* of their life (Niagara recycles them in view). Density varies with the place:
   the island's `T_<Island>_RainDensity` (generated from the terrain: full rain over the sea and ground
   above 8 m, 25% below 3 m, smoothed over ~10 m) thins out drops and splashes (*RainDensityMap*,
-  *RainDensityBounds* on both level instances). User parameters, set per level on the actor: *DropCount* (preset Rain x 18000), *DropVelocity*, *DropSize* (width, length), *ViewDistance* (near,
+  *RainDensityBounds* on both level instances). User parameters, set per level on the actor: *DropCount* (preset Rain x 18000), *DropVelocity* (every drop's, every frame: `Tools/rain_niagara_wind.py` adds that module), *DropSize* (width, length), *ViewDistance* (near,
   far), *DropMaterial*. The level's `MI_<Level>_RainDrops` (child of `M_LBA_RainDrop`) draws them after
   motion blur, so after the palette shading: palette colors near/far (*NearColor*, *FarColor*,
   *ColorDistance*), never thinner than *MinPixels* (fainter instead), fading along the trail
@@ -383,6 +402,7 @@ color, shade row / light, surfaces without fog).
   original sea textures, foam lines and sparkles
 - [x] Citadel's lampposts give light during the storm (glowing glass + soft point light with a halo)
 - [x] Citadel's storm: dense dark fog, rain (Niagara drops) and splashes
+- [x] Citadel's storm wind: a small hurricane around the island (calm eye, wall, gusts, turbulent ceiling) that carries the Dinofly and blows the rain
 - [ ] Look, next: Citadel storm (Niagara splashes like the original's spray, lightning, wet surfaces), cloud shadows, interior lights,
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [x] L3c Modern controls (third-person template style; procedural layer over the LBA clips rather than motion matching, too few clips)

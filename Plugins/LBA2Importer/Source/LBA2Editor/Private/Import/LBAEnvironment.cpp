@@ -20,6 +20,7 @@
 #include "Import/LBARenderingAssets.h"
 #include "LBA2Runtime.h"
 #include "LBALookSubsystem.h"
+#include "LBAStorm.h"
 #include "LBATypes.h"
 #include "MaterialEditingLibrary.h"
 #include "NiagaraActor.h"
@@ -113,6 +114,11 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::ForIsland(const FString& IslandName
 		Preset.FogHeightFalloff = 0.05f;
 		Preset.HeightFogColor = FLinearColor(0.055f, 0.058f, 0.066f);
 		Preset.Rain = 0.5f;
+		// A small hurricane around the island: still at its center, over Lupin-Burg, a breeze around Twinsen's house
+		// (the storm only beginning), the wall close to the cliffs and the dome, stronger out at sea and high up.
+		Preset.bStorm = true;
+		Preset.StormEye = FVector2D(8.55, 9.4);
+		Preset.StormRadii = FVector4f(1.7f, 2.7f, 2.2f, 2.7f);
 		// The lampposts are lit during the storm (yellow glass globe; the sunny Citabau's stay off).
 		FLBADecorLight Lamppost;
 		Lamppost.Body = 26;
@@ -377,6 +383,30 @@ namespace
 		Override(FNiagaraTypeDefinition::GetVec2Def(), TEXT("User.ViewDistance"), &Distance, sizeof(Distance));
 		Component->SetParameterOverride(FNiagaraVariableBase(FNiagaraTypeDefinition(UMaterialInterface::StaticClass()), TEXT("User.DropMaterial")),
 			FNiagaraVariant(TObjectPtr<UObject>(Drops)));
+	}
+}
+
+namespace
+{
+	/** The level's storm wind (ALBAStorm at the eye's center, on the sea), if it has one. */
+	void SpawnStorm(FLBAImportContext& Context, UWorld* World, const FLBAEnvironmentPreset& Preset, FName Folder)
+	{
+		if (!Preset.bStorm)
+		{
+			return;
+		}
+		const double Cube = LBA::IslandCubeSize * Context.GetScale();
+		ALBAStorm* Storm = Context.SpawnGeneratedActor<ALBAStorm>(World, FTransform(FVector(Preset.StormEye * Cube, 0.0)), TEXT("Storm"), Folder);
+		if (!Storm)
+		{
+			return;
+		}
+		Storm->Wind.RadiusAhead = Preset.StormRadii.X * Cube;
+		Storm->Wind.RadiusBehind = Preset.StormRadii.Y * Cube;
+		Storm->Wind.RadiusRight = Preset.StormRadii.Z * Cube;
+		Storm->Wind.RadiusLeft = Preset.StormRadii.W * Cube;
+		Storm->Wind.Center = Storm->GetActorLocation();
+		Storm->MaterialParameters = Context.GetRendering().GetWindParameters();
 	}
 }
 
@@ -655,4 +685,5 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 		}
 	}
 	SpawnRain(Context, World, Preset, Xpl, LevelFolder, LevelName, Folder);
+	SpawnStorm(Context, World, Preset, Folder);
 }
