@@ -11,7 +11,8 @@ machine from the original HQR/ILE/OBL files.
 2. Set **Game Directory** to your LBA2 install (Steam/GOG installs are auto-detected).
 3. Optionally set **Remake Directory** to a checkout of
    [lba2remake](https://github.com/LBALab/lba2remake) to use the community's 3D replacement models
-   for interiors (MIT licensed).
+   for interiors (MIT licensed). A checkout at `../lba2remake` or `../refs/lba2remake` next to the
+   project is auto-detected.
 4. Pick layers and press **Import**. Re-importing updates assets in place and only replaces the
    actors the importer generated inside levels; anything you add yourself is kept.
 

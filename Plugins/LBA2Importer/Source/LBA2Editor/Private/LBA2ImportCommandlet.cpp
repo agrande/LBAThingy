@@ -26,6 +26,7 @@ int32 ULBA2ImportCommandlet::Main(const FString& Params)
 	{
 		Settings->RemakeDirectory.Path = Value;
 	}
+	Settings->AutoDetectRemakeDirectory();
 	if (FParse::Param(*Params, TEXT("NoRemake")))
 	{
 		Settings->bUseRemakeModels = false;

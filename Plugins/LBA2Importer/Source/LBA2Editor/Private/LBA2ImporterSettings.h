@@ -141,5 +141,11 @@ public:
 	/** Fills GameDirectory with a known Steam/GOG install when it is empty. */
 	void AutoDetectGameDirectory();
 
+	/** Fills RemakeDirectory with an lba2remake checkout next to the project when it is empty. */
+	void AutoDetectRemakeDirectory();
+
+	/** True when Directory is an lba2remake checkout with the models and metadata the importer uses. */
+	static bool IsRemakeCheckout(const FString& Directory);
+
 	static FString FindDataDirectoryIn(const FString& Directory);
 };

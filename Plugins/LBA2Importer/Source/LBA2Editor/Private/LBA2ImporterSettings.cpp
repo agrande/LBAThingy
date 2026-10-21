@@ -61,3 +61,30 @@ void ULBA2ImporterSettings::AutoDetectGameDirectory()
 		}
 	}
 }
+
+bool ULBA2ImporterSettings::IsRemakeCheckout(const FString& Directory)
+{
+	return !Directory.IsEmpty()
+		&& IFileManager::Get().FileExists(*FPaths::Combine(Directory, TEXT("www/metadata/lba2/layouts.json")))
+		&& IFileManager::Get().DirectoryExists(*FPaths::Combine(Directory, TEXT("www/models/lba2")));
+}
+
+void ULBA2ImporterSettings::AutoDetectRemakeDirectory()
+{
+	if (!RemakeDirectory.Path.IsEmpty())
+	{
+		return;
+	}
+	// Checkouts usually sit beside the project, either directly or in a shared refs folder.
+	static const TCHAR* Candidates[] = { TEXT("../refs/lba2remake"), TEXT("../lba2remake"), TEXT("refs/lba2remake"), TEXT("lba2remake") };
+	for (const TCHAR* Candidate : Candidates)
+	{
+		FString Directory = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectDir(), Candidate));
+		FPaths::NormalizeDirectoryName(Directory);
+		if (IsRemakeCheckout(Directory))
+		{
+			RemakeDirectory.Path = Directory;
+			return;
+		}
+	}
+}

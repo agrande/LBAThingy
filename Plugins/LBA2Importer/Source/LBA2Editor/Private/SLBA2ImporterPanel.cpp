@@ -20,6 +20,7 @@ void SLBA2ImporterPanel::Construct(const FArguments& InArgs)
 {
 	ULBA2ImporterSettings* Settings = GetMutableDefault<ULBA2ImporterSettings>();
 	Settings->AutoDetectGameDirectory();
+	Settings->AutoDetectRemakeDirectory();
 
 	// Layers that are implemented are selected by default.
 	SelectedLayers = { ELBAImportLayer::Islands, ELBAImportLayer::Interiors, ELBAImportLayer::Characters, ELBAImportLayer::Scenes };

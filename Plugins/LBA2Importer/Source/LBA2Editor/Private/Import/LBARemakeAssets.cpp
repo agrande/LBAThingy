@@ -56,8 +56,13 @@ FLBARemakeAssets::FLBARemakeAssets(FLBAImportContext& InContext)
 bool FLBARemakeAssets::Initialize()
 {
 	const ULBA2ImporterSettings& Settings = Context.GetSettings();
-	if (!Settings.bUseRemakeModels || Settings.RemakeDirectory.Path.IsEmpty())
+	if (!Settings.bUseRemakeModels)
 	{
+		return false;
+	}
+	if (Settings.RemakeDirectory.Path.IsEmpty())
+	{
+		Context.Warn(TEXT("No lba2remake checkout configured (Remake Directory, or -RemakeDir=); interiors keep the original bricks."));
 		return false;
 	}
 	const FString Root = Settings.RemakeDirectory.Path;
