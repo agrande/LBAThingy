@@ -17,6 +17,7 @@ public class LBA2Runtime : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"Water",
+			"Niagara",
 			"UMG",
 			"Slate",
 			"SlateCore",

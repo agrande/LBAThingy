@@ -48,6 +48,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
 	TSoftObjectPtr<class ULBAEntityAsset> Dinofly;
 
+	/** Niagara system drawing the airflow strokes around flyers (ULBAAirflowComponent), e.g. the Dinofly. */
+	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
+	TSoftObjectPtr<class UNiagaraSystem> AirflowTrail = TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/LBA2Importer/Effects/NS_LBA_Airflow.NS_LBA_Airflow")));
+
 	/** Folder scanned for the island levels (L_<ISLAND>) listed by the island menu (M / gamepad Start). */
 	UPROPERTY(Config, EditAnywhere, Category = "Island Menu")
 	FString IslandsPath = TEXT("/Game/LBA2/Islands");

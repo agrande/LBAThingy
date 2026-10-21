@@ -1,6 +1,7 @@
 #include "Framework/Docking/TabManager.h"
 #include "GameDelegates.h"
 #include "LBA2Runtime.h"
+#include "LBA2Settings.h"
 #include "LBAIslandTravelSubsystem.h"
 #include "LBASceneAsset.h"
 #include "LBASceneTravelSubsystem.h"
@@ -60,6 +61,12 @@ public:
 					++NumScenes;
 				}
 				UE_LOG(LogLBA2, Display, TEXT("Cooking %d scenes and their levels"), NumScenes);
+				// Effects spawned by code (the flyers' airflow trails).
+				const FSoftObjectPath Airflow = GetDefault<ULBA2Settings>()->AirflowTrail.ToSoftObjectPath();
+				if (Airflow.IsValid())
+				{
+					PackagesToCook.AddUnique(Airflow.GetLongPackageFName());
+				}
 			});
 	}
 

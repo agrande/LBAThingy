@@ -4,6 +4,7 @@
 #include "LBADinofly.generated.h"
 
 class ALBACharacter;
+class ULBAAirflowComponent;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
@@ -137,6 +138,10 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<ULBAFlightMovementComponent> Flight;
+
+	/** Airflow strokes around the body (hotspots, look and physics in its details). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULBAAirflowComponent> Airflow;
 
 	UPROPERTY(VisibleAnywhere, Category = "Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;

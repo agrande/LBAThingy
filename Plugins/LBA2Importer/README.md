@@ -126,6 +126,32 @@ goes under water: it floats on the sea (and skims off it when gliding in fast).
 `-LBA2Shots=dinofly` runs a scripted ride (mount, walk, takeoff, moves, turns, thrusters, landing at sea, paddling, landing on the ground, dismount) that logs the
 flight state and screenshots each step.
 
+**Airflow strokes.** A few short comic speed lines come off the Dinofly where the airflow breaks away from its body
+(`ULBAAirflowComponent`, reusable on any flyer). They start at hotspots (wingtips, wings, tail tip, feet, Twinsen's head,
+the Dinofly's head), only those on the body's sides and back for the way it goes through the air: the tail and the feet
+in forward flight, Twinsen's head in a dive, the feet in a climb, never a part the body pushes ahead (wingtips shed
+whichever way they swing, `MinShedding`). Each hotspot has how hard the flow breaks on it (`Accent`), how much air it
+drags along (`Wake`), how much its strokes ripple (`Turbulence`) and how much its own motion steers them (`Follow`,
+flapping wings). The body drags the air near it along, so a new stroke keeps up with it a while (`Wake`, fading over
+`WakeTime`) and fades in as it falls behind (`FadeInDistance`). A stroke is led by its head, which runs back along the
+path the body takes through the air (`Stream`), its tail following the same path: it grows, slides and shrinks into its
+head, and shows at a glance whether the Dinofly climbs, dives, goes forward or turns. The path follows
+the air: bent like the body's path (`Curvature`, capped at `MaxCurve` degrees), held back near the body by the air it
+drags along, rippling (`Ripple`), and now and then a stroke does a little cartoon loop (`LoopChance`, `LoopSize`), turned
+towards the camera (none when the flow runs towards or away from it). As long as the Dinofly moves at all, at least
+`MinStrokes` (2) are on screen (started from hotspots in view); the faster it flies, the more (mostly as the square of
+its air speed, like its energy), never more than `MaxStrokes` (6) on screen at once, and none when it stands still.
+Their look blends two styles by air speed (`Slow`, `Fast`: width, opacity, length, life, loop chance and size): small,
+faint, lingering and loopy when it barely moves, quickly fat, opaque and straight (`BoldnessBias` 3: a sixth of
+`FullSpeed` is already 40% of the way). The air is pushed down by the lift (strokes tilt with the downwash) and carried by the wind: on
+Citadel the wind is read from the level's rain, so flying into it gives more strokes blown back. They are white with a
+dark ink edge, unlit after motion blur (`Effects/M_LBA_Airflow`), and stand out from the rain. Look and physics are
+properties of the component (Dinofly > Airflow: color, width, stroke life and length, density, speeds, mass, wake,
+curvature, loops...); the drawing is the plugin's `Effects/NS_LBA_Airflow` (one ribbon per stroke, closed-form path in
+its Set Parameters expressions; path in Project Settings > Plugins > LBA2 > Airflow Trail). `lba.Airflow 0` hides them,
+`lba.Airflow.Opacity` and `lba.Airflow.Density` scale them, `lba.Airflow.Debug 1` logs air speeds, the hotspots and
+their stroke rates (2 also draws them).
+
 ### Island menu
 
 M or gamepad Start (on foot or riding) pauses the game and lists every island level found under
