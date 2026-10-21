@@ -29,7 +29,7 @@ namespace
 	TAutoConsoleVariable<int32> CVarAirflowDebug(TEXT("lba.Airflow.Debug"), 0,
 		TEXT("1 logs the airflow (air speeds, downwash, stroke rates), 2 also draws the body parts and their air velocity."));
 
-	constexpr double Gravity = 981.0;
+	constexpr double GravityAcceleration = 981.0;
 	/** The level's rain system: its drops drift with the wind. */
 	const TCHAR* RainSystemName = TEXT("NS_LBA_Rain");
 	const TCHAR* RainVelocityName = TEXT("User.DropVelocity");
@@ -239,7 +239,7 @@ void ULBAAirflowComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	LastVelocity = Velocity;
 	bHasLastVelocity = true;
 	const FVector AirVelocity = Velocity - AirWind;
-	const FVector Force = Mass * (SmoothedAcceleration + FVector(0.0, 0.0, Gravity)) / 100.0;
+	const FVector Force = Mass * (SmoothedAcceleration + FVector(0.0, 0.0, GravityAcceleration)) / 100.0;
 	const double SpanM = Span / 100.0;
 	const double VortexSpacing = UE_DOUBLE_PI / 4.0 * SpanM;
 	const double DiskArea = UE_DOUBLE_PI * SpanM * SpanM / 4.0;
@@ -509,7 +509,7 @@ void ULBAAirflowComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	if (Debug >= 1 && GFrameCounter % 15 == 0)
 	{
 		UE_LOG(LogLBA2, Display, TEXT("Airflow %s: air speed %.1f m/s, wind %.1f m/s, lift %.0f N (%.2f g), downwash %.2f m/s, %.1f strokes/s, %d on screen, boldness %.2f, parts (actor space, trailing x rate):%s"),
-			*Owner->GetName(), SpeedM, AirWind.Size() / 100.0, LiftN, LiftN / (Mass * Gravity / 100.0), Downwash / 100.0, TotalRate, LiveStrokes.Num(), Boldness, *PartRates);
+			*Owner->GetName(), SpeedM, AirWind.Size() / 100.0, LiftN, LiftN / (Mass * GravityAcceleration / 100.0), Downwash / 100.0, TotalRate, LiveStrokes.Num(), Boldness, *PartRates);
 	}
 #endif
 }

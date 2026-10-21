@@ -110,9 +110,13 @@ struct FLBAEnvironmentPreset
 
 	/**
 	 * Rain (both looks), 0 for none: NS_LBA_Rain keeps Rain * 18000 drops in view, with the original's wind slant (70% of
-	 * its speed) and palette colors, and M_LBA_Rain splashes them on the ground.
+	 * its speed) and palette colors, and M_LBA_Rain splashes them on the ground. RainDensity (islands generate it from
+	 * their terrain) thins out drops and splashes: the fraction of them falling at each place of RainDensityBounds
+	 * (world XY), none for full rain everywhere.
 	 */
 	float Rain = 0.f;
+	UTexture2D* RainDensity = nullptr;
+	FBox2D RainDensityBounds = FBox2D(ForceInit);
 
 	/** Unreal's sky atmosphere; without it the sky is black, like space. */
 	bool bAtmosphere = true;

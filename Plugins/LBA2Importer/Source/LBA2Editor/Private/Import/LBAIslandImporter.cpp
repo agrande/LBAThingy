@@ -525,6 +525,107 @@ namespace
 		}
 		return Count > 0 ? Sum / float(Count) : FLinearColor(0.5f, 0.42f, 0.28f);
 	}
+
+	/**
+	 * The island's rain density map (see FLBAEnvironmentPreset::RainDensity) over Bounds: full rain over the sea and
+	 * high ground, LightRain over low ground, blended in between and smoothed over a few tens of meters so the rain
+	 * gets lighter gradually. One texel per few terrain vertices; OutBounds gets the world XY it covers.
+	 */
+	UTexture2D* BuildRainDensity(FLBAImportContext& Context, const FLBAIsland& Island, const FBox& Bounds, const FString& Folder,
+		FBox2D& OutBounds)
+	{
+		constexpr int32 TexelVertices = 4;
+		constexpr float LightRain = 0.25f;
+		// Heights above the sea (cm) where the rain starts getting heavier, and where it is full.
+		constexpr float LowGround = 300.f;
+		constexpr float HighGround = 800.f;
+		constexpr float SmoothRadius = 1000.f;
+
+		const float Scale = Context.GetScale();
+		const double TexelSize = LBA::BrickSizeXZ * Scale * TexelVertices;
+		const FIntPoint Min(FMath::FloorToInt32(Bounds.Min.X / TexelSize), FMath::FloorToInt32(Bounds.Min.Y / TexelSize));
+		const FIntPoint Max(FMath::CeilToInt32(Bounds.Max.X / TexelSize), FMath::CeilToInt32(Bounds.Max.Y / TexelSize));
+		const int32 Width = Max.X - Min.X;
+		const int32 Height = Max.Y - Min.Y;
+		if (Width <= 0 || Height <= 0)
+		{
+			return nullptr;
+		}
+
+		TArray<float> Density;
+		Density.SetNumUninitialized(Width * Height);
+		for (int32 Y = 0; Y < Height; ++Y)
+		{
+			for (int32 X = 0; X < Width; ++X)
+			{
+				float Sum = 0.f;
+				for (int32 VZ = 0; VZ < TexelVertices; ++VZ)
+				{
+					for (int32 VX = 0; VX < TexelVertices; ++VX)
+					{
+						const float Ground = float(GlobalHeight(Island, (Min.X + X) * TexelVertices + VX, (Min.Y + Y) * TexelVertices + VZ)) * Scale;
+						Sum += Ground <= 0.f ? 1.f : FMath::Lerp(LightRain, 1.f, FMath::SmoothStep(LowGround, HighGround, Ground));
+					}
+				}
+				Density[Y * Width + X] = Sum / float(TexelVertices * TexelVertices);
+			}
+		}
+
+		// Gaussian smoothing, one axis then the other (the map's edges are open sea: clamped).
+		const float Sigma = SmoothRadius / float(TexelSize);
+		const int32 Radius = FMath::CeilToInt32(3.f * Sigma);
+		TArray<float> Kernel;
+		float KernelSum = 0.f;
+		for (int32 K = -Radius; K <= Radius; ++K)
+		{
+			KernelSum += Kernel.Add_GetRef(FMath::Exp(-0.5f * FMath::Square(K / Sigma)));
+		}
+		for (float& Weight : Kernel)
+		{
+			Weight /= KernelSum;
+		}
+		TArray<float> Smoothed;
+		Smoothed.SetNumUninitialized(Density.Num());
+		for (const FIntPoint Step : { FIntPoint(1, 0), FIntPoint(0, 1) })
+		{
+			for (int32 Y = 0; Y < Height; ++Y)
+			{
+				for (int32 X = 0; X < Width; ++X)
+				{
+					float Sum = 0.f;
+					for (int32 K = -Radius; K <= Radius; ++K)
+					{
+						const int32 SX = FMath::Clamp(X + K * Step.X, 0, Width - 1);
+						const int32 SY = FMath::Clamp(Y + K * Step.Y, 0, Height - 1);
+						Sum += Kernel[K + Radius] * Density[SY * Width + SX];
+					}
+					Smoothed[Y * Width + X] = Sum;
+				}
+			}
+			Swap(Density, Smoothed);
+		}
+
+		TArray<FColor> Pixels;
+		Pixels.SetNumUninitialized(Density.Num());
+		for (int32 Index = 0; Index < Density.Num(); ++Index)
+		{
+			const uint8 Value = uint8(FMath::RoundToInt32(FMath::Clamp(Density[Index], 0.f, 1.f) * 255.f));
+			Pixels[Index] = FColor(Value, Value, Value, 255);
+		}
+		UTexture2D* Texture = Context.CreateTexture(Folder, FString::Printf(TEXT("T_%s_RainDensity"), *Island.Name), Width, Height, Pixels, false);
+		if (!Texture)
+		{
+			return nullptr;
+		}
+		// Smooth, and read at mip 0 by the rain's vertex shaders: no mips, always resident.
+		Texture->PreEditChange(nullptr);
+		Texture->Filter = TF_Bilinear;
+		Texture->MipGenSettings = TMGS_NoMipmaps;
+		Texture->NeverStream = true;
+		Texture->PostEditChange();
+		OutBounds = FBox2D(FVector2D(Min) * TexelSize, FVector2D(Max) * TexelSize);
+		return Texture;
+	}
 }
 
 FLBAIslandImporter::FLBAIslandImporter(FLBAImportContext& InContext)
@@ -1233,6 +1334,10 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		}
 	}
 
+	if (Preset.Rain > 0.f)
+	{
+		Preset.RainDensity = BuildRainDensity(Context, Island, SeaBounds, TextureFolder, Preset.RainDensityBounds);
+	}
 	LBAEnvironment::Spawn(Context, World, Preset, SunRotation);
 
 	// Player start: highest ground point of the section closest to the island center.

@@ -271,6 +271,20 @@ namespace
 		return FLinearColor(Color.R / 255.f, Color.G / 255.f, Color.B / 255.f);
 	}
 
+	/** Sets a rain material instance's density map (M_LBA_Rain and M_LBA_RainDrop share it), if the level has one. */
+	void SetRainDensity(UMaterialInstanceConstant* Material, const FLBAEnvironmentPreset& Preset)
+	{
+		if (!Preset.RainDensity || !Preset.RainDensityBounds.bIsValid)
+		{
+			return;
+		}
+		const FVector2D Min = Preset.RainDensityBounds.Min;
+		const FVector2D Size = Preset.RainDensityBounds.GetSize();
+		UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(Material, TEXT("RainDensityMap"), Preset.RainDensity);
+		UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Material, TEXT("RainDensityBounds"),
+			FLinearColor(Min.X, Min.Y, 1.0 / FMath::Max(Size.X, 1.0), 1.0 / FMath::Max(Size.Y, 1.0)));
+	}
+
 	/** The level's rain splashes (M_LBA_Rain instance), or null without rain. */
 	UMaterialInterface* GetRainSplashes(FLBAImportContext& Context, const FLBAEnvironmentPreset& Preset, const FLBAXpl* Xpl,
 		const FString& LevelFolder, const FString& LevelName)
@@ -286,6 +300,7 @@ namespace
 		UMaterialEditingLibrary::ClearAllMaterialInstanceParameters(Rain);
 		UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Rain, TEXT("RainAmount"), Preset.Rain);
 		UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(Rain, TEXT("SplashColor"), GetDisplayColor(Xpl, RainNearColor));
+		SetRainDensity(Rain, Preset);
 		UMaterialEditingLibrary::UpdateMaterialInstance(Rain);
 		Context.MarkForSave(Rain);
 		return Rain;
@@ -334,6 +349,7 @@ namespace
 			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Drops, TEXT("FogDensity"), FMath::Loge(20.f) / Preset.FogVisibility);
 			UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Drops, TEXT("FogStart"), Preset.HeightFogStart);
 		}
+		SetRainDensity(Drops, Preset);
 		UMaterialEditingLibrary::UpdateMaterialInstance(Drops);
 		Context.MarkForSave(Drops);
 

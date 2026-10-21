@@ -15,6 +15,8 @@
 #include "Materials/MaterialExpressionCustom.h"
 #include "Materials/MaterialExpressionParticleDirection.h"
 #include "Materials/MaterialExpressionParticlePositionWS.h"
+#include "Materials/MaterialExpressionParticleRandom.h"
+#include "Materials/MaterialExpressionParticleRelativeTime.h"
 #include "Materials/MaterialExpressionParticleSize.h"
 #include "Materials/MaterialExpressionParticleSpeed.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
@@ -42,6 +44,34 @@ namespace
 		Texture->MipGenSettings = TMGS_NoMipmaps;
 		Texture->LODGroup = TEXTUREGROUP_ColorLookupTable;
 		Texture->NeverStream = true;
+	}
+
+	/**
+	 * The rain materials' density map (RainDensityMap, sampled at mip 0 in both vertex and pixel shaders): white, so
+	 * full rain, until a level sets its own (see LBAEnvironment).
+	 */
+	UMaterialExpression* AddRainDensityMap(UMaterial* Material, int32 X, int32 Y)
+	{
+		UMaterialExpressionTextureObjectParameter* Node = Cast<UMaterialExpressionTextureObjectParameter>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionTextureObjectParameter::StaticClass(), X, Y));
+		Node->ParameterName = TEXT("RainDensityMap");
+		Node->Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/WhiteSquareTexture.WhiteSquareTexture"));
+		Node->AutoSetSampleType();
+		Node->Group = TEXT("Rain");
+		return Node;
+	}
+
+	/** Feeds a custom node's input from its vector parameter's RGBA pin rather than the default RGB one. */
+	void ConnectRgba(UMaterialExpressionCustom* Custom, const TCHAR* InputName)
+	{
+		constexpr int32 RgbaOutput = 5;
+		for (FCustomInput& Input : Custom->Inputs)
+		{
+			if (Input.InputName == InputName && Input.Input.Expression)
+			{
+				Input.Input.Connect(RgbaOutput, Input.Input.Expression);
+			}
+		}
 	}
 
 	template <typename T>
@@ -587,7 +617,7 @@ UMaterial* FLBARenderingAssets::GetRainMaster()
 UMaterial* FLBARenderingAssets::CreateRainMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 5;
+	constexpr int32 Version = 7;
 
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_Rain"), &bExisted);
@@ -654,6 +684,8 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 		{ TEXT("SplashDuration"), Scalar(TEXT("SplashDuration"), 0.25f, TEXT("Splashes")) },
 		{ TEXT("SplashRange"), Scalar(TEXT("SplashRange"), 2500.f, TEXT("Splashes")) },
 		{ TEXT("SplashColor"), Vector(TEXT("SplashColor"), FLinearColor(0.53f, 0.53f, 0.47f), TEXT("Splashes")) },
+		{ TEXT("DensityMap"), AddRainDensityMap(Material, -900, 40) },
+		{ TEXT("DensityBounds"), Vector(TEXT("RainDensityBounds"), FLinearColor::Transparent, TEXT("Rain")) },
 	};
 	for (const FInput& Input : Inputs)
 	{
@@ -661,6 +693,7 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 		CustomInput.InputName = Input.Name;
 		CustomInput.Input.Connect(0, Input.Expression);
 	}
+	ConnectRgba(Custom, TEXT("DensityBounds"));
 
 	Custom->Code = TEXT(
 		"FLBARainSettings R;\n"
@@ -671,7 +704,8 @@ UMaterial* FLBARenderingAssets::CreateRainMaster()
 		"R.SplashDuration = max(SplashDuration, 0.01);\n"
 		"R.SplashRange = SplashRange;\n"
 		"R.SplashColor = SplashColor.rgb;\n"
-		"return LBARain(GetViewportUV(Parameters), SceneColor.rgb, Depth.r, R);");
+		"R.DensityBounds = DensityBounds;\n"
+		"return LBARain(GetViewportUV(Parameters), SceneColor.rgb, Depth.r, DensityMap, DensityMapSampler, R);");
 
 	UMaterialEditingLibrary::ConnectMaterialProperty(Custom, TEXT(""), MP_EmissiveColor);
 	return LBAMaterials::EndRebuild(Context, Material);
@@ -689,7 +723,7 @@ UMaterial* FLBARenderingAssets::GetRainDropMaster()
 UMaterial* FLBARenderingAssets::CreateRainDropMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 4;
+	constexpr int32 Version = 6;
 
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_RainDrop"), &bExisted);
@@ -769,9 +803,22 @@ UMaterial* FLBARenderingAssets::CreateRainDropMaster()
 	UMaterialExpression* Speed = Add(UMaterialExpressionParticleSpeed::StaticClass(), -900, -120);
 	UMaterialExpression* Size = Add(UMaterialExpressionParticleSize::StaticClass(), -900, -80);
 	UMaterialExpression* UV = Add(UMaterialExpressionTextureCoordinate::StaticClass(), -900, 0);
+	UMaterialExpression* Random = Add(UMaterialExpressionParticleRandom::StaticClass(), -900, 80);
+	UMaterialExpression* RelativeTime = Add(UMaterialExpressionParticleRelativeTime::StaticClass(), -900, 160);
 	UMaterialExpression* MinPixels = Scalar(TEXT("MinPixels"), 1.5f);
 
-	// Vertex: the streak along the drop's motion relative to the camera, at least MinPixels wide.
+	// How visible the drop is where it is: the level's rain density against the drop's own random threshold.
+	UMaterialExpressionCustom* Visibility = MakeCustom(TEXT("LBA rain drop visibility"), CMOT_Float1, -700,
+		{
+			{ TEXT("Particle"), Particle },
+			{ TEXT("Random"), Random },
+			{ TEXT("DensityMap"), AddRainDensityMap(Material, -900, 240) },
+			{ TEXT("DensityBounds"), Vector(TEXT("RainDensityBounds"), FLinearColor::Transparent) },
+		},
+		TEXT("return LBARainDropVisibility(LBARainDensity(DensityMap, DensityMapSampler, Particle.xy, DensityBounds), Random);"));
+	ConnectRgba(Visibility, TEXT("DensityBounds"));
+
+	// Vertex: the streak trailing the drop along its motion relative to the camera, at least MinPixels wide.
 	UMaterialExpressionCustom* Offset = MakeCustom(TEXT("LBA rain drop offset"), CMOT_Float3, -400,
 		{
 			{ TEXT("ToCamera"), Subtract(Camera, Particle, -400) },
@@ -783,8 +830,13 @@ UMaterial* FLBARenderingAssets::CreateRainDropMaster()
 			{ TEXT("MaxStretch"), Scalar(TEXT("MaxStretch"), 16.f) },
 			{ TEXT("CameraMotion"), Scalar(TEXT("CameraMotion"), 1.5f) },
 			{ TEXT("MaxCameraSpeed"), Scalar(TEXT("MaxCameraSpeed"), 10000.f) },
+			{ TEXT("TunnelStart"), Scalar(TEXT("TunnelStart"), 500.f) },
+			{ TEXT("TunnelFull"), Scalar(TEXT("TunnelFull"), 2500.f) },
+			{ TEXT("TunnelFall"), Scalar(TEXT("TunnelFall"), 0.1f) },
+			{ TEXT("Visibility"), Visibility },
 		},
-		TEXT("return LBARainDropOffset(ToCamera, VertexOffset, Direction, Speed, Size, MinPixels, MaxStretch, CameraMotion, MaxCameraSpeed);"));
+		TEXT("return LBARainDropOffset(ToCamera, VertexOffset, Direction, Speed, Size, MinPixels, MaxStretch, CameraMotion, MaxCameraSpeed, ")
+		TEXT("TunnelStart, TunnelFull, TunnelFall, Visibility);"));
 	UMaterialEditingLibrary::ConnectMaterialProperty(Offset, TEXT(""), MP_WorldPositionOffset);
 
 	// Pixel: defaults follow the original's rain (RAIN.CPP) colors; levels set their palette's, linear.
@@ -801,8 +853,12 @@ UMaterial* FLBARenderingAssets::CreateRainDropMaster()
 			{ TEXT("TrailFade"), Scalar(TEXT("TrailFade"), 0.4f) },
 			{ TEXT("FogDensity"), Scalar(TEXT("FogDensity"), 0.f) },
 			{ TEXT("FogStart"), Scalar(TEXT("FogStart"), 0.f) },
+			{ TEXT("Visibility"), Visibility },
+			{ TEXT("RelativeTime"), RelativeTime },
+			{ TEXT("LifeFade"), Scalar(TEXT("LifeFade"), 0.1f) },
 		},
-		TEXT("return LBARainDrop(UV, ToCamera, Size.x, MinPixels, NearColor.rgb, FarColor.rgb, ColorDistance, Opacity, TrailFade, FogDensity, FogStart);"));
+		TEXT("return LBARainDrop(UV, ToCamera, Size.x, MinPixels, NearColor.rgb, FarColor.rgb, ColorDistance, Opacity, TrailFade, FogDensity, FogStart, ")
+		TEXT("Visibility, RelativeTime, LifeFade);"));
 	UMaterialExpressionComponentMask* Rgb = Cast<UMaterialExpressionComponentMask>(Add(UMaterialExpressionComponentMask::StaticClass(), -100, 0));
 	Rgb->R = Rgb->G = Rgb->B = true;
 	Rgb->A = false;

@@ -4,13 +4,17 @@
 // slanted by the wind, darker with distance (palette 58 near to 51 far), with a little splash where they hit something.
 // Here:
 //  - Drops are particles (NS_LBA_Rain, kept in view around the camera by Niagara's view recycler) drawn as streaks
-//    by M_LBA_RainDrop: along their motion relative to the camera (moving through the rain stretches them towards
-//    it), never thinner than a pixel (fainter instead, so they don't shimmer), darker with distance and fading in
-//    the fog. Translucency after motion blur: composited after the palette
-//    shading, which would otherwise read them as light on the surfaces behind.
+//    by M_LBA_RainDrop: a drop's head is where the particle is, whatever the camera does, and its streak trails back
+//    along its motion relative to the camera. Slow cameras see the drops fall as a still camera would; faster ones
+//    progressively stretch them towards the camera, until ("jump to lightspeed") they all point at where the camera
+//    is going. Never thinner than a pixel (fainter instead, so they don't shimmer), darker with distance, fading in
+//    the fog. Translucency after motion blur: composited after the palette shading, which would otherwise read them
+//    as light on the surfaces behind.
+//  - The level's density map thins the rain out where it is lighter (low ground): each drop has its own random
+//    threshold, and only shows where the density is above it.
 //  - Splashes are rings on upward surfaces (ground, water) near the camera, a post-process after tonemapping
-//    (M_LBA_Rain): each world cell has its own random drops, and a ring grows and fades where each one lands. Colors
-//    are display colors (sRGB), like the original's palette.
+//    (M_LBA_Rain): each world cell has its own random drops (thinned out like the drops), and a ring grows and fades
+//    where each one lands. Colors are display colors (sRGB), like the original's palette.
 
 #pragma once
 
@@ -44,20 +48,51 @@ float3 LBARainCameraVelocity(float MaxSpeed)
 	return Speed > MaxSpeed ? Velocity * (MaxSpeed / Speed) : Velocity;
 }
 
-// World position offset that redraws a drop's sprite as what an eye moving with the camera sees: a streak along the
-// drop's motion relative to the camera, as long as that motion during the time the drop takes to fall its own length
-// (Size.y; at most MaxStretch times it), and at least MinPixels wide. Flying into the rain stretches the streaks
-// towards the camera; CameraMotion above 1 exaggerates it. ToCamera: from the particle to the camera; VertexOffset: from the particle to the vertex;
-// Direction and Speed: the particle's velocity, along which Niagara built the sprite (Size: width, length).
-float3 LBARainDropOffset(float3 ToCamera, float3 VertexOffset, float3 Direction, float Speed, float2 Size, float MinPixels,
-	float MaxStretch, float CameraMotion, float MaxCameraSpeed)
+// Rain density (0 to 1) at a world position, from a level's density map covering Bounds (min XY, 1 / size XY).
+float LBARainDensity(Texture2D Map, SamplerState MapSampler, float2 Position, float4 Bounds)
 {
+	return Map.SampleLevel(MapSampler, (Position - Bounds.xy) * Bounds.zw, 0.0).r;
+}
+
+// How visible a drop with a random threshold (0 to 1) is where the rain has a density: it fades in over the last
+// DensitySoftness of density below its threshold, and shows wherever the density is 1.
+float LBARainDropVisibility(float Density, float Random)
+{
+	const float DensitySoftness = 0.05;
+	return saturate((Density * (1.0 + DensitySoftness) - Random) / DensitySoftness);
+}
+
+// How much the camera's motion shapes the streaks, from 0 (TunnelStart, cm/s, and below: the rain looks as it does
+// to a still camera) to 1 (TunnelFull: full speed tunnel).
+float LBARainTunnel(float CameraSpeed, float TunnelStart, float TunnelFull)
+{
+	return smoothstep(TunnelStart, max(TunnelFull, TunnelStart + 1.0), CameraSpeed);
+}
+
+// World position offset that redraws a drop's sprite as what an eye moving with the camera sees: the drop's head
+// stays where the particle is, and its streak trails back along its motion relative to the camera, as long as that
+// motion during the time the drop takes to fall its own length (Size.y; at most MaxStretch times it), and at least
+// MinPixels wide. The camera's motion counts progressively with its speed (see LBARainTunnel), CameraMotion times
+// at full speed, while the drop's own fall drops to TunnelFall of itself: at full speed the streaks point straight
+// at where the camera goes, rather than at where it goes through the rain. Invisible drops collapse to a point.
+// ToCamera: from the particle to the camera; VertexOffset: from the particle to the vertex; Direction and Speed: the
+// particle's velocity, along which Niagara built the sprite (Size: width, length).
+float3 LBARainDropOffset(float3 ToCamera, float3 VertexOffset, float3 Direction, float Speed, float2 Size, float MinPixels,
+	float MaxStretch, float CameraMotion, float MaxCameraSpeed, float TunnelStart, float TunnelFull, float TunnelFall, float Visibility)
+{
+	BRANCH
+	if (Visibility <= 0.0)
+	{
+		return -VertexOffset;
+	}
 	// Which corner this vertex is, on Niagara's sprite (the head stays the head).
 	const float3 SpriteRight = normalize(cross(Direction, ToCamera) + 1e-6);
 	const float Along = sign(dot(VertexOffset, Direction));
 	const float Across = sign(dot(VertexOffset, SpriteRight));
 
-	const float3 Relative = Direction * Speed - CameraMotion * LBARainCameraVelocity(MaxCameraSpeed);
+	const float3 Camera = LBARainCameraVelocity(MaxCameraSpeed);
+	const float Tunnel = LBARainTunnel(length(Camera), TunnelStart, TunnelFull);
+	const float3 Relative = Direction * (Speed * lerp(1.0, TunnelFall, Tunnel)) - Camera * (CameraMotion * Tunnel);
 	const float RelativeSpeed = length(Relative);
 	const float3 Axis = RelativeSpeed > 1.0 ? Relative / RelativeSpeed : Direction;
 	const float Depth = dot(-ToCamera, View.ViewForward);
@@ -66,15 +101,17 @@ float3 LBARainDropOffset(float3 ToCamera, float3 VertexOffset, float3 Direction,
 	// Seen end-on (rain coming straight at the camera) the streak is a dot: any side will do.
 	const float3 Side = cross(Axis, ToCamera);
 	const float3 Right = dot(Side, Side) > 1e-6 * dot(ToCamera, ToCamera) ? normalize(Side) : SpriteRight;
-	return 0.5 * (Along * Length * Axis + Across * Width * Right) - VertexOffset;
+	return (Along > 0.0 ? 0.0 : -Length) * Axis + 0.5 * Across * Width * Right - VertexOffset;
 }
 
 // Color (linear) and opacity of a drop's pixel. UV: X across the streak, Y along it (1 at the drop's head). ToCamera:
 // from the pixel to the camera. Streaks drawn wider than they are get fainter (less than in proportion: a thin line
 // reads stronger than its area); their trail fades to TrailFade; the fog (natural extinction per cm past FogStart)
-// fades them out.
+// fades them out. Visibility: see LBARainDropVisibility. Drops fade in and out over LifeFade of their life
+// (RelativeTime, 0 to 1): Niagara recycles them in view when their life ends.
 float4 LBARainDrop(float2 UV, float3 ToCamera, float Width, float MinPixels, float3 NearColor, float3 FarColor,
-	float ColorDistance, float Opacity, float TrailFade, float FogDensity, float FogStart)
+	float ColorDistance, float Opacity, float TrailFade, float FogDensity, float FogStart, float Visibility,
+	float RelativeTime, float LifeFade)
 {
 	const float Distance = length(ToCamera);
 	const float Depth = dot(-ToCamera, View.ViewForward);
@@ -83,7 +120,8 @@ float4 LBARainDrop(float2 UV, float3 ToCamera, float Width, float MinPixels, flo
 	const float Trail = lerp(TrailFade, 1.0, saturate(UV.y));
 	const float Fog = exp(-FogDensity * max(Distance - FogStart, 0.0));
 	const float3 Color = lerp(NearColor, FarColor, saturate(Distance / max(ColorDistance, 1.0)));
-	return float4(Color, saturate(Opacity * Coverage * Across * Trail * Fog));
+	const float Life = saturate(min(RelativeTime, 1.0 - RelativeTime) / max(LifeFade, 1e-3));
+	return float4(Color, saturate(Opacity * Coverage * Across * Trail * Fog * Visibility * Life));
 }
 
 // Splashes ------------------------------------------------------------------------------------------------------------
@@ -97,6 +135,7 @@ struct FLBARainSettings
 	float SplashDuration;	// seconds
 	float SplashRange;		// cm from the camera
 	float3 SplashColor;		// sRGB
+	float4 DensityBounds;	// the density map's bounds (see LBARainDensity)
 };
 
 uint LBARainHashU(uint X)
@@ -143,7 +182,8 @@ float3 LBARainSurfaceNormal(float3 P)
 #endif
 }
 
-float3 LBARain(float2 ViewportUV, float3 SceneColor, float SceneDepth, FLBARainSettings R)
+float3 LBARain(float2 ViewportUV, float3 SceneColor, float SceneDepth, Texture2D DensityMap, SamplerState DensityMapSampler,
+	FLBARainSettings R)
 {
 	BRANCH
 	if (R.Amount <= 0.0)
@@ -179,7 +219,9 @@ float3 LBARain(float2 ViewportUV, float3 SceneColor, float SceneDepth, FLBARainS
 			const float Clock = Time * Rate + LBARainHash(int3(Cell, 0), 11u);
 			const int Drop = int(floor(Clock));
 			const float Age = frac(Clock) / Rate;
-			if (Age < R.SplashDuration)
+			// Fewer drops where the rain is lighter, as for the falling ones.
+			const float Density = LBARainDensity(DensityMap, DensityMapSampler, P.xy, R.DensityBounds);
+			if (Age < R.SplashDuration && LBARainHash(int3(Cell, Drop), 14u) < Density)
 			{
 				const float2 Center = (float2(Cell) + 0.25 + 0.5 * float2(LBARainHash(int3(Cell, Drop), 12u), LBARainHash(int3(Cell, Drop), 13u))) * CellSize;
 				const float Life = Age / R.SplashDuration;
