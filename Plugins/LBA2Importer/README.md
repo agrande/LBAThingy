@@ -148,7 +148,8 @@ Citadel the wind is read from the level's rain, so flying into it gives more str
 dark ink edge, unlit after motion blur (`Effects/M_LBA_Airflow`), and stand out from the rain. Look and physics are
 properties of the component (Dinofly > Airflow: color, width, stroke life and length, density, speeds, mass, wake,
 curvature, loops...); the drawing is the plugin's `Effects/NS_LBA_Airflow` (one ribbon per stroke, closed-form path in
-its Set Parameters expressions; path in Project Settings > Plugins > LBA2 > Airflow Trail). `lba.Airflow 0` hides them,
+its Set Parameters expressions, rebuilt by `Tools/airflow_niagara.py` through the Unreal MCP server; path in Project
+Settings > Plugins > LBA2 > Airflow Trail). `lba.Airflow 0` hides them,
 `lba.Airflow.Opacity` and `lba.Airflow.Density` scale them, `lba.Airflow.Debug 1` logs air speeds, the hotspots and
 their stroke rates (2 also draws them).
 
@@ -289,9 +290,16 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
 - **Rain** (Citadel's storm, both looks): a `Rain` Niagara actor running the plugin's
   `Effects/NS_LBA_Rain` (edit it with Niagara's editor): GPU drops kept in view around the camera
   (Niagara's view recycler, evenly up to 25 m, so moving doesn't thin them out), falling with the
-  original's wind slant (RAIN.CPP) at 70% of its speed (real heavy rain). Streaks follow each drop's motion
-  relative to the camera (flying into the rain stretches them towards you, exaggerated by *CameraMotion*,
-  up to *MaxStretch*). User parameters, set per level on the actor: *DropCount* (preset Rain x 18000), *DropVelocity*, *DropSize* (width, length), *ViewDistance* (near,
+  original's wind slant (RAIN.CPP) at 70% of its speed (real heavy rain). A drop's head stays where the
+  drop is (world-stable, whatever the camera does), its streak trailing back along its motion relative to
+  the camera. Below *TunnelStart* (5 m/s camera speed) the rain looks as it does to a still camera; up to
+  *TunnelFull* (25 m/s) the camera's motion counts more and more (*CameraMotion* times at full speed,
+  streaks up to *MaxStretch*) while the drops' own fall fades to *TunnelFall* (10%): at full speed every
+  streak points away from where the camera is heading, which shows the direction of flight. Drops fade in
+  and out over *LifeFade* of their life (Niagara recycles them in view). Density varies with the place:
+  the island's `T_<Island>_RainDensity` (generated from the terrain: full rain over the sea and ground
+  above 8 m, 25% below 3 m, smoothed over ~10 m) thins out drops and splashes (*RainDensityMap*,
+  *RainDensityBounds* on both level instances). User parameters, set per level on the actor: *DropCount* (preset Rain x 18000), *DropVelocity*, *DropSize* (width, length), *ViewDistance* (near,
   far), *DropMaterial*. The level's `MI_<Level>_RainDrops` (child of `M_LBA_RainDrop`) draws them after
   motion blur, so after the palette shading: palette colors near/far (*NearColor*, *FarColor*,
   *ColorDistance*), never thinner than *MinPixels* (fainter instead), fading along the trail
