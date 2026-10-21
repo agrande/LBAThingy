@@ -10,8 +10,8 @@ class UWorld;
 /**
  * Island decor that gives light (lampposts), by island object (.OBL entry): its polygons of palette color GlowColor
  * glow, and a point light at their center gives surfaces facing it the light Light from 3 m away (1 = shows their
- * base color), fading out at Radius (cm). The light casts no shadows: a soft pool of light around the decor. Halo is
- * how much it lights the fog around it (volumetric scattering; 0: none).
+ * base color), fading out at Radius (cm). Without bShadows the light casts no shadows: a soft pool of light around the
+ * decor. Halo is how much it lights the fog around it (volumetric scattering; 0: none).
  */
 struct FLBADecorLight
 {
@@ -20,6 +20,7 @@ struct FLBADecorLight
 	float Light = 1.f;
 	float Radius = 1500.f;
 	float Halo = 0.15f;
+	bool bShadows = false;
 };
 
 /**
@@ -162,6 +163,11 @@ struct FLBAEnvironmentPreset
 	const FLBADecorLight* FindDecorLight(int32 Body) const { return DecorLights.FindByPredicate([Body](const FLBADecorLight& Light) { return Light.Body == Body; }); }
 	/** Glowing texels of the object texture page (none: windows dark). */
 	TArray<FLBAGlowTexels> GlowTexels;
+	/**
+	 * Light of the lamps of lba2remake models (their bulbs and shades glow, see FLBARemakeAssets::FLamp): Light, Radius,
+	 * Halo and bShadows as in FLBADecorLight. Light 0: lamps off.
+	 */
+	FLBADecorLight RemakeLamps = { 0, 0, 0.f };
 
 	/** Preset for an island file name (CITABAU, DESERT, EMERAUDE...). */
 	static FLBAEnvironmentPreset ForIsland(const FString& IslandName);

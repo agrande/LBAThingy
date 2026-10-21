@@ -10,6 +10,8 @@
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBATypes.h"
+#include "MaterialEditingLibrary.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
@@ -36,6 +38,22 @@ namespace
 			FJsonSerializer::Deserialize(Reader, Object);
 		}
 		return Object;
+	}
+
+	/** Light of a bulb without an emissive color of its own: the remake's own lamplight (AA_point_light_yellow_1W). */
+	const FLinearColor IncandescentColor(1.f, 0.754f, 0.323f);
+	/** Emissive strength of a lampshade: fabric lit from inside, dimmer than the bulb (M_LBA_Glow's GlowStrength, 3). */
+	constexpr float LampshadeGlow = 0.6f;
+
+	enum class ELampPart : uint8 { None, Bulb, Shade };
+
+	ELampPart GetLampPart(const FLBAGltfPrimitive& Prim, const FLBAGltfMaterial* Material)
+	{
+		if (Prim.Node.Contains(TEXT("bulb")) || (Material && Material->Name.StartsWith(TEXT("keepMat_light"))))
+		{
+			return ELampPart::Bulb;
+		}
+		return Material && Material->Name.StartsWith(TEXT("LampTexture")) ? ELampPart::Shade : ELampPart::None;
 	}
 
 	struct FLayoutVariant
@@ -116,10 +134,12 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 	}
 
 	FLBAMeshBuilder Builder;
+	FLBAStaticMeshOptions Options;
 	TMap<int32, int32> SectionByMaterial;
-	auto SectionFor = [&](int32 MaterialIndex) -> int32
+	auto SectionFor = [&](int32 MaterialIndex, ELampPart Part) -> int32
 	{
-		if (const int32* Found = SectionByMaterial.Find(MaterialIndex))
+		const int32 Key = MaterialIndex * 3 + int32(Part);
+		if (const int32* Found = SectionByMaterial.Find(Key))
 		{
 			return *Found;
 		}
@@ -127,7 +147,19 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 		UTexture2D* Texture = GltfMaterial && Textures.IsValidIndex(GltfMaterial->Image) ? Textures[GltfMaterial->Image] : nullptr;
 		const bool bBlend = GltfMaterial && (GltfMaterial->AlphaMode == FLBAGltfMaterial::EAlpha::Blend || GltfMaterial->BaseColor.A < 0.99f);
 		UMaterialInterface* Material;
-		if (Texture)
+		if (Part != ELampPart::None)
+		{
+			// Lit lamps glow (opaque: a lampshade is fabric lit from inside, not see-through).
+			Material = Texture ? Materials.GetTextured(ELBAMaterial::TexturedGlow, Texture, Context.GetContentPath(TEXT("Remake/Materials")))
+				: Materials.GetMaster(ELBAMaterial::Glow);
+			UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Material);
+			if (Instance && Part == ELampPart::Shade)
+			{
+				UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Instance, TEXT("GlowStrength"), LampshadeGlow);
+				UMaterialEditingLibrary::UpdateMaterialInstance(Instance);
+			}
+		}
+		else if (Texture)
 		{
 			const ELBAMaterial Kind = bBlend ? ELBAMaterial::TexturedTranslucent
 				: GltfMaterial->AlphaMode == FLBAGltfMaterial::EAlpha::Mask ? ELBAMaterial::TexturedMasked : ELBAMaterial::Textured;
@@ -142,14 +174,36 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 		{
 			SlotName = FString::Printf(TEXT("Mat%d"), MaterialIndex);
 		}
-		const int32 Section = Builder.GetSection(FName(*FString::Printf(TEXT("%s_%d"), *SlotName, MaterialIndex)), Material);
-		SectionByMaterial.Add(MaterialIndex, Section);
+		const FName Slot(*FString::Printf(TEXT("%s_%d%s"), *SlotName, MaterialIndex, Part != ELampPart::None ? TEXT("_Glow") : TEXT("")));
+		if (Part != ELampPart::None)
+		{
+			// The lamp's light sits inside: its bulb and shade must not block it.
+			Options.NoShadowSlots.Add(Slot);
+		}
+		const int32 Section = Builder.GetSection(Slot, Material);
+		SectionByMaterial.Add(Key, Section);
 		return Section;
 	};
 
+	// Bounds and light color of each lamp part, by node.
+	struct FLampPart
+	{
+		FBox3f Bounds = FBox3f(ForceInit);
+		FLinearColor Color = IncandescentColor;
+	};
+	TMap<FString, FLampPart> Bulbs, Shades;
+
 	for (const FLBAGltfPrimitive& Prim : Model.Primitives)
 	{
-		const int32 Section = SectionFor(Prim.Material);
+		const FLBAGltfMaterial* PrimMaterial = Model.Materials.IsValidIndex(Prim.Material) ? &Model.Materials[Prim.Material] : nullptr;
+		const ELampPart Part = GetLampPart(Prim, PrimMaterial);
+		const int32 Section = SectionFor(Prim.Material, Part);
+		FLampPart* Lamp = Part == ELampPart::Bulb ? &Bulbs.FindOrAdd(Prim.Node) : Part == ELampPart::Shade ? &Shades.FindOrAdd(Prim.Node) : nullptr;
+		const float Emissive = PrimMaterial ? FMath::Max3(PrimMaterial->Emissive.R, PrimMaterial->Emissive.G, PrimMaterial->Emissive.B) : 0.f;
+		if (Lamp && Emissive > 0.f)
+		{
+			Lamp->Color = FLinearColor(PrimMaterial->Emissive.R / Emissive, PrimMaterial->Emissive.G / Emissive, PrimMaterial->Emissive.B / Emissive);
+		}
 		const FLinearColor Base = Model.Materials.IsValidIndex(Prim.Material) ? Model.Materials[Prim.Material].BaseColor : FLinearColor::White;
 		auto MakeVertex = [&](uint32 Index)
 		{
@@ -187,6 +241,12 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 			}
 			// glTF counter-clockwise front faces stay front-facing after the handedness-flipping axis swap.
 			Builder.AddTriangle(Section, A, B, C);
+			if (Lamp)
+			{
+				Lamp->Bounds += A.Position;
+				Lamp->Bounds += B.Position;
+				Lamp->Bounds += C.Position;
+			}
 		}
 	}
 	if (Builder.IsEmpty())
@@ -194,11 +254,20 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 		return nullptr;
 	}
 
+	// One light per bulb; lamps without a bulb shine from their shade's center.
+	TArray<FLamp>& Lamps = LampCache.Add(Key);
+	for (const TPair<FString, FLampPart>& Part : Bulbs.Num() > 0 ? Bulbs : Shades)
+	{
+		if (Part.Value.Bounds.IsValid)
+		{
+			Lamps.Add({ FVector(Part.Value.Bounds.GetCenter()), Part.Value.Color, Part.Value.Bounds.GetExtent().GetMin() });
+		}
+	}
+
 	FMeshDescription Description;
 	TArray<UMaterialInterface*> MeshMaterials;
 	TArray<FName> Slots;
 	Builder.BuildStatic(Description, MeshMaterials, Slots);
-	FLBAStaticMeshOptions Options;
 	Options.bComplexAsSimple = true;
 	Result = Context.CreateStaticMesh(Folder, TEXT("SM_Remake_") + FLBAImportContext::SanitizeName(FPaths::GetBaseFilename(File)),
 		MoveTemp(Description), MeshMaterials, Slots, Options);
@@ -272,7 +341,7 @@ FLBARemakeAssets::FGridResult FLBARemakeAssets::ProcessGrid(FLBAGrid& Grid, cons
 					(*Position)->GetNumberField(TEXT("z")), Scale);
 				// Same conversion as Unreal's glTF importer (right-handed Y-up -> left-handed Z-up).
 				const FQuat Rotation(-(*Quat)[0]->AsNumber(), -(*Quat)[2]->AsNumber(), -(*Quat)[1]->AsNumber(), (*Quat)[3]->AsNumber());
-				Out.Placements.Add({ Mesh, FTransform(Rotation.GetNormalized(), Location), FPaths::GetBaseFilename(Name) });
+				Out.Placements.Add({ Mesh, FTransform(Rotation.GetNormalized(), Location), FPaths::GetBaseFilename(Name), GetModelLamps(TEXT("layouts"), Name) });
 			}
 		}
 	}
@@ -422,7 +491,8 @@ FLBARemakeAssets::FGridResult FLBARemakeAssets::ProcessGrid(FLBAGrid& Grid, cons
 						const double GY = Y * 0.5;
 						const double GZ = (Z - 1) - Variant.NZ * 0.5 + 1.0;
 						const double Yaw = -FMath::RadiansToDegrees(AngleMapping[Variant.Orientation & 3]);
-						Out.Placements.Add({ Mesh, FTransform(FRotator(0, Yaw, 0), RemakeToUnreal(GX, GY, GZ, Scale)), FPaths::GetBaseFilename(Variant.File) });
+						Out.Placements.Add({ Mesh, FTransform(FRotator(0, Yaw, 0), RemakeToUnreal(GX, GY, GZ, Scale)), FPaths::GetBaseFilename(Variant.File),
+							GetModelLamps(TEXT("layouts"), Variant.File) });
 					}
 				}
 			}

@@ -723,6 +723,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	{
 		Actor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
 	}
+	const FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::Interior();
 	for (const FLBARemakeAssets::FPlacement& Placement : Remade.Placements)
 	{
 		if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, Placement.Transform, Placement.Label, TEXT("Grid/RemakeModels")))
@@ -731,10 +732,17 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			Component->SetStaticMesh(Placement.Mesh);
 			// The grid's brick collision already covers these.
 			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			if (Preset.RemakeLamps.Light > 0.f)
+			{
+				for (const FLBARemakeAssets::FLamp& Lamp : Placement.Lamps)
+				{
+					LBAEnvironment::SpawnDecorLight(Context, Actor, Preset.RemakeLamps, Lamp.Position, Lamp.Color, Lamp.SourceRadius);
+				}
+			}
 		}
 	}
 	// A light from nearly overhead: brick floors get about the neutral light (the interior preset is calibrated for it).
-	LBAEnvironment::Spawn(Context, World, FLBAEnvironmentPreset::Interior(), FRotator(-84.0, 45.0, 0.0));
+	LBAEnvironment::Spawn(Context, World, Preset, FRotator(-84.0, 45.0, 0.0));
 
 	// Fallback player start (scenes provide the real hero position): a low floor near the middle of the content.
 	{

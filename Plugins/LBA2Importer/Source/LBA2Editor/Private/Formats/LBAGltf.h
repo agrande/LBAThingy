@@ -22,6 +22,7 @@ struct FLBAGltfMaterial
 
 	FString Name;
 	FLinearColor BaseColor = FLinearColor::White;
+	FLinearColor Emissive = FLinearColor::Black;
 	int32 Image = INDEX_NONE;
 	EAlpha AlphaMode = EAlpha::Opaque;
 	bool bUnlit = false;
@@ -29,6 +30,8 @@ struct FLBAGltfMaterial
 
 struct FLBAGltfPrimitive
 {
+	/** Name of the node holding the mesh. */
+	FString Node;
 	int32 Material = INDEX_NONE;
 	/** Scene-space data (glTF axes: right-handed, Y up). */
 	TArray<FVector3f> Positions;

@@ -25,11 +25,23 @@ public:
 	bool Initialize();
 	bool IsAvailable() const { return bAvailable; }
 
+	/**
+	 * A lamp of a model, in mesh space: its bulb (glTF node named "...bulb...", or a "keepMat_light..." material) or,
+	 * without one, its lampshade ("LampTexture..." material). Both glow; the lamp's light sits at the bulb's center.
+	 */
+	struct FLamp
+	{
+		FVector Position = FVector::ZeroVector;
+		FLinearColor Color = FLinearColor::White;
+		float SourceRadius = 0.f;
+	};
+
 	struct FPlacement
 	{
 		UStaticMesh* Mesh = nullptr;
 		FTransform Transform;
 		FString Label;
+		TArray<FLamp> Lamps;
 	};
 
 	struct FGridResult
@@ -49,6 +61,8 @@ public:
 
 	/** Static mesh for a model of www/models/lba2/<SubFolder>/<File>, imported on first use. */
 	UStaticMesh* GetModelMesh(const FString& SubFolder, const FString& File);
+	/** Lamps of a model imported with GetModelMesh. */
+	TArray<FLamp> GetModelLamps(const FString& SubFolder, const FString& File) const { return LampCache.FindRef(SubFolder / File); }
 
 private:
 	FLBAImportContext& Context;
@@ -57,4 +71,5 @@ private:
 	TSharedPtr<FJsonObject> LayoutsMetadata;
 	TSharedPtr<FJsonObject> GridsMetadata;
 	TMap<FString, UStaticMesh*> MeshCache;
+	TMap<FString, TArray<FLamp>> LampCache;
 };

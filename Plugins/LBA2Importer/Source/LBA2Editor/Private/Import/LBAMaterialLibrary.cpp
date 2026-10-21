@@ -426,8 +426,10 @@ UMaterialInterface* FLBAMaterialLibrary::GetTextured(ELBAMaterial Kind, UTexture
 
 	FString BaseName = Texture->GetName();
 	BaseName.RemoveFromStart(TEXT("T_"));
+	// Glow textures of islands already end with _Glow; remake textures are shared with their unlit instances.
 	const FString Suffix = Kind == ELBAMaterial::TexturedMasked ? TEXT("_Masked")
-		: Kind == ELBAMaterial::TexturedTranslucent ? TEXT("_Translucent") : FString();
+		: Kind == ELBAMaterial::TexturedTranslucent ? TEXT("_Translucent")
+		: Kind == ELBAMaterial::TexturedGlow && !BaseName.EndsWith(TEXT("_Glow")) ? TEXT("_Glow") : FString();
 	const FString Name = FString::Printf(TEXT("MI_%s%s"), *BaseName, *Suffix);
 
 	UMaterialInstanceConstant* Instance = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(Folder, Name);

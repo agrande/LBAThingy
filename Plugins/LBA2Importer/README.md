@@ -347,6 +347,11 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   emissive *GlowStrength*), and each window gets a rect light of its size just in front of it, facing
   out, the lamp room a point light at its center. A polygon only glows when its texture region holds the
   whole rectangle (some objects use a neighbor texture that bleeds into a window's edge).
+  Interior lamps are lit: in lba2remake models, a bulb (a node named *...bulb...*, or a `keepMat_light...`
+  material) glows with `M_LBA_Glow` and a lampshade (`LampTexture...` material) with its texture's
+  `MI_Remake_<hash>_Glow` (*GlowStrength* 0.6: fabric lit from inside), neither casting shadows, and a warm point
+  light (the remake's own lamplight color, or the bulb's emissive color) sits at the bulb's center
+  (`FLBAEnvironmentPreset::RemakeLamps`: a soft pool of light in which furniture casts shadows).
 
 Customizing (material instances in `<Root>/Rendering`, children inherit what they don't override):
 
@@ -403,8 +408,9 @@ color, shade row / light, surfaces without fog).
   original sea textures, foam lines and sparkles
 - [x] Citadel's lampposts give light during the storm (glowing glass + soft point light with a halo)
 - [x] Citadel's storm: dense dark fog, rain (Niagara drops) and splashes
+- [x] Interior lamps (lba2remake models) glow and give light
 - [x] Citadel's storm wind: a small hurricane around the island (calm eye, wall, gusts, turbulent ceiling) that carries the Dinofly and blows the rain
-- [ ] Look, next: Citadel storm (Niagara splashes like the original's spray, lightning, wet surfaces), cloud shadows, interior lights,
+- [ ] Look, next: Citadel storm (Niagara splashes like the original's spray, lightning, wet surfaces), cloud shadows, more interior lights (candles, original bricks),
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [x] L3c Modern controls (third-person template style; procedural layer over the LBA clips rather than motion matching, too few clips)
 - [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off

@@ -180,6 +180,11 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::Interior()
 	FLBAEnvironmentPreset Preset;
 	Preset.SunIntensity = 2.4f;
 	Preset.SkyLightIntensity = 2.4f;
+	// Lamps are lit: a warm pool around each, furniture casting shadows in it.
+	Preset.RemakeLamps.Light = 0.1f;
+	Preset.RemakeLamps.Radius = 600.f;
+	Preset.RemakeLamps.Halo = 0.f;
+	Preset.RemakeLamps.bShadows = true;
 	return Preset;
 }
 
@@ -203,8 +208,8 @@ void LBAEnvironment::SpawnDecorLight(FLBAImportContext& Context, AActor* Decor, 
 	Light->SetLightColor(Color);
 	Light->SetAttenuationRadius(DecorLight.Radius);
 	Light->SetSourceRadius(SourceRadius);
-	// A soft pool of light: the decor's own pole and arms would cut it into hard wedges.
-	Light->SetCastShadows(false);
+	// Usually a soft pool of light: the decor's own pole and arms would cut it into hard wedges.
+	Light->SetCastShadows(DecorLight.bShadows);
 	// The halo in the fog. The palette shading only takes the fog's own color off surfaces: what the halo adds in
 	// front of them reads as light on them, so they brighten through it.
 	Light->SetVolumetricScatteringIntensity(DecorLight.Halo);

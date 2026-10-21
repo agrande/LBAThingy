@@ -265,6 +265,11 @@ bool FLBAGltfModel::Load(const FString& Path, FString& OutError)
 				Material.Image = TextureToImage.IsValidIndex(Texture) ? TextureToImage[Texture] : INDEX_NONE;
 			}
 		}
+		const TArray<TSharedPtr<FJsonValue>>* Emissive = nullptr;
+		if (Obj->TryGetArrayField(TEXT("emissiveFactor"), Emissive) && Emissive->Num() == 3)
+		{
+			Material.Emissive = FLinearColor((*Emissive)[0]->AsNumber(), (*Emissive)[1]->AsNumber(), (*Emissive)[2]->AsNumber());
+		}
 		FString AlphaMode;
 		if (Obj->TryGetStringField(TEXT("alphaMode"), AlphaMode))
 		{
@@ -319,6 +324,7 @@ bool FLBAGltfModel::Load(const FString& Path, FString& OutError)
 						continue;
 					}
 					FLBAGltfPrimitive Out;
+					Node->TryGetStringField(TEXT("name"), Out.Node);
 					Out.Material = Prim->HasField(TEXT("material")) ? int32(Prim->GetNumberField(TEXT("material"))) : INDEX_NONE;
 
 					int32 Components = 0;
