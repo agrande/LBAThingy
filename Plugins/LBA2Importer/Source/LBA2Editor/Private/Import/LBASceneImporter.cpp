@@ -409,7 +409,7 @@ int32 FLBASceneImporter::ImportAll()
 		}
 		Scenes.Add(Index, MoveTemp(Scene));
 		const bool bDemo = Index >= LBAScenes::FirstDemoScene;
-		if ((Settings.SceneFilter.Num() == 0 && (!bDemo || Settings.bImportDemoScenes)) || Settings.SceneFilter.Contains(Index))
+		if ((Settings.SceneFilter.Num() == 0 && (!bDemo || Context.GetProjectSettings().bImportDemoScenes)) || Settings.SceneFilter.Contains(Index))
 		{
 			Selected.Add(Index);
 		}

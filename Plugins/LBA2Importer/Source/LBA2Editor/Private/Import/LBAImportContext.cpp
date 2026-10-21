@@ -34,6 +34,7 @@ const FName FLBAImportContext::GeneratedActorTag(TEXT("LBA2Imported"));
 
 FLBAImportContext::FLBAImportContext(const ULBA2ImporterSettings& InSettings)
 	: Settings(InSettings)
+	, ProjectSettings(*GetDefault<ULBA2ImporterProjectSettings>())
 {
 }
 
@@ -49,7 +50,7 @@ bool FLBAImportContext::Initialize(FString& OutError)
 		OutError = FString::Printf(TEXT("Could not find LBA_BKG.HQR under '%s'. Point the importer at an installed copy of LBA2."), *Settings.GameDirectory.Path);
 		return false;
 	}
-	ContentRoot = Settings.GetContentRoot();
+	ContentRoot = ProjectSettings.GetContentRoot();
 	Scale = ULBA2Settings::GetWorldScale();
 
 	if (!LoadPalette(OutError))
@@ -365,7 +366,7 @@ UTexture2D* FLBAImportContext::CreateTexture(const FString& Folder, const FStrin
 	Texture->SRGB = bSRGB;
 	Texture->CompressionSettings = TC_Default;
 	Texture->CompressionNone = true;
-	Texture->Filter = Settings.bPixelArtFiltering ? TF_Nearest : TF_Default;
+	Texture->Filter = ProjectSettings.bPixelArtFiltering ? TF_Nearest : TF_Default;
 	Texture->AddressX = bWrap ? TA_Wrap : TA_Clamp;
 	Texture->AddressY = bWrap ? TA_Wrap : TA_Clamp;
 	Texture->LODGroup = TEXTUREGROUP_World;
@@ -571,7 +572,7 @@ UWorld* FLBAImportContext::LoadLevel(const FString& PackageName, const FString& 
 	}
 	if (AWorldSettings* WorldSettings = World->GetWorldSettings())
 	{
-		WorldSettings->DefaultGameMode = Settings.bPlayAsTwinsen ? ALBAGameMode::StaticClass() : nullptr;
+		WorldSettings->DefaultGameMode = ProjectSettings.bPlayAsTwinsen ? ALBAGameMode::StaticClass() : nullptr;
 	}
 	OwnedWorlds.Add(World);
 	return World;

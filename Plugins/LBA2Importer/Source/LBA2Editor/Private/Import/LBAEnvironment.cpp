@@ -651,7 +651,7 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 		Context.MarkForSave(LevelLook);
 		return LevelLook;
 	};
-	const ELBALookMode ActiveLook = Context.GetSettings().LookMode;
+	const ELBALookMode ActiveLook = Context.GetProjectSettings().LookMode;
 	if (APostProcessVolume* Volume = Context.SpawnGeneratedActor<APostProcessVolume>(World, FTransform::Identity, TEXT("Look"), Folder))
 	{
 		Volume->bUnbound = true;

@@ -579,7 +579,7 @@ void FLBAIsoImporter::BuildKitMeshes(int32 LibraryIndex)
 		const FCellQuery Query = MakeLayoutQuery(Layout, Header.ForbiddenBrick);
 		FLBAMeshBuilder Builder;
 		const int32 Section = Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material);
-		EmitVisual(Query, *Atlas, Builder, Section, Scale, Context.GetSettings().BackFaces);
+		EmitVisual(Query, *Atlas, Builder, Section, Scale, Context.GetProjectSettings().BackFaces);
 		if (Builder.IsEmpty())
 		{
 			continue;
@@ -695,7 +695,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	}
 
 	FLBAMeshBuilder Builder;
-	EmitVisual(VisualQuery, *Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale, Context.GetSettings().BackFaces);
+	EmitVisual(VisualQuery, *Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale, Context.GetProjectSettings().BackFaces);
 	if (Builder.IsEmpty())
 	{
 		return false;
@@ -709,7 +709,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	UStaticMesh* Mesh = Context.CreateStaticMesh(Folder, MeshName, MoveTemp(Description), Materials, Slots, Options);
 	Context.Flush();
 
-	if (!Context.GetSettings().bCreateInteriorLevels || !Mesh)
+	if (!Context.GetProjectSettings().bCreateInteriorLevels || !Mesh)
 	{
 		return true;
 	}
@@ -809,7 +809,7 @@ int32 FLBAIsoImporter::ImportAll()
 		}
 	}
 
-	if (Settings.bCreateLayoutKitMeshes)
+	if (Context.GetProjectSettings().bCreateLayoutKitMeshes)
 	{
 		TSet<int32> UsedLibraries;
 		for (int32 Grid : Grids)

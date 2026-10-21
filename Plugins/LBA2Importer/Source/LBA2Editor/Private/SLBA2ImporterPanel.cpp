@@ -29,8 +29,10 @@ void SLBA2ImporterPanel::Construct(const FArguments& InArgs)
 	FDetailsViewArgs Args;
 	Args.bAllowSearch = false;
 	Args.NameAreaSettings = FDetailsViewArgs::HideNameArea;
+	// One section per settings object: this machine's options, the project's import rules, the runtime settings.
+	Args.bAllowMultipleTopLevelObjects = true;
 	DetailsView = PropertyEditor.CreateDetailView(Args);
-	const TArray<UObject*> EditedObjects = { Settings, GetMutableDefault<ULBA2Settings>() };
+	const TArray<UObject*> EditedObjects = { Settings, GetMutableDefault<ULBA2ImporterProjectSettings>(), GetMutableDefault<ULBA2Settings>() };
 	DetailsView->SetObjects(EditedObjects);
 
 	TSharedRef<SWrapBox> LayerBox = SNew(SWrapBox).UseAllottedSize(true);
@@ -126,6 +128,7 @@ FReply SLBA2ImporterPanel::OnImport()
 {
 	ULBA2ImporterSettings* Settings = GetMutableDefault<ULBA2ImporterSettings>();
 	Settings->SaveConfig();
+	GetMutableDefault<ULBA2ImporterProjectSettings>()->TryUpdateDefaultConfigFile();
 	GetMutableDefault<ULBA2Settings>()->TryUpdateDefaultConfigFile();
 
 	TArray<ELBAImportLayer> Layers;

@@ -5,6 +5,7 @@
 #include "Formats/LBAHqr.h"
 #include "MeshDescription.h"
 
+class ULBA2ImporterProjectSettings;
 class ULBA2ImporterSettings;
 class UMaterialInterface;
 class UStaticMesh;
@@ -50,7 +51,10 @@ public:
 
 	bool Initialize(FString& OutError);
 
+	/** Per-user options: data folders and import filters. */
 	const ULBA2ImporterSettings& GetSettings() const { return Settings; }
+	/** How the project imports: destination, look, interiors, enclosure... */
+	const ULBA2ImporterProjectSettings& GetProjectSettings() const { return ProjectSettings; }
 	const FString& GetDataDirectory() const { return DataDirectory; }
 	const FString& GetContentRoot() const { return ContentRoot; }
 	FString GetContentPath(const FString& SubPath) const { return ContentRoot / SubPath; }
@@ -184,6 +188,7 @@ private:
 	void TagGeneratedActor(AActor* Actor, const FString& Label, const FName& Folder);
 
 	const ULBA2ImporterSettings& Settings;
+	const ULBA2ImporterProjectSettings& ProjectSettings;
 	FString DataDirectory;
 	FString ContentRoot;
 	float Scale = 0.125f;

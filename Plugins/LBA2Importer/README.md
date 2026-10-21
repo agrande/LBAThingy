@@ -27,6 +27,19 @@ UnrealEditor-Cmd.exe LBAThingy.uproject -run=LBA2Import [-GameDir="..."] [-Remak
 World scale lives in **Project Settings > Plugins > LBA2** (default 0.125 cm per LBA unit: a brick is
 64x32x64 cm, Twinsen about 155 cm).
 
+Importer settings come in two parts, both shown in the panel:
+
+- **Editor Preferences > Plugins > LBA2 Importer** (per user, not shared): where the game and the lba2remake
+  checkout are on this machine, and the filters (islands, grids, entities, scenes) to import a subset while
+  iterating.
+- **Project Settings > Plugins > LBA2 Importer** (`Config/DefaultLBA2Importer.ini`, shared with the project and
+  kept across imports): how things are imported, i.e. destination, look, interiors (back faces, kit pieces,
+  remake models), demo scenes, language, and the **Enclosure** table for the coming enclosed interiors:
+  per layout library whether rooms get closed and the room height in cells (32 cm), with per-grid overrides.
+  The library defaults come from a survey of every grid: the most common height of the back walls the
+  original drew in full. Caves and outdoor grids are left open. Options that used to be per-user are picked
+  up from your old settings until the project settings are saved.
+
 ## What gets imported
 
 | Layer | Source | Unreal result |
@@ -409,6 +422,9 @@ color, shade row / light, surfaces without fog).
 - [x] Citadel's lampposts give light during the storm (glowing glass + soft point light with a halo)
 - [x] Citadel's storm: dense dark fog, rain (Niagara drops) and splashes
 - [x] Interior lamps (lba2remake models) glow and give light
+- [x] Importer settings split: per-user (paths, filters) and project (shared import rules, enclosure table per library and grid)
+- [ ] Enclosed interiors (Enhanced look): walls raised to the room height, doorways kept, ceilings; hidden from the
+  iso camera but still shading; see-through dithered walls between Twinsen and the camera; Original look stays open
 - [x] Citadel's storm wind: a small hurricane around the island (calm eye, wall, gusts, turbulent ceiling) that carries the Dinofly and blows the rain
 - [ ] Look, next: Citadel storm (Niagara splashes like the original's spray, lightning, wet surfaces), cloud shadows, more interior lights (candles, original bricks),
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea

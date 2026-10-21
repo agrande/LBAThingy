@@ -74,7 +74,7 @@ FLBARemakeAssets::FLBARemakeAssets(FLBAImportContext& InContext)
 bool FLBARemakeAssets::Initialize()
 {
 	const ULBA2ImporterSettings& Settings = Context.GetSettings();
-	if (!Settings.bUseRemakeModels)
+	if (!Context.GetProjectSettings().bUseRemakeModels)
 	{
 		return false;
 	}

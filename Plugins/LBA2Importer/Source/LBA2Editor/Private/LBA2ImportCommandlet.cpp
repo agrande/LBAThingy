@@ -15,6 +15,7 @@ ULBA2ImportCommandlet::ULBA2ImportCommandlet()
 int32 ULBA2ImportCommandlet::Main(const FString& Params)
 {
 	ULBA2ImporterSettings* Settings = GetMutableDefault<ULBA2ImporterSettings>();
+	ULBA2ImporterProjectSettings* ProjectSettings = GetMutableDefault<ULBA2ImporterProjectSettings>();
 
 	FString Value;
 	if (FParse::Value(*Params, TEXT("GameDir="), Value, false))
@@ -29,11 +30,11 @@ int32 ULBA2ImportCommandlet::Main(const FString& Params)
 	Settings->AutoDetectRemakeDirectory();
 	if (FParse::Param(*Params, TEXT("NoRemake")))
 	{
-		Settings->bUseRemakeModels = false;
+		ProjectSettings->bUseRemakeModels = false;
 	}
 	if (FParse::Value(*Params, TEXT("Root="), Value, false))
 	{
-		Settings->ContentRoot.Path = Value;
+		ProjectSettings->ContentRoot.Path = Value;
 	}
 	if (FParse::Value(*Params, TEXT("Islands="), Value, false))
 	{
@@ -62,7 +63,7 @@ int32 ULBA2ImportCommandlet::Main(const FString& Params)
 	}
 	if (FParse::Param(*Params, TEXT("DemoScenes")))
 	{
-		Settings->bImportDemoScenes = true;
+		ProjectSettings->bImportDemoScenes = true;
 	}
 
 	if (FParse::Value(*Params, TEXT("Entities="), Value, false))

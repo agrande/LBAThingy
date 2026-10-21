@@ -714,7 +714,7 @@ bool FLBAIslandImporter::ImportIsland(const FString& IslandName)
 	}
 	Context.Flush();
 
-	if (Context.GetSettings().bCreateIslandLevels)
+	if (Context.GetProjectSettings().bCreateIslandLevels)
 	{
 		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes, Glow);
 	}
@@ -1168,7 +1168,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 	}
 	Preset.GroundRow = GetSunlitGroundRow(Island);
 
-	const float FogDistanceScale = Context.GetSettings().FogDistanceScale;
+	const float FogDistanceScale = Context.GetProjectSettings().FogDistanceScale;
 	Preset.FogStart = FirstSection.FogStart * Scale * FogDistanceScale;
 	Preset.FogEnd = FirstSection.ClipFar * Scale * FogDistanceScale;
 
