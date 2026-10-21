@@ -45,7 +45,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
 	int32 AnimType = 0;
 
-	/** The original hides it at start (scripts show it later); it still blocks, like the original. */
+	/** The original hides it at start (scripts show it later). The original still blocks; here it does not, for now. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
 	bool bStartHidden = false;
 
@@ -62,6 +62,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "LBA")
 	ULBAAnimInstance* GetLBAAnimInstance() const;
+
+	/** Its entity stages gameplay handled differently here (ULBA2Settings::HiddenSceneEntities): hidden in game, without collision. */
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	bool IsGameplayStandIn() const;
 
 	/** Sets the mesh of the current body and fits the capsule and collision box to it. */
 	void ApplyBody();

@@ -7,6 +7,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "LBA2Settings.h"
 #include "LBAAnimInstance.h"
 #include "LBAEntityAsset.h"
 #include "LBATypes.h"
@@ -52,11 +53,19 @@ void ALBASceneActor::BeginPlay()
 		Anim->SetApplyRootMotion(false);
 	}
 	PlayStartAnimation();
-	GetCharacterMovement()->SetMovementMode(bFallable ? MOVE_Walking : MOVE_None);
-	if (bStartHidden)
+	if (bStartHidden || IsGameplayStandIn())
 	{
 		SetActorHiddenInGame(true);
+		SetActorEnableCollision(false);
 	}
+	// Without collision a falling object would drop through the floor.
+	const bool bSolid = GetActorEnableCollision() && GetCapsuleComponent()->IsCollisionEnabled();
+	GetCharacterMovement()->SetMovementMode(bFallable && bSolid ? MOVE_Walking : MOVE_None);
+}
+
+bool ALBASceneActor::IsGameplayStandIn() const
+{
+	return Entity && GetDefault<ULBA2Settings>()->HiddenSceneEntities.Contains(TSoftObjectPtr<ULBAEntityAsset>(Entity.Get()));
 }
 
 ULBAAnimInstance* ALBASceneActor::GetLBAAnimInstance() const
@@ -112,6 +121,10 @@ void ALBASceneActor::ApplyBody()
 	GetMesh()->SetRelativeLocation(FVector(0.0, 0.0, -Center.Z));
 	CollisionBox->SetRelativeLocation(FVector(Center.X, Center.Y, 0.0));
 	CollisionBox->SetBoxExtent(Size * 0.5);
+	// The original never collides with objects without a body (Body.Num -1, script helpers); nor do bodies we lack a mesh for.
+	const ECollisionEnabled::Type Collision = BodyMesh ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision;
+	GetCapsuleComponent()->SetCollisionEnabled(Collision);
+	CollisionBox->SetCollisionEnabled(Collision);
 
 #if WITH_EDITOR
 	// Show the start animation in the editor too.
@@ -141,6 +154,7 @@ void ALBASceneSprite::BeginPlay()
 	if (bStartHidden)
 	{
 		SetActorHiddenInGame(true);
+		SetActorEnableCollision(false);
 	}
 	SetActorTickEnabled(Frames.Num() > 1 && FramesPerSecond > 0.f);
 }

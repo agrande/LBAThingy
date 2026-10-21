@@ -59,4 +59,11 @@ public:
 	/** Folder scanned for scene assets (ULBASceneAsset), used by doors and lba.Scene to find the scene to go to. */
 	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
 	FString ScenesPath = TEXT("/Game/LBA2/Scenes");
+
+	/**
+	 * Scene objects with these entities are hidden in game, without collision: the original stages Twinsen (with
+	 * Zoe, carried...), his Dinofly and meca-penguins as scene objects for gameplay that is handled differently here.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
+	TArray<TSoftObjectPtr<class ULBAEntityAsset>> HiddenSceneEntities;
 };
