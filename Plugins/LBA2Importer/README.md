@@ -50,6 +50,27 @@ Openings count as doorways when they have a lintel, a jamb or threshold layout, 
 of one of the grid's scenes; 228 of the 322 interior door zones sit at one (most others are stairs, ladders
 or open ground).
 
+Grids whose library (or grid override) has the enclosure on also get `SM_Grid_NNN_Enclosure`
+(`FLBAEnclosureCells`), placed as an `Enclosure` actor tagged `LBAEnclosure`. Per room, the footprint is
+what the outside cannot reach when it floods in from beyond the grid through columns with nothing at or
+above the room's lowest floor; its edge (but its floors, which stay open) is raised to the ceiling, the
+ceiling sits the room height above the highest floor nearby, the wall above doorways is closed from their
+lintel (or the door height where the camera-side walls were cut), and exits stay open up to the top of
+their door. Walls inside the room the original cut down (their collision goes on above what is drawn,
+unlike railings and furniture) are raised too, and so are the stubs of the camera-side walls, flush. The
+frames the original put on its cut walls (the **CutFrames** layouts of each library, seeded from
+`Saved/LookDev/tools/survey_frames.py`) come off where the enclosure takes their place, into
+`SM_Grid_NNN_Frames` (an `EnclosureFrames` actor, hidden until the look switch shows it with the Original
+look); bricks without any art count as empty. Every face looks into a room, so a camera outside sees
+through while the walls and ceiling still cast shadows (two-sided shadows and distance fields); the camera
+ignores its collision, Twinsen doesn't. For now the enclosure shows in both looks; its walls continue the
+art of the wall below (or along it, or the other side of a wall panel), else a darker flat color.
+`-LBA2EnclosureDebug` on an import colors it by part (walls red, backings gray, ceilings green, risers
+blue, above doorways yellow, partitions and stubs orange), `-LBA2EnclosureDebugArt` shows the walls that
+found no art in magenta, and the first dumps its cells to
+`Saved/LookDev/enclosure/cells/`; `Saved/LookDev/tools/raycast_leaks.py` checks a grid for holes by
+casting rays from its rooms against the exported meshes (`export_enclosure_obj.py`).
+
 ## What gets imported
 
 | Layer | Source | Unreal result |

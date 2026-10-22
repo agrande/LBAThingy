@@ -284,6 +284,8 @@ TMap<FIntVector, FLBARoomAnalysis::FOpening> FLBARoomAnalysis::FindOpenings() co
 				}
 			}
 			Opening.FloorLayout = LayoutAt(X, Y, Z);
+			Opening.Flanks[0] = L;
+			Opening.Flanks[1] = R;
 			// A cell open along both axes keeps the second.
 			Openings.Add(Cell, MoveTemp(Opening));
 		}
@@ -367,6 +369,8 @@ TArray<FLBADoorway> FLBARoomAnalysis::FindDoorways(const FLBADoorwayHints& Hints
 				Doorway.Signals |= ELBADoorwaySignal::Threshold;
 			}
 			bOnlyDrops &= Opening.Other == ELBAOpeningEnd::Drop;
+			Doorway.Flanks.AddUnique(Opening.Flanks[0]);
+			Doorway.Flanks.AddUnique(Opening.Flanks[1]);
 		}
 		for (const FLBACellBox& Zone : Hints.Zones)
 		{

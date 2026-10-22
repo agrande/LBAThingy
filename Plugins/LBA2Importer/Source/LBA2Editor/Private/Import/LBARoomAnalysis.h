@@ -46,6 +46,8 @@ struct FLBADoorway
 {
 	/** Floor cells of the opening (the passage is the space above them). */
 	TArray<FIntVector> Cells;
+	/** Columns (X, Z) of the walls on its sides. */
+	TArray<FIntPoint> Flanks;
 	/** Grid axis the opening is crossed along: 0 = X, 2 = Z. */
 	int32 Axis = 0;
 	/** Leads out of the grid's rooms (an invisible plug, the grid's edge, a void or a lower floor) rather than to another room. */
@@ -112,6 +114,8 @@ public:
 	bool IsRoomFloor(const FIntVector& Cell) const { return RoomFloors.Contains(Cell); }
 
 	bool IsSolid(int32 X, int32 Y, int32 Z) const;
+	/** The cell has art (solid cells without are invisible collision). */
+	bool HasBrick(int32 X, int32 Y, int32 Z) const;
 	/** Solid cells stacked right above the floor cell (X, Y, Z). */
 	int32 GetWallHeight(int32 X, int32 Y, int32 Z) const;
 
@@ -130,11 +134,11 @@ private:
 		ELBAOpeningEnd Other = ELBAOpeningEnd::Room;
 		TSet<int32> FlankLayouts;
 		int32 FloorLayout = INDEX_NONE;
+		FIntPoint Flanks[2];
 	};
 
 	static bool IsInside(int32 X, int32 Y, int32 Z) { return X >= 0 && Y >= 0 && Z >= 0 && X < SizeXZ && Y < SizeY && Z < SizeXZ; }
 	static int32 ToIndex(int32 X, int32 Y, int32 Z) { return (Z * SizeXZ + X) * SizeY + Y; }
-	bool HasBrick(int32 X, int32 Y, int32 Z) const;
 	int32 LayoutAt(int32 X, int32 Y, int32 Z) const;
 	bool IsWall(int32 X, int32 Y, int32 Z, int32 Height = WallHeight) const;
 	bool IsLined(int32 X, int32 Y, int32 Z, const FIntPoint& Away) const;

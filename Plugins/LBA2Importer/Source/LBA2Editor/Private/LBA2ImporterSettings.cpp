@@ -85,9 +85,11 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 	//  - room height: the most common height, in cells above the floor, of the back walls drawn in full (>= 5 cells);
 	//  - door height: the median clear height of the doorways that kept their lintel;
 	//  - doorway layouts: layouts found next to the cube-change zones (doors) in at least two zones, with at least half
-	//    of their instances next to one; jambs are at least 3 cells tall, thresholds 1 cell.
+	//    of their instances next to one; jambs are at least 3 cells tall, thresholds 1 cell;
+	//  - cut frames (Saved/LookDev/tools/survey_frames.py): layouts at the top of walls in most of their instances,
+	//    kept when they look like caps or frames (not lamps, candles, windows or railings).
 	auto Library = [this](int32 Index, const TCHAR* Theme, int32 RoomHeight, int32 DoorHeight, TArray<int32> Jambs,
-		TArray<int32> Thresholds, bool bEnclose = true)
+		TArray<int32> Thresholds, TArray<int32> Frames, bool bEnclose = true)
 	{
 		FLBALibraryEnclosure& Entry = LibraryEnclosures.AddDefaulted_GetRef();
 		Entry.Library = Index;
@@ -97,25 +99,26 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 		Entry.Enclosure.DoorHeight = DoorHeight;
 		Entry.DoorwayJambs = MoveTemp(Jambs);
 		Entry.DoorwayThresholds = MoveTemp(Thresholds);
+		Entry.CutFrames = MoveTemp(Frames);
 	};
-	Library(0, TEXT("Twinsen's house, Paul's house, museum, school"), 9, 8, { 33, 34, 35, 37, 41, 43, 126, 171 }, { 5, 45, 99 });
-	Library(1, TEXT("Caves, sewers, School of Magic"), 6, 6, { 66, 67, 68, 113, 191 }, {}, false);
-	Library(2, TEXT("Chez Luc, baggage claim, tickets office, pharmacy"), 9, 7, { 20 }, { 21, 23 });
-	Library(3, TEXT("Temple of Bu, protection spell caves"), 6, 7, {}, { 135 });
-	Library(4, TEXT("Airlocks, radar room, jail"), 9, 8, { 7, 72, 79, 80, 81 }, { 17, 36, 83 });
-	Library(5, TEXT("Hacienda, Leone's and Baldino's houses, bar"), 6, 7, { 6, 7, 21, 31, 47 }, {});
-	Library(6, TEXT("Spacecrafts"), 8, 7, { 4, 5 }, {});
-	Library(7, TEXT("Fortress, bank, elevators"), 11, 7, { 104, 111, 112, 113, 114, 119, 144, 177, 197, 198, 199 }, {});
-	Library(8, TEXT("Hotel, secret passages"), 11, 8, { 3, 15, 16, 54, 82 }, { 94 });
-	Library(9, TEXT("Palace, Twinsun Cafe"), 13, 7, { 5, 70, 71, 72, 73, 74, 75 }, { 10, 13, 23, 24, 47, 64, 65 });
-	Library(10, TEXT("Statue"), 7, 9, { 64 }, {});
-	Library(11, TEXT("Docks, mine, caves, end sequences"), 8, 7, { 113, 115, 117, 118, 119, 184, 185, 186 }, { 116 }, false);
-	Library(12, TEXT("Nest, tickets office, access to Island CX"), 8, 6, { 40, 42, 43, 44, 49, 50, 51, 52 }, { 41, 45 });
-	Library(13, TEXT("Casino, bar, shop"), 6, 8, { 9, 14, 15, 22, 49, 54, 86, 91, 133, 159, 160, 196, 197 }, { 150, 198 });
-	Library(14, TEXT("Refinery"), 6, 8, { 124, 167 }, {});
-	Library(15, TEXT("Shops, bar, nursery, houses"), 8, 7, { 23, 24, 67 }, {});
-	Library(16, TEXT("Control tower stairs"), 8, 6, { 177 }, {});
-	Library(17, TEXT("Control tower"), 9, 8, { 5, 7, 61, 72, 79, 80, 118 }, { 9, 10, 17, 64 });
+	Library(0, TEXT("Twinsen's house, Paul's house, museum, school"), 9, 8, { 33, 34, 35, 37, 41, 43, 126, 171 }, { 5, 45, 99 }, { 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 36, 39 });
+	Library(1, TEXT("Caves, sewers, School of Magic"), 6, 6, { 66, 67, 68, 113, 191 }, {}, {}, false);
+	Library(2, TEXT("Chez Luc, baggage claim, tickets office, pharmacy"), 9, 7, { 20 }, { 21, 23 }, { 3, 4, 6, 7, 8, 17, 18, 35, 39, 40, 41, 42 });
+	Library(3, TEXT("Temple of Bu, protection spell caves"), 6, 7, {}, { 135 }, {});
+	Library(4, TEXT("Airlocks, radar room, jail"), 9, 8, { 7, 72, 79, 80, 81 }, { 17, 36, 83 }, { 14, 68, 71 });
+	Library(5, TEXT("Hacienda, Leone's and Baldino's houses, bar"), 6, 7, { 6, 7, 21, 31, 47 }, {}, {});
+	Library(6, TEXT("Spacecrafts"), 8, 7, { 4, 5 }, {}, { 33, 35, 36, 37, 39, 40, 41 });
+	Library(7, TEXT("Fortress, bank, elevators"), 11, 7, { 104, 111, 112, 113, 114, 119, 144, 177, 197, 198, 199 }, {}, { 25, 26, 27, 29, 108, 175 });
+	Library(8, TEXT("Hotel, secret passages"), 11, 8, { 3, 15, 16, 54, 82 }, { 94 }, { 46, 47 });
+	Library(9, TEXT("Palace, Twinsun Cafe"), 13, 7, { 5, 70, 71, 72, 73, 74, 75 }, { 10, 13, 23, 24, 47, 64, 65 }, { 36, 37, 38, 39, 41, 42, 43 });
+	Library(10, TEXT("Statue"), 7, 9, { 64 }, {}, {});
+	Library(11, TEXT("Docks, mine, caves, end sequences"), 8, 7, { 113, 115, 117, 118, 119, 184, 185, 186 }, { 116 }, {}, false);
+	Library(12, TEXT("Nest, tickets office, access to Island CX"), 8, 6, { 40, 42, 43, 44, 49, 50, 51, 52 }, { 41, 45 }, {});
+	Library(13, TEXT("Casino, bar, shop"), 6, 8, { 9, 14, 15, 22, 49, 54, 86, 91, 133, 159, 160, 196, 197 }, { 150, 198 }, { 46, 50, 145, 146 });
+	Library(14, TEXT("Refinery"), 6, 8, { 124, 167 }, {}, {});
+	Library(15, TEXT("Shops, bar, nursery, houses"), 8, 7, { 23, 24, 67 }, {}, {});
+	Library(16, TEXT("Control tower stairs"), 8, 6, { 177 }, {}, {});
+	Library(17, TEXT("Control tower"), 9, 8, { 5, 7, 61, 72, 79, 80, 118 }, { 9, 10, 17, 64 }, { 68, 85, 86, 88 });
 
 	auto Grid = [this](int32 Index, const TCHAR* Note, bool bEnclose, int32 RoomHeight = 0)
 	{

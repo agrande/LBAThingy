@@ -34,6 +34,8 @@ struct FLBAStaticMeshOptions
 	TFunction<void(struct FKAggregateGeom&)> SimpleCollision;
 	/** Material slots whose sections cast no shadow (a lamp's glass, around its light). */
 	TArray<FName> NoShadowSlots;
+	/** Distance field built as if two-sided: single-sided shells (interior enclosures) still block Lumen's light. */
+	bool bTwoSidedDistanceField = false;
 };
 
 /**

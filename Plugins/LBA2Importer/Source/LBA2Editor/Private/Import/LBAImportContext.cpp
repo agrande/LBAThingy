@@ -405,6 +405,7 @@ UStaticMesh* FLBAImportContext::CreateStaticMesh(const FString& Folder, const FS
 	SourceModel.BuildSettings.bGenerateLightmapUVs = false;
 	SourceModel.BuildSettings.bRemoveDegenerates = true;
 	SourceModel.BuildSettings.bUseFullPrecisionUVs = true;
+	SourceModel.BuildSettings.bGenerateDistanceFieldAsIfTwoSided = Options.bTwoSidedDistanceField;
 
 	Mesh->CreateMeshDescription(0, MoveTemp(MeshDescription));
 	Mesh->CommitMeshDescription(0);

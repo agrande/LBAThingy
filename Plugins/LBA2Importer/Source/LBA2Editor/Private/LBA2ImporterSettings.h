@@ -126,6 +126,13 @@ struct FLBALibraryEnclosure
 	/** Flat layouts lying in doorways (doormats, sills). An opening whose floor is one of them is a doorway. */
 	UPROPERTY(EditAnywhere, Category = "Enclosure")
 	TArray<int32> DoorwayThresholds;
+
+	/**
+	 * Layouts that frame the walls the original cut down for the camera (caps along their top, curves down to the
+	 * doorways). Where the enclosure raises those walls, they come off and the wall goes on.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	TArray<int32> CutFrames;
 };
 
 /** Enclosure changes for one grid, over its library's. */
