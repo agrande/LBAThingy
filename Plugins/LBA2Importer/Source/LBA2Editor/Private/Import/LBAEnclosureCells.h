@@ -38,8 +38,8 @@ enum class ELBAEnclosurePart : uint8
  * its cut walls) are filled; the frames inside the enclosure come off. Thin spaces (wall tops joined by steps) are
  * not rooms.
  *
- * The ceiling is RoomHeight cells above the highest floor of the room within CeilingReach columns, with risers where
- * it steps (between floors far apart). Above doorways whose side walls reach the ceiling, the wall is closed from the
+ * Each room (the footprint's columns joined around walls and doorways) has one ceiling, RoomHeight cells above its
+ * highest floor; walls and doorways take the highest of the rooms next to them, with risers where it steps. Above doorways whose side walls reach the ceiling, the wall is closed from the
  * top of the doorway (its lintel, or DoorHeight above the floor where the original cut the lintel away with the walls
  * facing the camera). Exits stay open below that top through the perimeter in line with them (the invisible plug the
  * original puts past them). Open edges (balconies, floors without a wall) stay open.
@@ -48,8 +48,6 @@ struct FLBAEnclosureCells
 {
 	/** Thickest wall an exit's passage goes through (it stays open up to the top of the doorway). */
 	static constexpr int32 MaxWallThickness = 3;
-	/** How far (in columns) a floor raises the ceiling of the rest of its room. */
-	static constexpr int32 CeilingReach = 8;
 	/** Floor cells with floor all around a space needs to be a room (not a strip of wall tops). */
 	static constexpr int32 MinInnerFloors = 4;
 	/** Collision cells above what is drawn of a wall that tell a wall the original cut down (not a railing). */

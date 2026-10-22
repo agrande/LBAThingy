@@ -234,18 +234,72 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 			Region.Floor.Remove(Wall);
 		}
 
-		// A column's ceiling is the highest one any floor of the room nearby needs: a lower part open to a higher
-		// floor (split levels, balconies over a hall) shares its ceiling instead of showing the back of its own.
+		// Rooms: the footprint's columns joined around walls (a wall on the column, invisible or not) and doorways.
+		// A room has one ceiling, the room height over its highest floor (a lower part open to a higher floor, split
+		// levels, a sunken corner share it); walls and doorways take the highest of the rooms next to them.
+		TSet<FIntPoint> DoorColumns;
+		for (const FLBADoorway& Doorway : Doorways)
+		{
+			for (const FIntVector& Cell : Doorway.Cells)
+			{
+				DoorColumns.Add(FIntPoint(Cell.X, Cell.Z));
+			}
+		}
+		auto IsBarrier = [&](const FIntPoint& Column)
+		{
+			const int32 Floor = Region.Floor[Column];
+			return DoorColumns.Contains(Column)
+				|| (!FloorColumns.Contains(Column) && Rooms.GetWallHeight(Column.X, Floor, Column.Y) >= FLBARoomAnalysis::WallHeight);
+		};
+		TMap<FIntPoint, int32> RoomTops;
+		{
+			TSet<FIntPoint> Seen;
+			for (const TPair<FIntPoint, int32>& Start : Region.Floor)
+			{
+				if (Seen.Contains(Start.Key) || IsBarrier(Start.Key))
+				{
+					continue;
+				}
+				TArray<FIntPoint> Room = { Start.Key };
+				Seen.Add(Start.Key);
+				int32 Top = Start.Value;
+				for (int32 Head = 0; Head < Room.Num(); ++Head)
+				{
+					Top = FMath::Max(Top, Region.Floor[Room[Head]]);
+					for (const FIntPoint& Dir : ColumnDirections)
+					{
+						const FIntPoint Next = Room[Head] + Dir;
+						if (Region.Floor.Contains(Next) && !Seen.Contains(Next) && !IsBarrier(Next))
+						{
+							Seen.Add(Next);
+							Room.Add(Next);
+						}
+					}
+				}
+				for (const FIntPoint& Column : Room)
+				{
+					RoomTops.Add(Column, Top);
+				}
+			}
+		}
 		for (const TPair<FIntPoint, int32>& Pair : Region.Floor)
 		{
 			int32 Floor = Pair.Value;
-			for (int32 DX = -CeilingReach; DX <= CeilingReach; ++DX)
+			if (const int32* Top = RoomTops.Find(Pair.Key))
 			{
-				for (int32 DZ = -CeilingReach; DZ <= CeilingReach; ++DZ)
+				Floor = FMath::Max(Floor, *Top);
+			}
+			else
+			{
+				// A wall or a doorway: the highest room within two columns.
+				for (int32 DX = -2; DX <= 2; ++DX)
 				{
-					if (const int32* Near = Region.Floor.Find(Pair.Key + FIntPoint(DX, DZ)))
+					for (int32 DZ = -2; DZ <= 2; ++DZ)
 					{
-						Floor = FMath::Max(Floor, *Near);
+						if (const int32* Near = RoomTops.Find(Pair.Key + FIntPoint(DX, DZ)))
+						{
+							Floor = FMath::Max(Floor, *Near);
+						}
 					}
 				}
 			}
@@ -320,6 +374,18 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 			const int32 Top = TopDrawnBelow(IsDrawn, Column, SizeY);
 			const int32 SolidTop = TopBelow(Rooms, Column, SizeY);
 			bool bRaise = SolidTop - Top >= MinCutCollision;
+			// A wall topped by the frame the original puts on its cut walls (a cap; drawn, yet not a wall's face) between
+			// two floors at one level divides two rooms: it is a cut wall too, even where its collision stops. Next to
+			// a drop it is a railing and stays as it is.
+			if (!bRaise && Top >= 0 && Rooms.HasBrick(Column.X, Top + 1, Column.Y) && !IsDrawn(Column.X, Top + 1, Column.Y))
+			{
+				for (const FIntPoint& Axis : { FIntPoint(1, 0), FIntPoint(0, 1) })
+				{
+					const int32* A = FloorColumns.Find(Column + Axis);
+					const int32* B = FloorColumns.Find(Column - Axis);
+					bRaise |= A && B && FMath::Abs(*A - *B) <= 1 && FMath::Abs(*A - Pair.Value) <= 1;
+				}
+			}
 			for (int32 D = 0; D < 4 && !bRaise; ++D)
 			{
 				const FIntPoint Outer = Column + ColumnDirections[D];

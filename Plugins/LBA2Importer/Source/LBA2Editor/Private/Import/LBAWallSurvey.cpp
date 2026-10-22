@@ -92,9 +92,9 @@ TArray<FLBAWallRun> LBAWallSurvey::FindRuns(const FLBAGrid& Grid, const FLBALibr
 	{
 		const FIntPoint Along(Run.Side.Y, Run.Side.X);
 		int32 Line = 1;
-		for (const int32 Step : { -1, 1 })
+		for (const int32 Direction : { -1, 1 })
 		{
-			for (int32 K = 1; K < MinLine && Feet.Contains(FootKey(Run.Column + Along * (Step * K), Run.Side, Run.Foot)); ++K)
+			for (int32 K = 1; K < MinLine && Feet.Contains(FootKey(Run.Column + Along * (Direction * K), Run.Side, Run.Foot)); ++K)
 			{
 				++Line;
 			}

@@ -310,32 +310,12 @@ namespace
 		return SegmentCell(Style.Body, Row, OutLayout, OutY);
 	}
 
-	/** Where a layout's row Y sits in a style, counted from its foot. */
-	int32 StyleIndexOf(const FLBAWallStyle& Style, int32 Layout, int32 Y)
-	{
-		int32 Index = 0;
-		for (const TArray<FLBAWallSegment>* Part : { &Style.Foot, &Style.Body })
-		{
-			for (const FLBAWallSegment& Segment : *Part)
-			{
-				if (Segment.Contains(Layout, Y))
-				{
-					return Index + Y - Segment.From;
-				}
-				Index += Segment.Height;
-			}
-		}
-		// In the top: what goes on above it is the body again.
-		return Index - 1;
-	}
-
 	/**
 	 * The enclosure's faces: each side of a filled cell that touches a room's air, facing into the room.
-	 * - Walls on the sides the original drew (+X, +Z) and raised partitions go on with the wall they stand on, as the
-	 *   original builds it: the rest of its own layout (the cut walls are cropped layouts), then its wall style (the
-	 *   body repeated, the top under the ceiling).
-	 * - Walls on the other sides (the inner sides of the walls facing the camera, the walls above doorways) take their
-	 *   room's style, from the floor up.
+	 * - Walls on the sides the original drew (+X, +Z) finish the layout they were cut in (the cut walls are cropped
+	 *   layouts).
+	 * - Above that, the other sides (the inner sides of the walls facing the camera, the walls above doorways) and the
+	 *   walls inside the rooms take their room's style from its floor up, stretched to the ceiling.
 	 * - Ceilings and risers take the library's ceiling color or material.
 	 * Where no style applies, a wall repeats the first opaque brick down the wall it stands on, or takes its color.
 	 */
@@ -587,22 +567,29 @@ namespace
 				// camera-side walls, the back of a partition) looks into a room, it gets the room's walls.
 				// Walls inside a room (partitions, the stubs raised flush) are finished like the room on each side: what the
 				// original drew of them is often the cut through the wall (dark stone, a band), not a wall's face.
+				// A wall finishes the layout it was cut in, as the original draws it (the cut walls are cropped layouts);
+				// above it the wall is the room's.
+				FLBAWallStyle OwnLayout;
 				if (bFacesAir && WallTop != INDEX_NONE && Art.Grid && Art.Library && bDrawnSide && Part != ELBAEnclosurePart::Partition)
 				{
 					const FLBAGridCell& Top = Art.Grid->Get(WallColumn.X, WallTop, WallColumn.Y);
-					const FIntVector Block = Art.Library->Layouts.IsValidIndex(Top.Layout) ? Art.Library->Layouts[Top.Layout].GetBlockCoords(Top.Block) : FIntVector::ZeroValue;
-					const int32 StyleIndex = Art.Library->Layouts.IsValidIndex(Top.Layout)
-						? ULBAWallStyleLibrary::FindStyle(Art.Styles, Top.Layout, Block.Y, ELBAWallFacing::Indoor) : INDEX_NONE;
-					if (StyleIndex != INDEX_NONE)
+					if (Art.Library->Layouts.IsValidIndex(Top.Layout))
 					{
-						Style = &Art.Styles[StyleIndex];
-						Foot = WallTop - StyleIndexOf(*Style, Top.Layout, Block.Y);
-						Height = AirTop - Foot + 1;
-						Origin = FIntPoint(WallColumn.X - Block.X, WallColumn.Y - Block.Z);
+						const FLBALayout& Layout = Art.Library->Layouts[Top.Layout];
+						const FIntVector Block = Layout.GetBlockCoords(Top.Block);
+						if (Cell.Y <= WallTop + Layout.SizeY - 1 - Block.Y)
+						{
+							FLBAWallSegment& Segment = OwnLayout.Body.AddDefaulted_GetRef();
+							Segment.Layout = Top.Layout;
+							Segment.Height = Layout.SizeY;
+							Style = &OwnLayout;
+							Foot = WallTop - Block.Y;
+							Height = Layout.SizeY;
+							Origin = FIntPoint(WallColumn.X - Block.X, WallColumn.Y - Block.Z);
+						}
 					}
 				}
-				// The other sides, and walls whose top is in no style (the original cut Twinsen's partitions down to a
-				// slice of their top band over invisible collision): the room's style from its floor up.
+				// The other sides, and above what the original drew: the room's style from its floor up.
 				if (!Style && bFacesAir && Art.RoomStyles.IsValidIndex(*Space) && Art.Styles.IsValidIndex(Art.RoomStyles[*Space]))
 				{
 					// From the room's floor, which may be further down than the air in front (over a door frame, a
@@ -1404,9 +1391,49 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		{
 			FrameLayouts.Append(LibraryEnclosure->CutFrames);
 		}
-		auto IsFrame = [&Grid, &FrameLayouts](int32 X, int32 Y, int32 Z)
+		// A layout instance: its layout and the grid cell of its block (0, 0, 0).
+		auto InstanceOf = [&Grid, Library](int32 X, int32 Y, int32 Z)
 		{
-			return FrameLayouts.Contains(int32(Grid.Get(X, Y, Z).Layout));
+			const FLBAGridCell& Cell = Grid.Get(X, Y, Z);
+			if (!Library->Layouts.IsValidIndex(Cell.Layout))
+			{
+				return FIntVector4(INDEX_NONE, 0, 0, 0);
+			}
+			const FIntVector Block = Library->Layouts[Cell.Layout].GetBlockCoords(Cell.Block);
+			return FIntVector4(Cell.Layout, X - Block.X, Y - Block.Y, Z - Block.Z);
+		};
+		// The cuts through walls: where the original cut a wall down for the camera it keeps the wall's collision above,
+		// invisible, so the topmost piece drawn under MinCutCollision invisible cells (frames aside) is the cut (a slice
+		// of a band, dark stone), not a wall's face. Its instance counts as a frame.
+		TSet<FIntVector4> CutInstances;
+		for (int32 Z = 0; Z < LBA::GridSizeXZ; ++Z)
+		{
+			for (int32 X = 0; X < LBA::GridSizeXZ; ++X)
+			{
+				int32 Invisible = 0;
+				for (int32 Y = LBA::GridSizeY - 1; Y >= 0; --Y)
+				{
+					const FLBAGridCell& Cell = Grid.Get(X, Y, Z);
+					if (Cell.Layout < 0)
+					{
+						Invisible = Cell.Block != 0 ? Invisible + 1 : 0;
+						continue;
+					}
+					if (FrameLayouts.Contains(int32(Cell.Layout)) || Query.BrickAt(X, Y, Z) == 0)
+					{
+						continue;
+					}
+					if (Invisible >= FLBAEnclosureCells::MinCutCollision)
+					{
+						CutInstances.Add(InstanceOf(X, Y, Z));
+					}
+					Invisible = 0;
+				}
+			}
+		}
+		auto IsFrame = [&Grid, &FrameLayouts, &CutInstances, &InstanceOf](int32 X, int32 Y, int32 Z)
+		{
+			return FrameLayouts.Contains(int32(Grid.Get(X, Y, Z).Layout)) || (CutInstances.Num() > 0 && CutInstances.Contains(InstanceOf(X, Y, Z)));
 		};
 		// Drawn: a brick with art (some libraries stack bricks without any to block the camera-side walls) that is not
 		// a frame of the cut walls.
@@ -1421,11 +1448,26 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			return !Coverage || FMath::Max3((*Coverage)[0], (*Coverage)[1], (*Coverage)[2]) > 0.f;
 		};
 		const FLBAEnclosureCells Enclosure = FLBAEnclosureCells::Build(Rooms, Doorways, Context.GetProjectSettings().GetEnclosure(Grid.LibraryIndex, GridIndex), IsDrawn);
+		// Frames come off whole: an instance any cell of which the enclosure covers (no half curves left).
+		TSet<FIntVector4> RemovedInstances;
 		for (const FIntVector& Cell : Enclosure.Fill)
 		{
 			if (Query.BrickAt(Cell.X, Cell.Y, Cell.Z) != 0 && IsFrame(Cell.X, Cell.Y, Cell.Z))
 			{
-				RemovedFrames.Add(Cell);
+				RemovedInstances.Add(InstanceOf(Cell.X, Cell.Y, Cell.Z));
+			}
+		}
+		for (int32 Z = 0; Z < LBA::GridSizeXZ && RemovedInstances.Num() > 0; ++Z)
+		{
+			for (int32 X = 0; X < LBA::GridSizeXZ; ++X)
+			{
+				for (int32 Y = 0; Y < LBA::GridSizeY; ++Y)
+				{
+					if (Query.BrickAt(X, Y, Z) != 0 && RemovedInstances.Contains(InstanceOf(X, Y, Z)))
+					{
+						RemovedFrames.Add(FIntVector(X, Y, Z));
+					}
+				}
 			}
 		}
 		const FLBALibraryEnclosure* LibraryEnclosure = Context.GetProjectSettings().FindLibraryEnclosure(Grid.LibraryIndex);
