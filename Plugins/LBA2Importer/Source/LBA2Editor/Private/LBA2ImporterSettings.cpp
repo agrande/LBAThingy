@@ -81,12 +81,12 @@ void ULBA2ImporterSettings::AutoDetectRemakeDirectory()
 
 ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 {
-	// Seeded from a survey of every grid (Saved/LookDev/tools/survey_grids.py):
+	// Seeded from a survey of every grid (the plugin's Tools/survey_grids.py):
 	//  - room height: the most common height, in cells above the floor, of the back walls drawn in full (>= 5 cells);
 	//  - door height: the median clear height of the doorways that kept their lintel;
 	//  - doorway layouts: layouts found next to the cube-change zones (doors) in at least two zones, with at least half
 	//    of their instances next to one; jambs are at least 3 cells tall, thresholds 1 cell;
-	//  - cut frames (Saved/LookDev/tools/survey_frames.py): layouts at the top of walls in most of their instances,
+	//  - cut frames (the plugin's Tools/survey_frames.py): layouts at the top of walls in most of their instances,
 	//    kept when they look like caps or frames (not lamps, candles, windows or railings).
 	auto Library = [this](int32 Index, const TCHAR* Theme, int32 RoomHeight, int32 DoorHeight, TArray<int32> Jambs,
 		TArray<int32> Thresholds, TArray<int32> Frames, bool bEnclose = true)

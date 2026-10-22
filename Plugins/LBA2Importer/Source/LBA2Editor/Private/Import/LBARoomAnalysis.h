@@ -78,7 +78,7 @@ struct FLBADoorwayHints
 
 /**
  * Rooms and doorways of an isometric grid, read from its cells (collision shape, art and layout of each of its
- * 64x25x64 cells). Prototyped and checked against the scenes' doors in Saved/LookDev/tools/survey_grids.py.
+ * 64x25x64 cells). Prototyped and checked against the scenes' doors in the plugin's Tools/survey_grids.py.
  *
  * Room floors: solid cells with Headroom empty cells above them, connected (steps of one cell up or down) into
  * spaces of at least MinSpaceCells; smaller pockets behind walls are decor the camera never reaches.

@@ -63,7 +63,7 @@ struct FLBAWallBrickCounts
 
 /**
  * Rooms of an isometric grid, read from its cells (collision shape and art of each of its 64x25x64 cells) and its
- * doorways (FLBARoomAnalysis::FindDoorways). Prototyped in Saved/LookDev/tools/room_model.py (plans per grid).
+ * doorways (FLBARoomAnalysis::FindDoorways). Prototyped in the plugin's Tools/room_model.py (plans per grid).
  *
  * - Floors: solid cells with Headroom empty cells above, not drawn with a wall brick (the tops of walls), joined by
  *   steps of one cell into spaces of at least MinSpaceCells.

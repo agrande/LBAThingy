@@ -37,7 +37,7 @@ Importer settings come in two parts, both shown in the panel:
   remake models), demo scenes, language, and the **Enclosure** table for the coming enclosed interiors:
   per layout library whether rooms get closed, the room height and door height in cells (32 cm) and the
   layouts that frame doorways (jambs, thresholds), with per-grid overrides. The library defaults come from a
-  survey of every grid (`Saved/LookDev/tools/survey_grids.py`): the most common height of the back walls the
+  survey of every grid (`Tools/survey_grids.py`): the most common height of the back walls the
   original drew in full, the median height of its doorways, the layouts found at its doors. Caves and outdoor
   grids are left open. Options that used to be per-user are picked up from your old settings until the project
   settings are saved.
@@ -51,7 +51,7 @@ of one of the grid's scenes; 228 of the 322 interior door zones sit at one (most
 or open ground).
 
 Grids whose library (or grid override) has the enclosure on are closed into rooms from an explicit model of
-them (`FLBARoomModel`, prototyped with top-down plans in `Saved/LookDev/tools/room_model.py`):
+them (`FLBARoomModel`, prototyped with top-down plans in `Tools/room_model.py`):
 
 - **Rooms**: the walkable floors (not the tops of walls) split into plateaus around one level each; from each big
   plateau, its floors and the furniture standing on them, split at doorways. Small plateaus are stairs and
@@ -80,7 +80,7 @@ Each room has one **wallpaper** per wall orientation: the wall layout row drawn 
 over its floor (wall panels only), repeated up the walls, with the row drawn right over the floor as its foot; a
 room without back walls of its own takes the grid's (**WallpaperLayout** forces one per library). The frames the
 original put on its cut walls (the **CutFrames** layouts of each library, seeded from
-`Saved/LookDev/tools/survey_frames.py`, and the topmost piece under a wall's invisible collision, the cut through
+`Tools/survey_frames.py`, and the topmost piece under a wall's invisible collision, the cut through
 the wall) come off as whole instances where the enclosure covers them, with the remake models replacing them, into
 `SM_Grid_NNN_Frames` (an `EnclosureFrames` actor, hidden until the look switch shows it with the Original look).
 The library's **wall styles** (`DA_LibNN_WallStyles`, `ULBAWallStyleLibrary`; **IgnoredWallLayouts** leaves
@@ -91,8 +91,16 @@ Every import logs each enclosed grid's rooms (`R0 level 7 ceiling 17 floors 194 
 `Saved/LookDev/enclosure/cells/gridNNN.txt` (footprint columns with floor and ceiling, border sides, wall columns).
 `-LBA2EnclosureDebug` colors the enclosure by part (walls red, camera-side walls orange, over doorways yellow,
 doorway passages gray, steps purple, ceilings green, risers blue), `-LBA2EnclosureDebugArt` its walls by art
-(wallpaper cyan, its foot green, flat magenta). `Saved/LookDev/tools/raycast_leaks.py` checks a grid for holes by
+(wallpaper cyan, its foot green, flat magenta). `Tools/raycast_leaks.py` checks a grid for holes by
 casting rays from its rooms against the exported meshes (`export_enclosure_obj.py`).
+
+The interior tools in `Tools/` (Python 3 with numpy and Pillow; they read the game from `LBA2_GAME`, else the GOG
+install, and write under `Saved/LookDev`): `room_model.py <grid ...>` prints the room model and draws a top-down plan
+per grid (`Saved/LookDev/plans`); `survey_grids.py`, `survey_frames.py`, `survey_walls.py` and `render_layouts.py`
+survey walls, doorways, frames and layouts across grids; `rooms.ps1 -Name <run> -Grids "9,7,35,22,113,82,48,0"
+-Count 3 -Spread` builds, reimports those grids and shoots eye-level views inside them (`room_poses.py`,
+`shots.ps1`, `sheet.py`) into `Saved/LookDev/rooms/<run>/sheet.png`, the regression set of simple houses across
+libraries, then Twinsen's house.
 
 ## What gets imported
 

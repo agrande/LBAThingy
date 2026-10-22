@@ -1500,7 +1500,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			UE_LOG(LogLBA2, Display, TEXT("Grid %d enclosure: %d rooms, %d triangles, %d frame cells removed"), GridIndex, ModelRooms.Num(),
 				EnclosureBuilder.NumTriangles() + CeilingBuilder.NumTriangles(), RemovedFrames.Num());
 			{
-				// The model, for Saved/LookDev/tools (room_model.py, raycast_leaks.py): its rooms, "C x z room floor ceiling"
+				// The model, for the plugin's Tools (room_model.py, raycast_leaks.py): its rooms, "C x z room floor ceiling"
 				// per footprint column, "E x z side kind" per border side, "W x z level" per wall column.
 				FString Dump = Model.Describe();
 				for (int32 RoomIndex = 0; RoomIndex < ModelRooms.Num(); ++RoomIndex)
