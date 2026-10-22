@@ -57,6 +57,10 @@ private:
 	void BuildKitMeshes(int32 LibraryIndex);
 	/** The wall styles of a library, found in all its grids (DA_LibNN_WallStyles). */
 	const TArray<FLBAWallStyle>& GetWallStyles(int32 LibraryIndex);
+	/** Doorways of a grid, with its library's doorway layouts and its scenes' cube-change zones as hints. */
+	TArray<FLBADoorway> FindDoorways(int32 GridIndex, int32 LibraryIndex, const FLBARoomAnalysis& Rooms) const;
+	/** Bricks of a library's walls, learned from the rooms of all its grids (FLBARoomModel). */
+	const TSet<int32>& GetWallBricks(int32 LibraryIndex);
 	bool ImportGrid(int32 GridIndex);
 	FString GetGridLevelName(int32 GridIndex) const;
 
@@ -68,5 +72,6 @@ private:
 	TMap<int32, TUniquePtr<FLBALibrary>> Libraries;
 	TMap<int32, TUniquePtr<FAtlas>> Atlases;
 	TMap<int32, TArray<FLBAWallStyle>> WallStyles;
+	TMap<int32, TSet<int32>> WallBricks;
 	TUniquePtr<class FLBARemakeAssets> Remake;
 };

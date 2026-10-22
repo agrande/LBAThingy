@@ -151,18 +151,11 @@ struct FLBALibraryEnclosure
 	TArray<int32> IgnoredWallLayouts;
 
 	/**
-	 * Layout of the wall style that dresses the inner sides of the walls facing the camera (which the original never
-	 * drew). -1: the most used style of each room's back walls.
+	 * Wall layout whose middle row dresses every room's walls where the enclosure raises them. -1: each room's own, the
+	 * layout row drawn most on its back walls.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ClampMin = "-1"))
-	int32 IndoorWallLayout = INDEX_NONE;
-
-	/**
-	 * Raised walls end in their style's top (caps, cornices) under the ceiling. Off by default: tops are pictures of
-	 * mouldings, flattened on a wall face they look wrong.
-	 */
-	UPROPERTY(EditAnywhere, Category = "Enclosure")
-	bool bWallTops = false;
+	int32 WallpaperLayout = INDEX_NONE;
 };
 
 /** Enclosure changes for one grid, over its library's. */

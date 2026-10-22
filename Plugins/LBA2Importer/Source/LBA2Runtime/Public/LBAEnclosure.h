@@ -17,11 +17,11 @@ struct LBA2RUNTIME_API FLBAEnclosureSettings
 	UPROPERTY(EditAnywhere, Category = "Enclosure")
 	bool bEnclose = true;
 
-	/** Height walls are raised to, in cells above the floor. Walls that are already taller keep their height. */
+	/** Height of the rooms, in cells: their ceiling is this far over their floor (over each step of stairs). */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ClampMin = "3", ClampMax = "24", EditCondition = "bEnclose"))
 	int32 RoomHeight = 8;
 
-	/** Close rooms with a ceiling at the top of their walls. */
+	/** Close rooms with a ceiling. */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (EditCondition = "bEnclose"))
 	bool bCeiling = true;
 
@@ -55,11 +55,11 @@ struct LBA2RUNTIME_API FLBAEnclosureOverrides
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (EditCondition = "bOverride_bEnclose"))
 	bool bEnclose = true;
 
-	/** Height walls are raised to, in cells above the floor. */
+	/** Height of the rooms, in cells over their floor. */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ClampMin = "3", ClampMax = "24", EditCondition = "bOverride_RoomHeight"))
 	int32 RoomHeight = 8;
 
-	/** Close rooms with a ceiling at the top of their walls. */
+	/** Close rooms with a ceiling. */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (EditCondition = "bOverride_bCeiling"))
 	bool bCeiling = true;
 

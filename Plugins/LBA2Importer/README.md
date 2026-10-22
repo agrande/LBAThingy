@@ -50,40 +50,48 @@ Openings count as doorways when they have a lintel, a jamb or threshold layout, 
 of one of the grid's scenes; 228 of the 322 interior door zones sit at one (most others are stairs, ladders
 or open ground).
 
-Grids whose library (or grid override) has the enclosure on also get `SM_Grid_NNN_Enclosure`
-(`FLBAEnclosureCells`), placed as an `Enclosure` actor tagged `LBAEnclosure`. Per room, the footprint is
-what the outside cannot reach when it floods in from beyond the grid through columns with nothing at or
-above the room's lowest floor; its edge (but its floors, which stay open) is raised to the ceiling, the
-ceiling sits the room height above the highest floor nearby, the wall above doorways is closed from their
-lintel (or the door height where the camera-side walls were cut), and exits stay open up to the top of
-their door. Walls inside the room the original cut down (their collision goes on above what is drawn,
-unlike railings and furniture) are raised too, and so are the stubs of the camera-side walls, flush. The
-frames the original put on its cut walls (the **CutFrames** layouts of each library, seeded from
-`Saved/LookDev/tools/survey_frames.py`) come off where the enclosure takes their place, into
-`SM_Grid_NNN_Frames` (an `EnclosureFrames` actor, hidden until the look switch shows it with the Original
-look); bricks without any art count as empty. Every face looks into a room, so a camera outside sees
-through while the walls and ceiling still cast shadows (two-sided shadows and distance fields); the camera
-ignores its collision, Twinsen doesn't. For now the enclosure shows in both looks.
+Grids whose library (or grid override) has the enclosure on are closed into rooms from an explicit model of
+them (`FLBARoomModel`, prototyped with top-down plans in `Saved/LookDev/tools/room_model.py`):
 
-Its walls are dressed with the library's **wall styles** (`DA_LibNN_WallStyles`, `ULBAWallStyleLibrary`),
-found by the importer in all the library's grids: how the original stacks layout rows into a full wall, as a
-foot, a body (the rows it repeats to stretch a wall, or its tallest panel, with a stretch row) and a top, for
-indoor and outdoor sides. They are also the vocabulary for the procedural wall builder. In the enclosure, a wall
-finishes the layout it was cut in on the side the original drew; everything else (above it, the sides never drawn,
-walls inside a room, above doorways) takes the room's style from its floor up: the most used, plainest style of
-the room's real walls (furniture excluded). The original's art of raised walls below is covered with it. The
-topmost piece under a wall's invisible collision is the cut through the wall and counts as a frame; frames come
-off as whole instances, with the remake models that replace them. Walls capped with the cut frame between two
-floors at one level are raised. Each room (floor joined around walls and doorways) has one ceiling over its
-highest floor; ceilings (`EnclosureCeiling`) cast no shadow, so the overhead light enters, and each room gets a
-soft bounce light from its floor (**RoomBounceLight**). Ceilings take the library's **CeilingColor** or
-**CeilingMaterial**; per library, **IgnoredWallLayouts**, **IndoorWallLayout** and **bWallTops** (off: tops are
-pictures of mouldings) tune the styles. Still a work in progress: see the roadmap.
-`-LBA2EnclosureDebug` on an import colors it by part (walls red, backings gray, ceilings green, risers
-blue, above doorways yellow, partitions and stubs orange), `-LBA2EnclosureDebugArt` colors the walls by where
-their art comes from (own wall's style green, room style cyan, style without art yellow, the brick below orange,
-none magenta); both dump its cells and wall faces to
-`Saved/LookDev/enclosure/cells/`; `Saved/LookDev/tools/raycast_leaks.py` checks a grid for holes by
+- **Rooms**: the walkable floors (not the tops of walls) split into plateaus around one level each; from each big
+  plateau, its floors and the furniture standing on them, split at doorways. Small plateaus are stairs and
+  furniture tops. A doorway the room goes around (a gap between furniture) is part of it; a gap between two rooms
+  that neither reaches (a stairwell's top) belongs to the higher one.
+- **Walls**: columns rising at least 3 cells over the room's floor that were cut down (collision above what is
+  drawn), are drawn mostly with the library's **wall bricks**, or are tall with the outside behind them; and that
+  go on (another wall next to them, or the outside behind), so a lone column is furniture. The wall bricks are
+  learned per library from all its grids: the bricks of the back-most walls around rooms, not those of
+  free-standing furniture or floor tiles. A camera-side wall is a stub with an undrawn band one column further
+  out, and counts as a wall through it.
+- **Ceilings**: the library's room height (cells, 32 cm) over each room's floor, and over each step of stairs.
+
+The enclosure (`SM_Grid_NNN_Enclosure`, an `Enclosure` actor tagged `LBAEnclosure`) is made of faces on the
+rooms' borders, all looking into the rooms: on walls up to the ceiling, from above what the original drew on the
+sides it drew (the rooms' -X and -Z) and from the floor on the camera-side walls (whose inner side was never
+drawn); over doorways from the top of the opening (their lintel, or the door height where the camera-side walls
+lost it), under that top and on the passage's sides; the far end of exits closed in the dark the original shows
+past its doors; toward a room with a lower ceiling, and on the side of a step up to a raised room. Ceilings and
+their risers over stairs are `SM_Grid_NNN_Ceiling` (`EnclosureCeiling`, no shadow, so the overhead light enters;
+each room gets a soft bounce light from its floor, **RoomBounceLight**), in the library's **CeilingColor** or
+**CeilingMaterial**. A camera outside a room sees through it, while walls still cast shadows (two-sided shadows and
+distance fields); the camera ignores the enclosure's collision, Twinsen doesn't. For now it shows in both looks.
+
+Each room has one **wallpaper** per wall orientation: the wall layout row drawn most on its back walls a few cells
+over its floor (wall panels only), repeated up the walls, with the row drawn right over the floor as its foot; a
+room without back walls of its own takes the grid's (**WallpaperLayout** forces one per library). The frames the
+original put on its cut walls (the **CutFrames** layouts of each library, seeded from
+`Saved/LookDev/tools/survey_frames.py`, and the topmost piece under a wall's invisible collision, the cut through
+the wall) come off as whole instances where the enclosure covers them, with the remake models replacing them, into
+`SM_Grid_NNN_Frames` (an `EnclosureFrames` actor, hidden until the look switch shows it with the Original look).
+The library's **wall styles** (`DA_LibNN_WallStyles`, `ULBAWallStyleLibrary`; **IgnoredWallLayouts** leaves
+layouts out) are still found in all its grids, as the vocabulary of a future wall builder: how the original stacks
+layout rows into a wall (foot, body, top). Still a work in progress: see the roadmap.
+
+Every import logs each enclosed grid's rooms (`R0 level 7 ceiling 17 floors 194 ...`) and dumps the model to
+`Saved/LookDev/enclosure/cells/gridNNN.txt` (footprint columns with floor and ceiling, border sides, wall columns).
+`-LBA2EnclosureDebug` colors the enclosure by part (walls red, camera-side walls orange, over doorways yellow,
+doorway passages gray, steps purple, ceilings green, risers blue), `-LBA2EnclosureDebugArt` its walls by art
+(wallpaper cyan, its foot green, flat magenta). `Saved/LookDev/tools/raycast_leaks.py` checks a grid for holes by
 casting rays from its rooms against the exported meshes (`export_enclosure_obj.py`).
 
 ## What gets imported
@@ -470,8 +478,9 @@ color, shade row / light, surfaces without fog).
 - [x] Interior lamps (lba2remake models) glow and give light
 - [x] Importer settings split: per-user (paths, filters) and project (shared import rules, enclosure table per library and grid)
 - [x] Room and doorway analysis of interior grids (spaces, doorways and exits, door heights and doorway layouts per library)
-- [ ] Enclosed interiors (Enhanced look): walls raised to the room height, doorways kept, ceilings; hidden from the
-  iso camera but still shading; see-through dithered walls between Twinsen and the camera; Original look stays open
+- [ ] Enclosed interiors (Enhanced look): rooms, walls and ceilings from an explicit room model (done), wallpaper per
+  room (done); next: exceptions (double-height rooms with a gallery), see-through dithered walls between Twinsen
+  and the camera, Original look stays open (enclosure, ceilings and bounce lights off, frames back)
 - [x] Citadel's storm wind: a small hurricane around the island (calm eye, wall, gusts, turbulent ceiling) that carries the Dinofly and blows the rain
 - [ ] Look, next: Citadel storm (Niagara splashes like the original's spray, lightning, wet surfaces), cloud shadows, more interior lights (candles, original bricks),
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
