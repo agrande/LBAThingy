@@ -67,16 +67,18 @@ ignores its collision, Twinsen doesn't. For now the enclosure shows in both look
 
 Its walls are dressed with the library's **wall styles** (`DA_LibNN_WallStyles`, `ULBAWallStyleLibrary`),
 found by the importer in all the library's grids: how the original stacks layout rows into a full wall, as a
-foot, a body (the rows it repeats to stretch a wall, or its tallest panel) and a top (caps, cornices), for
-indoor and outdoor sides (lib 0: wallpaper panel L1 rows 0-7 under the wooden cap L4; outdoor L59 foundation,
-L32 stone rows repeated). Only opaque runs in lines of 3+ columns count (no fences, ladders, posts), and the
-crops of a style count as it. The walls the original cut down are these styles cropped, so a raised wall goes
-on with the rest of its own layout, then its style's body, with the top under the ceiling. The sides the
-original never drew (the inner side of the camera-side walls, above doorways) and walls cut to a slice in no
-style (Twinsen's partitions) take their room's style (the one its back walls use most) from its floor up.
-They are also the vocabulary for the procedural wall builder. Ceilings take the library's **CeilingColor**
-(seeded from the top of its main wall style, lighter) or **CeilingMaterial**; per library, **IgnoredWallLayouts**,
-**IndoorWallLayout** and **bWallTops** tune the styles.
+foot, a body (the rows it repeats to stretch a wall, or its tallest panel, with a stretch row) and a top, for
+indoor and outdoor sides. They are also the vocabulary for the procedural wall builder. In the enclosure, a wall
+finishes the layout it was cut in on the side the original drew; everything else (above it, the sides never drawn,
+walls inside a room, above doorways) takes the room's style from its floor up: the most used, plainest style of
+the room's real walls (furniture excluded). The original's art of raised walls below is covered with it. The
+topmost piece under a wall's invisible collision is the cut through the wall and counts as a frame; frames come
+off as whole instances, with the remake models that replace them. Walls capped with the cut frame between two
+floors at one level are raised. Each room (floor joined around walls and doorways) has one ceiling over its
+highest floor; ceilings (`EnclosureCeiling`) cast no shadow, so the overhead light enters, and each room gets a
+soft bounce light from its floor (**RoomBounceLight**). Ceilings take the library's **CeilingColor** or
+**CeilingMaterial**; per library, **IgnoredWallLayouts**, **IndoorWallLayout** and **bWallTops** (off: tops are
+pictures of mouldings) tune the styles. Still a work in progress: see the roadmap.
 `-LBA2EnclosureDebug` on an import colors it by part (walls red, backings gray, ceilings green, risers
 blue, above doorways yellow, partitions and stubs orange), `-LBA2EnclosureDebugArt` colors the walls by where
 their art comes from (own wall's style green, room style cyan, style without art yellow, the brick below orange,
