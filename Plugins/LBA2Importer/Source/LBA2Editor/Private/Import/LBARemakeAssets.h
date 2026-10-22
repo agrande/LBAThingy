@@ -42,6 +42,8 @@ public:
 		FTransform Transform;
 		FString Label;
 		TArray<FLamp> Lamps;
+		/** Grid cells of the layout instance it replaces (none for grid patches). */
+		TArray<FIntVector> Cells;
 	};
 
 	struct FGridResult

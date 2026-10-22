@@ -157,9 +157,12 @@ struct FLBALibraryEnclosure
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ClampMin = "-1"))
 	int32 IndoorWallLayout = INDEX_NONE;
 
-	/** Raised walls end in their style's top (caps, cornices) under the ceiling. */
+	/**
+	 * Raised walls end in their style's top (caps, cornices) under the ceiling. Off by default: tops are pictures of
+	 * mouldings, flattened on a wall face they look wrong.
+	 */
 	UPROPERTY(EditAnywhere, Category = "Enclosure")
-	bool bWallTops = true;
+	bool bWallTops = false;
 };
 
 /** Enclosure changes for one grid, over its library's. */
@@ -237,6 +240,13 @@ public:
 	/** Use the lba2remake models (Remake Directory in the per-user settings) in interiors. */
 	UPROPERTY(Config, EditAnywhere, Category = "Interiors")
 	bool bUseRemakeModels = true;
+
+	/**
+	 * Light the enclosed rooms' floors bounce onto their walls and ceilings (a soft fill from the floor up per room),
+	 * as a fraction of what a floor gets from the interior's overhead light times the floor's brightness. 0: none.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Enclosure", meta = (ClampMin = "0", UIMax = "4"))
+	float RoomBounceLight = 1.f;
 
 	/** Enclosure of libraries that are not listed in Library Enclosures. */
 	UPROPERTY(Config, EditAnywhere, Category = "Enclosure")

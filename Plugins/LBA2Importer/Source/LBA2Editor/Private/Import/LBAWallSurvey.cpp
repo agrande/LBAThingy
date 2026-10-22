@@ -145,6 +145,7 @@ void FLBAWallStyleDetector::AddRuns(int32 GridIndex, TConstArrayView<FLBAWallRun
 				}
 			}
 		}
+		const bool bRepeated = BodyStart != INDEX_NONE;
 		if (BodyStart == INDEX_NONE)
 		{
 			// Else the rows of the layout with the most of them (the first such).
@@ -182,12 +183,13 @@ void FLBAWallStyleDetector::AddRuns(int32 GridIndex, TConstArrayView<FLBAWallRun
 		Group.Foot = Foot;
 		Group.Body = Body;
 		Group.Top = Top;
+		Group.bRepeated = bRepeated;
 		++Group.Uses;
 		Group.Grids.Add(GridIndex);
 	}
 }
 
-TArray<FLBAWallStyle> FLBAWallStyleDetector::Finish(const TSet<int32>& Ignored) const
+TArray<FLBAWallStyle> FLBAWallStyleDetector::Finish(const TSet<int32>& Ignored, TFunctionRef<float(int32, int32, int32)> RowDistance) const
 {
 	// Rows in a row of one layout make a segment.
 	auto Segments = [this](const TArray<FRow>& Rows)
@@ -269,6 +271,21 @@ TArray<FLBAWallStyle> FLBAWallStyleDetector::Finish(const TSet<int32>& Ignored) 
 		Style.Foot = Segments(Group.Foot);
 		Style.Body = Segments(Group.Body);
 		Style.Top = Segments(Group.Top);
+		if (!Group.bRepeated && Style.Body.Num() == 1 && Style.Body[0].Height >= 3)
+		{
+			const FLBAWallSegment& Panel = Style.Body[0];
+			float Best = TNumericLimits<float>::Max();
+			for (int32 Row = 1; Row < Panel.Height - 1; ++Row)
+			{
+				// Ties (within a little) go to the higher row.
+				const float Distance = RowDistance(Panel.Layout, Panel.From + Row, Panel.From + Row - 1);
+				if (Distance <= Best * 1.1f + 1.f)
+				{
+					Best = FMath::Min(Best, Distance);
+					Style.StretchRow = Row;
+				}
+			}
+		}
 	}
 	Styles.Sort([](const FLBAWallStyle& A, const FLBAWallStyle& B)
 	{

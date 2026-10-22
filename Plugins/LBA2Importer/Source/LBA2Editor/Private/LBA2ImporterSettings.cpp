@@ -114,9 +114,10 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 	Library(10, TEXT("Statue"), 7, 9, { 64 }, {}, {});
 	Library(11, TEXT("Docks, mine, caves, end sequences"), 8, 7, { 113, 115, 117, 118, 119, 184, 185, 186 }, { 116 }, {}, false);
 	Library(12, TEXT("Nest, tickets office, access to Island CX"), 8, 6, { 40, 42, 43, 44, 49, 50, 51, 52 }, { 41, 45 }, {});
-	Library(13, TEXT("Casino, bar, shop"), 6, 8, { 9, 14, 15, 22, 49, 54, 86, 91, 133, 159, 160, 196, 197 }, { 150, 198 }, { 46, 50, 145, 146 });
+	Library(13, TEXT("Casino, bar, shop"), 6, 8, { 9, 14, 15, 22, 49, 54, 86, 91, 133, 159, 160, 196, 197 }, { 150, 198 }, { 12, 13, 18, 46, 47, 50, 145, 146 });
 	Library(14, TEXT("Refinery"), 6, 8, { 124, 167 }, {}, {});
-	Library(15, TEXT("Shops, bar, nursery, houses"), 8, 7, { 23, 24, 67 }, {}, {});
+	// The Francos' rock caves: flat walls and ceilings don't fit.
+	Library(15, TEXT("Shops, bar, nursery, houses (rock caves)"), 8, 7, { 23, 24, 67 }, {}, {}, false);
 	Library(16, TEXT("Control tower stairs"), 8, 6, { 177 }, {}, {});
 	Library(17, TEXT("Control tower"), 9, 8, { 5, 7, 61, 72, 79, 80, 118 }, { 9, 10, 17, 64 }, { 68, 85, 86, 88 });
 
@@ -135,7 +136,7 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 		}
 	}
 
-	auto Grid = [this](int32 Index, const TCHAR* Note, bool bEnclose, int32 RoomHeight = 0)
+	auto Grid = [this](int32 Index, const TCHAR* Note, bool bEnclose, int32 RoomHeight = 0, bool bCeiling = true)
 	{
 		FLBAGridEnclosure& Entry = GridEnclosures.AddDefaulted_GetRef();
 		Entry.Grid = Index;
@@ -144,6 +145,8 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 		Entry.Overrides.bEnclose = bEnclose;
 		Entry.Overrides.bOverride_RoomHeight = RoomHeight > 0;
 		Entry.Overrides.RoomHeight = RoomHeight > 0 ? RoomHeight : Entry.Overrides.RoomHeight;
+		Entry.Overrides.bOverride_bCeiling = !bCeiling;
+		Entry.Overrides.bCeiling = bCeiling;
 	};
 	Grid(21, TEXT("Wizard's tent"), true, 8);
 	Grid(26, TEXT("In the Dome"), true, 12);
@@ -155,6 +158,8 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 	Grid(55, TEXT("Outside the destroyed fortress"), false);
 	Grid(57, TEXT("Shop"), true);
 	Grid(69, TEXT("Church"), true);
+	// Open to the sky in the original (palms, a fountain): walls, no ceiling.
+	Grid(29, TEXT("Hacienda central area (a courtyard)"), true, 0, false);
 }
 
 void ULBA2ImporterProjectSettings::PostInitProperties()

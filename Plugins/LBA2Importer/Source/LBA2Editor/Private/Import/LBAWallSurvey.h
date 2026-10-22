@@ -61,8 +61,12 @@ public:
 	explicit FLBAWallStyleDetector(const FLBALibrary& InLibrary) : Library(InLibrary) {}
 
 	void AddRuns(int32 GridIndex, TConstArrayView<FLBAWallRun> Runs);
-	/** Styles used in at least MinUses columns, most used first; Ignored layouts never make a style, nor see-through runs. */
-	TArray<FLBAWallStyle> Finish(const TSet<int32>& Ignored) const;
+	/**
+	 * Styles used in at least MinUses columns, most used first; Ignored layouts never make a style, nor see-through
+	 * runs. RowDistance: how different two rows of a layout look (0: alike), to pick the row a panel body stretches by
+	 * (the one most like the row under it, the highest of them: a plain filler under the panel's top band).
+	 */
+	TArray<FLBAWallStyle> Finish(const TSet<int32>& Ignored, TFunctionRef<float(int32, int32, int32)> RowDistance) const;
 
 	static constexpr int32 MinUses = 3;
 
@@ -74,6 +78,8 @@ private:
 	{
 		ELBAWallFacing Facing = ELBAWallFacing::Indoor;
 		TArray<FRow> Foot, Body, Top;
+		/** The body is rows the original stacks again (else a panel). */
+		bool bRepeated = false;
 		int32 Uses = 0;
 		TSet<int32> Grids;
 	};

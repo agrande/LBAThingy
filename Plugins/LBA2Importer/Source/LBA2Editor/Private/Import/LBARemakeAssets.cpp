@@ -475,6 +475,7 @@ FLBARemakeAssets::FGridResult FLBARemakeAssets::ProcessGrid(FLBAGrid& Grid, cons
 					{
 						continue;
 					}
+					TArray<FIntVector> Cells;
 					for (int32 DZ = 0; DZ < Variant.NZ; ++DZ)
 					{
 						for (int32 DX = 0; DX < Variant.NX; ++DX)
@@ -482,6 +483,7 @@ FLBARemakeAssets::FGridResult FLBARemakeAssets::ProcessGrid(FLBAGrid& Grid, cons
 							for (int32 DY = 0; DY < Variant.NY; ++DY)
 							{
 								Out.HiddenCells.Add(FIntVector(X - DX, Y + DY, Z - DZ));
+								Cells.Emplace(X - DX, Y + DY, Z - DZ);
 							}
 						}
 					}
@@ -492,7 +494,7 @@ FLBARemakeAssets::FGridResult FLBARemakeAssets::ProcessGrid(FLBAGrid& Grid, cons
 						const double GZ = (Z - 1) - Variant.NZ * 0.5 + 1.0;
 						const double Yaw = -FMath::RadiansToDegrees(AngleMapping[Variant.Orientation & 3]);
 						Out.Placements.Add({ Mesh, FTransform(FRotator(0, Yaw, 0), RemakeToUnreal(GX, GY, GZ, Scale)), FPaths::GetBaseFilename(Variant.File),
-							GetModelLamps(TEXT("layouts"), Variant.File) });
+							GetModelLamps(TEXT("layouts"), Variant.File), MoveTemp(Cells) });
 					}
 				}
 			}

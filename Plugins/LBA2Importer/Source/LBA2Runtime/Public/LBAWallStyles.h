@@ -68,6 +68,14 @@ struct LBA2RUNTIME_API FLBAWallStyle
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall")
 	TArray<FLBAWallSegment> Top;
 
+	/**
+	 * Row of the body (counted from its first row) repeated to make the wall taller, keeping the rows above it (a
+	 * band under the ceiling) at the top; dropped from the middle first to make it lower. -1: the whole body repeats
+	 * (the original stacks it so).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Wall")
+	int32 StretchRow = INDEX_NONE;
+
 	/** Wall columns built this way in the original grids (how common the style is). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Wall")
 	int32 Uses = 0;

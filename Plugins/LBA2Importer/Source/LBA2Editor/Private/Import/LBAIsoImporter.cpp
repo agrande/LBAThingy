@@ -1,6 +1,11 @@
 #include "Import/LBAIsoImporter.h"
 
+#include "Components/RectLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/RectLight.h"
+#include "EngineUtils.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
@@ -219,7 +224,8 @@ namespace
 		const FLBAGrid* Grid = nullptr;
 		const FLBALibrary* Library = nullptr;
 		int32 ForbiddenBrick = 0;
-		TConstArrayView<FLBAWallStyle> Styles;
+		/** The library's styles, then the grid's own panels that are in none (a plain brick wall the original never stacks). */
+		TArray<FLBAWallStyle> Styles;
 		/** Per space: the style of the sides of its walls the original never drew (INDEX_NONE: none). */
 		TArray<int32> RoomStyles;
 		FVector4f CeilingColor = FVector4f(0.3f, 0.3f, 0.3f, 0.5f);
@@ -256,13 +262,15 @@ namespace
 	}
 
 	/**
-	 * Cell K (from the foot) of a wall Height cells tall built in a style: the foot, the body repeated, and the top in
-	 * its last cells (bTops) when the wall is taller than its foot and top.
+	 * Cell K (from the foot) of a wall Height cells tall built in a style: the foot, the body stretched to the height
+	 * (its stretch row repeated or dropped, or the whole body repeated), and the top in its last cells (bTops) when the
+	 * wall is taller than its foot and top.
 	 */
 	bool StyleCell(const FLBAWallStyle& Style, int32 K, int32 Height, bool bTops, int32& OutLayout, int32& OutY, bool& bOutTop)
 	{
 		const int32 FootHeight = SegmentsHeight(Style.Foot), BodyHeight = SegmentsHeight(Style.Body), TopHeight = SegmentsHeight(Style.Top);
-		bOutTop = bTops && TopHeight > 0 && Height - TopHeight > FootHeight && K >= Height - TopHeight;
+		const bool bTop = bTops && TopHeight > 0 && Height - TopHeight > FootHeight;
+		bOutTop = bTop && K >= Height - TopHeight;
 		if (bOutTop)
 		{
 			return SegmentCell(Style.Top, K - (Height - TopHeight), OutLayout, OutY);
@@ -275,7 +283,31 @@ namespace
 		{
 			return SegmentCell(Style.Foot, K, OutLayout, OutY);
 		}
-		return BodyHeight > 0 && SegmentCell(Style.Body, (K - FootHeight) % BodyHeight, OutLayout, OutY);
+		if (BodyHeight <= 0)
+		{
+			return false;
+		}
+		const int32 J = K - FootHeight;
+		const int32 Stretch = Style.StretchRow;
+		if (Stretch == INDEX_NONE || Stretch >= BodyHeight)
+		{
+			return SegmentCell(Style.Body, J % BodyHeight, OutLayout, OutY);
+		}
+		// Rows the body has room for (the rest of the wall goes on with it when it reaches past the ceiling).
+		const int32 Cells = FMath::Max(Height - FootHeight - (bTop ? TopHeight : 0), J + 1);
+		int32 Row;
+		if (Cells >= BodyHeight)
+		{
+			const int32 Extra = Cells - BodyHeight;
+			Row = J <= Stretch ? J : J <= Stretch + Extra ? Stretch : J - Extra;
+		}
+		else
+		{
+			const int32 Tail = FMath::Min(BodyHeight - 1 - Stretch, Cells);
+			const int32 Head = Cells - Tail;
+			Row = J < Head ? J : BodyHeight - Tail + (J - Head);
+		}
+		return SegmentCell(Style.Body, Row, OutLayout, OutY);
 	}
 
 	/** Where a layout's row Y sits in a style, counted from its foot. */
@@ -308,7 +340,8 @@ namespace
 	 * Where no style applies, a wall repeats the first opaque brick down the wall it stands on, or takes its color.
 	 */
 	void EmitEnclosure(const FLBAEnclosureCells& Cells, const FLBARoomAnalysis& Rooms, const FCellQuery& Query,
-		TFunctionRef<bool(int32, int32, int32)> IsDrawn, const FLBAIsoImporter::FAtlas& Atlas, const FEnclosureArt& Art, FLBAMeshBuilder& Builder, float Scale)
+		TFunctionRef<bool(int32, int32, int32)> IsDrawn, const FLBAIsoImporter::FAtlas& Atlas, const FEnclosureArt& Art, FLBAMeshBuilder& Builder,
+		FLBAMeshBuilder& CeilingBuilder, float Scale)
 	{
 		const FBrickFace* Faces = GetBrickFaces();
 		TArray<FVector4f> RoomColors;
@@ -330,9 +363,9 @@ namespace
 
 		const int32 BrickSection = Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material);
 		int32 FillSection = INDEX_NONE;
-		const int32 CeilingSection = Art.CeilingMaterial ? Builder.GetSection(TEXT("Ceiling"), Art.CeilingMaterial) : INDEX_NONE;
-		// Backings sit just behind the wall's face, so the grid's own back face wins where it has one; the art under a
-		// see-through top (a cap) as far behind it.
+		const int32 CeilingSection = CeilingBuilder.GetSection(TEXT("Ceiling"), Art.CeilingMaterial ? Art.CeilingMaterial : Atlas.FillMaterial);
+		// Backings sit just behind the grid's faces on the side the original drew (just in front on the other); the art
+		// under a see-through top (a cap) as far behind it.
 		constexpr float BackingInset = 1.f;
 		// Fraction of the way to its center each corner of a face's art is sampled from (about 2 pixels).
 		constexpr float ArtInset = 0.1f;
@@ -402,7 +435,7 @@ namespace
 		};
 
 		auto EmitQuad = [&](const FIntVector& Cell, const FBrickFace& Face, int32 Section, const FIntPoint* SourceCell, int32 ArtFaceIndex,
-			const FVector4f& Color, float Inset)
+			const FVector4f& Color, float Inset, FLBAMeshBuilder* Target = nullptr)
 		{
 			const FBrickFace& ArtFace = Faces[ArtFaceIndex];
 			// The art is sampled a little inside the face: its edge pixels are often transparent, and repeated up a
@@ -435,16 +468,18 @@ namespace
 				}
 				Section = FillSection;
 			}
-			Builder.AddTriangleFacing(Section, V[0], V[1], V[2], Normal);
-			Builder.AddTriangleFacing(Section, V[0], V[2], V[3], Normal);
+			FLBAMeshBuilder& Into = Target ? *Target : Builder;
+			Into.AddTriangleFacing(Section, V[0], V[1], V[2], Normal);
+			Into.AddTriangleFacing(Section, V[0], V[2], V[3], Normal);
 		};
 
 		// Wall faces by where their art comes from (see -LBA2EnclosureDebugArt).
 		int32 Stats[5] = {};
 		static const FColor ArtColors[] = { FColor(40, 200, 60), FColor(40, 200, 220), FColor(240, 210, 40), FColor(240, 130, 30), FColor(255, 0, 255) };
-		auto EmitCell = [&](const FIntVector& Cell, bool bBacking)
+		// bCover: a grid cell of a raised partition, covered with its room's walls just in front of its own art.
+		auto EmitCell = [&](const FIntVector& Cell, bool bBacking, bool bCover = false)
 		{
-			const ELBAEnclosurePart Part = Cells.Parts.FindRef(Cell);
+			const ELBAEnclosurePart Part = bCover ? ELBAEnclosurePart::Partition : Cells.Parts.FindRef(Cell);
 			for (int32 FaceIndex = 0; FaceIndex < 6; ++FaceIndex)
 			{
 				const FBrickFace& Face = Faces[FaceIndex];
@@ -465,7 +500,9 @@ namespace
 				{
 					continue;
 				}
-				const float Inset = bBacking ? BackingInset : 0.f;
+				// A backing on the side the original drew sits behind the grid's art; on the other side it covers the grid's
+				// back faces (the outside art of the wall mirrored), a little in front of them.
+				const float Inset = bCover ? -BackingInset * 0.5f : !bBacking ? 0.f : (Face.Dir.X > 0 || Face.Dir.Z > 0) ? BackingInset : -BackingInset * 0.5f;
 
 				if (bDebugParts)
 				{
@@ -474,7 +511,7 @@ namespace
 				}
 				if (Face.Dir.Y != 0 || Part == ELBAEnclosurePart::Ceiling || Part == ELBAEnclosurePart::Riser)
 				{
-					EmitQuad(Cell, Face, CeilingSection, nullptr, FaceIndex, Art.CeilingColor, Inset);
+					EmitQuad(Cell, Face, CeilingSection, nullptr, FaceIndex, Art.CeilingColor, Inset, &CeilingBuilder);
 					continue;
 				}
 
@@ -546,7 +583,11 @@ namespace
 					}
 				}
 				const bool bDrawnSide = Face.Dir.X > 0 || Face.Dir.Z > 0;
-				if (bFacesAir && WallTop != INDEX_NONE && Art.Grid && Art.Library && (bDrawnSide || Part == ELBAEnclosurePart::Partition))
+				// Only the side the original drew goes on with its art: the other side of any wall (the inside of the
+				// camera-side walls, the back of a partition) looks into a room, it gets the room's walls.
+				// Walls inside a room (partitions, the stubs raised flush) are finished like the room on each side: what the
+				// original drew of them is often the cut through the wall (dark stone, a band), not a wall's face.
+				if (bFacesAir && WallTop != INDEX_NONE && Art.Grid && Art.Library && bDrawnSide && Part != ELBAEnclosurePart::Partition)
 				{
 					const FLBAGridCell& Top = Art.Grid->Get(WallColumn.X, WallTop, WallColumn.Y);
 					const FIntVector Block = Art.Library->Layouts.IsValidIndex(Top.Layout) ? Art.Library->Layouts[Top.Layout].GetBlockCoords(Top.Block) : FIntVector::ZeroValue;
@@ -649,6 +690,49 @@ namespace
 		for (const FIntVector& Cell : Cells.Backing)
 		{
 			EmitCell(Cell, true);
+		}
+		// The walls the enclosure raises show the grid's own art below: on the sides the original never drew, its mirrored
+		// outside art (the inside of the camera-side walls' stubs); on partitions, the cut through the wall. Both are
+		// covered with the room's walls, from the floor up.
+		TSet<FIntVector> Covers;
+		auto RaisedPart = [&](const FIntVector& Wall) -> TOptional<ELBAEnclosurePart>
+		{
+			for (int32 Y = Wall.Y + 1; Y < LBA::GridSizeY; ++Y)
+			{
+				if (const ELBAEnclosurePart* Found = Cells.Parts.Find(FIntVector(Wall.X, Y, Wall.Z)))
+				{
+					return Cells.Fill.Contains(FIntVector(Wall.X, Y, Wall.Z)) ? TOptional<ELBAEnclosurePart>(*Found) : TOptional<ELBAEnclosurePart>();
+				}
+				if (Query.ShapeAt(Wall.X, Y, Wall.Z) == 0)
+				{
+					break;
+				}
+			}
+			return {};
+		};
+		for (const TPair<FIntVector, int32>& Pair : Cells.Air)
+		{
+			for (const FIntPoint Dir : { FIntPoint(1, 0), FIntPoint(0, 1) })
+			{
+				for (const int32 Sign : { 1, -1 })
+				{
+					const FIntVector Wall(Pair.Key.X + Dir.X * Sign, Pair.Key.Y, Pair.Key.Z + Dir.Y * Sign);
+					if (Covers.Contains(Wall) || Cells.Backing.Contains(Wall) || !IsDrawn(Wall.X, Wall.Y, Wall.Z))
+					{
+						continue;
+					}
+					const TOptional<ELBAEnclosurePart> Raised = RaisedPart(Wall);
+					// Undrawn side (the wall is at +X/+Z of the air): any raised wall; drawn side: partitions only.
+					if (Raised && (Sign > 0 || *Raised == ELBAEnclosurePart::Partition))
+					{
+						Covers.Add(Wall);
+					}
+				}
+			}
+		}
+		for (const FIntVector& Cell : Covers)
+		{
+			EmitCell(Cell, true, true);
 		}
 		UE_LOG(LogLBA2, Display, TEXT("Enclosure wall faces: %d own style, %d room style, %d style without art, %d fallback brick, %d flat"),
 			Stats[0], Stats[1], Stats[2], Stats[3], Stats[4]);
@@ -1078,7 +1162,28 @@ const TArray<FLBAWallStyle>& FLBAIsoImporter::GetWallStyles(int32 LibraryIndex)
 		}
 	}
 	const FLBALibraryEnclosure* LibraryEnclosure = Context.GetProjectSettings().FindLibraryEnclosure(LibraryIndex);
-	Styles = Detector.Finish(LibraryEnclosure ? TSet<int32>(LibraryEnclosure->IgnoredWallLayouts) : TSet<int32>());
+	// Rows compare by the average color of their bricks' facing sides (sRGB, summed over the row's width).
+	auto RowDistance = [Library, Atlas, Forbidden](int32 LayoutIndex, int32 RowA, int32 RowB)
+	{
+		const FLBALayout& Layout = Library->Layouts[LayoutIndex];
+		const int32 Slot = Layout.SizeX == 1 ? 1 : 2;
+		float Distance = 0.f;
+		for (int32 Z = 0; Z < Layout.SizeZ; ++Z)
+		{
+			for (int32 X = 0; X < Layout.SizeX; ++X)
+			{
+				auto ColorOf = [&](int32 Row)
+				{
+					const int32 Brick = Layout.Blocks[Z * Layout.SizeX * Layout.SizeY + Row * Layout.SizeX + X].Brick;
+					const TStaticArray<FColor, 3>* Colors = Brick != Forbidden ? Atlas->FaceColors.Find(Brick) : nullptr;
+					return Colors ? FVector3f((*Colors)[Slot].R, (*Colors)[Slot].G, (*Colors)[Slot].B) : FVector3f::ZeroVector;
+				};
+				Distance += FVector3f::Distance(ColorOf(RowA), ColorOf(RowB));
+			}
+		}
+		return Distance / float(Layout.SizeX * Layout.SizeZ);
+	};
+	Styles = Detector.Finish(LibraryEnclosure ? TSet<int32>(LibraryEnclosure->IgnoredWallLayouts) : TSet<int32>(), RowDistance);
 
 	const FString Folder = Context.GetContentPath(FString::Printf(TEXT("Interiors/Libraries/Lib_%02d"), LibraryIndex));
 	const bool bKit = Context.GetProjectSettings().bCreateLayoutKitMeshes;
@@ -1265,6 +1370,15 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 
 	// Rooms and doorways, and the enclosure that closes the rooms for the Enhanced look.
 	UStaticMesh* EnclosureMesh = nullptr;
+	UStaticMesh* CeilingMesh = nullptr;
+	// The enclosed rooms: the box of their air (cells) and their floor's color, for their bounce light.
+	struct FRoomBox
+	{
+		FIntVector Min = FIntVector(TNumericLimits<int32>::Max());
+		FIntVector Max = FIntVector(TNumericLimits<int32>::Lowest());
+		FLinearColor Floor = FLinearColor::Black;
+	};
+	TArray<FRoomBox> RoomBoxes;
 	// The frames of the cut walls that the enclosure replaces: off the grid's mesh, in a mesh of their own.
 	TSet<FIntVector> RemovedFrames;
 	{
@@ -1327,17 +1441,9 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			Art.bWallTops = LibraryEnclosure->bWallTops;
 		}
 		{
-			// Each room's style: the one its back walls are built in the most (in cells), or the library's choice.
+			// Each room's style, or the library's choice.
 			const int32 Preferred = LibraryEnclosure && LibraryEnclosure->IndoorWallLayout != INDEX_NONE
 				? ULBAWallStyleLibrary::FindStyle(Art.Styles, LibraryEnclosure->IndoorWallLayout, -1, ELBAWallFacing::Indoor) : INDEX_NONE;
-			TMap<FIntVector, int32> FloorSpaces;
-			for (int32 Space = 0; Space < Rooms.GetSpaces().Num(); ++Space)
-			{
-				for (const FIntVector& Floor : Rooms.GetSpaces()[Space])
-				{
-					FloorSpaces.Add(Floor, Space);
-				}
-			}
 			TArray<TMap<int32, int32>> Votes;
 			Votes.SetNum(Rooms.GetSpaces().Num());
 			TMap<int32, int32> GridVotes;
@@ -1346,35 +1452,101 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				const TStaticArray<float, 3>* Values = Brick != 0 && Brick != Forbidden ? Atlas->FaceCoverage.Find(Brick) : nullptr;
 				return Values ? (*Values)[Slot] : 0.f;
 			};
-			for (const FLBAWallRun& Run : LBAWallSurvey::FindRuns(Grid, *Library, Coverage, OpaqueCoverage))
+			// Every wall panel cell (a layout one cell thin toward the camera) whose drawn side looks into a room's air
+			// votes for its style, at any height: furniture stands in front of most walls. Panels in no style make one of
+			// their own (all their rows, stacked).
+			TMap<int32, int32> PanelStyles;
+			for (const TPair<FIntVector, int32>& Pair : Enclosure.Air)
 			{
-				if (Run.Facing != ELBAWallFacing::Indoor || !Run.IsSolid())
+				for (const FIntPoint Side : { FIntPoint(1, 0), FIntPoint(0, 1) })
 				{
-					continue;
-				}
-				for (const FLBAWallCell& WallCell : Run.Cells)
-				{
-					const int32 StyleIndex = ULBAWallStyleLibrary::FindStyle(Art.Styles, WallCell.Layout, WallCell.Block.Y, ELBAWallFacing::Indoor);
-					if (StyleIndex == INDEX_NONE || Art.Styles[StyleIndex].Facing != ELBAWallFacing::Indoor)
+					const FIntVector Wall(Pair.Key.X - Side.X, Pair.Key.Y, Pair.Key.Z - Side.Y);
+					if (!Grid.IsInside(Wall.X, Wall.Y, Wall.Z) || !IsDrawn(Wall.X, Wall.Y, Wall.Z))
 					{
 						continue;
 					}
-					++GridVotes.FindOrAdd(StyleIndex);
-					if (const int32* Space = FloorSpaces.Find(FIntVector(Run.Column.X + Run.Side.X, Run.Foot - 1, Run.Column.Y + Run.Side.Y)))
+					// A wall closes the room: room air behind it makes it furniture (a counter, a screen).
+					if (Enclosure.Air.Contains(FIntVector(Wall.X - Side.X, Wall.Y, Wall.Z - Side.Y)))
 					{
-						++Votes[*Space].FindOrAdd(StyleIndex);
+						continue;
 					}
+					const FLBAGridCell& Cell = Grid.Get(Wall.X, Wall.Y, Wall.Z);
+					if (!Library->Layouts.IsValidIndex(Cell.Layout))
+					{
+						continue;
+					}
+					const FLBALayout& Layout = Library->Layouts[Cell.Layout];
+					const int32 Depth = Side.X != 0 ? Layout.SizeX : Layout.SizeZ, Width = Side.X != 0 ? Layout.SizeZ : Layout.SizeX;
+					const int32 Brick = Query.BrickAt(Wall.X, Wall.Y, Wall.Z);
+					if (Depth != 1 || (Width < 2 && Layout.SizeY < 2) || Coverage(Brick, Side.X != 0 ? 1 : 2) < OpaqueCoverage)
+					{
+						continue;
+					}
+					const FIntVector PanelBlock = Layout.GetBlockCoords(Cell.Block);
+					int32 StyleIndex = ULBAWallStyleLibrary::FindStyle(Art.Styles, Cell.Layout, PanelBlock.Y, ELBAWallFacing::Indoor);
+					if (StyleIndex == INDEX_NONE || Art.Styles[StyleIndex].Facing != ELBAWallFacing::Indoor)
+					{
+						if (const int32* Found = PanelStyles.Find(Cell.Layout))
+						{
+							StyleIndex = *Found;
+						}
+						else
+						{
+							FLBAWallStyle& Panel = Art.Styles.AddDefaulted_GetRef();
+							FLBAWallSegment& Segment = Panel.Body.AddDefaulted_GetRef();
+							Segment.Layout = Cell.Layout;
+							Segment.Height = Layout.SizeY;
+							Segment.Width = Width;
+							StyleIndex = PanelStyles.Add(Cell.Layout, Art.Styles.Num() - 1);
+						}
+					}
+					++GridVotes.FindOrAdd(StyleIndex);
+					++Votes[Pair.Value].FindOrAdd(StyleIndex);
 				}
 			}
-			auto MostVoted = [](const TMap<int32, int32>& Counts)
+			// How busy a style's body looks across its width (windows, pictures, doors differ from column to column;
+			// a plain wall doesn't): the average color difference between neighboring columns of its rows.
+			auto Busyness = [&Art, Library, Atlas, Forbidden](int32 StyleIndex)
 			{
-				int32 Best = INDEX_NONE, BestCount = 0;
+				float Sum = 0.f;
+				int32 Count = 0;
+				for (const FLBAWallSegment& Segment : Art.Styles[StyleIndex].Body)
+				{
+					const FLBALayout& Layout = Library->Layouts[Segment.Layout];
+					const int32 Slot = Layout.SizeX == 1 ? 1 : 2;
+					const int32 Width = Layout.SizeX == 1 ? Layout.SizeZ : Layout.SizeX;
+					for (int32 Row = Segment.From; Row < Segment.From + Segment.Height; ++Row)
+					{
+						for (int32 Column = 0; Column + 1 < Width; ++Column)
+						{
+							auto ColorAt = [&](int32 C)
+							{
+								const int32 X = Layout.SizeX == 1 ? 0 : C, Z = Layout.SizeX == 1 ? C : 0;
+								const int32 Brick = Layout.Blocks[Z * Layout.SizeX * Layout.SizeY + Row * Layout.SizeX + X].Brick;
+								const TStaticArray<FColor, 3>* Colors = Brick != Forbidden ? Atlas->FaceColors.Find(Brick) : nullptr;
+								return Colors ? FVector3f((*Colors)[Slot].R, (*Colors)[Slot].G, (*Colors)[Slot].B) : FVector3f::ZeroVector;
+							};
+							Sum += FVector3f::Distance(ColorAt(Column), ColorAt(Column + 1));
+							++Count;
+						}
+					}
+				}
+				// Panels one cell wide tell nothing: about as plain as a plain wall.
+				return Count > 0 ? Sum / Count : 8.f;
+			};
+			// The room's walls: the style its walls use most, plainness weighing in (a wall with a window or a picture
+			// shouldn't dress the whole room, nor a small plain patch it).
+			auto MostVoted = [&Busyness](const TMap<int32, int32>& Counts)
+			{
+				int32 Best = INDEX_NONE;
+				float BestScore = 0.f;
 				for (const TPair<int32, int32>& Pair : Counts)
 				{
-					if (Pair.Value > BestCount || (Pair.Value == BestCount && Pair.Key < Best))
+					const float Score = Pair.Value / (1.f + Busyness(Pair.Key) / 10.f);
+					if (Score > BestScore || (Score == BestScore && Pair.Key < Best))
 					{
 						Best = Pair.Key;
-						BestCount = Pair.Value;
+						BestScore = Score;
 					}
 				}
 				return Best;
@@ -1385,17 +1557,64 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			{
 				Fallback = 0;
 			}
-			for (const TMap<int32, int32>& Counts : Votes)
+			for (TMap<int32, int32>& Counts : Votes)
 			{
+				// A house shares its walls: the grid's count for each room too.
+				if (Counts.Num() > 0)
+				{
+					for (const TPair<int32, int32>& Pair : GridVotes)
+					{
+						Counts.FindOrAdd(Pair.Key) += Pair.Value;
+					}
+				}
 				const int32 Voted = MostVoted(Counts);
+				FString Candidates;
+				for (const TPair<int32, int32>& Pair : Counts)
+				{
+					const FLBAWallSegment* Body = Art.Styles[Pair.Key].Body.Num() ? &Art.Styles[Pair.Key].Body[0] : nullptr;
+					Candidates += FString::Printf(TEXT(" L%d(h%d,v%d,b%.0f)"), Body ? Body->Layout : -1, Art.Styles[Pair.Key].GetHeight(), Pair.Value, Busyness(Pair.Key));
+				}
+				UE_LOG(LogLBA2, Log, TEXT("ROOMSTYLE grid %d room %d -> %d:%s"), GridIndex, Art.RoomStyles.Num(), Voted, *Candidates);
 				Art.RoomStyles.Add(Preferred != INDEX_NONE ? Preferred : Voted != INDEX_NONE ? Voted : Fallback);
 			}
+		}
+		RoomBoxes.SetNum(Rooms.GetSpaces().Num());
+		for (const TPair<FIntVector, int32>& Pair : Enclosure.Air)
+		{
+			FRoomBox& Box = RoomBoxes[Pair.Value];
+			Box.Min = Box.Min.ComponentMin(Pair.Key);
+			Box.Max = Box.Max.ComponentMax(Pair.Key);
+		}
+		for (int32 Space = 0; Space < RoomBoxes.Num(); ++Space)
+		{
+			int32 Count = 0;
+			for (const FIntVector& Floor : Rooms.GetSpaces()[Space])
+			{
+				if (const TStaticArray<FColor, 3>* Colors = Atlas->FaceColors.Find(Query.BrickAt(Floor.X, Floor.Y, Floor.Z)))
+				{
+					RoomBoxes[Space].Floor += FLinearColor::FromSRGBColor((*Colors)[0]);
+					++Count;
+				}
+			}
+			RoomBoxes[Space].Floor /= float(FMath::Max(Count, 1));
 		}
 		FString FaceDump;
 		const bool bDebugDump = FParse::Param(FCommandLine::Get(), TEXT("LBA2EnclosureDebug")) || FParse::Param(FCommandLine::Get(), TEXT("LBA2EnclosureDebugArt"));
 		Art.FaceDump = bDebugDump ? &FaceDump : nullptr;
-		FLBAMeshBuilder EnclosureBuilder;
-		EmitEnclosure(Enclosure, Rooms, Query, IsDrawn, *Atlas, Art, EnclosureBuilder, Context.GetScale());
+		FLBAMeshBuilder EnclosureBuilder, CeilingBuilder;
+		EmitEnclosure(Enclosure, Rooms, Query, IsDrawn, *Atlas, Art, EnclosureBuilder, CeilingBuilder, Context.GetScale());
+		if (CeilingBuilder.NumTriangles() > 0)
+		{
+			FMeshDescription Description;
+			TArray<UMaterialInterface*> Materials;
+			TArray<FName> Slots;
+			CeilingBuilder.BuildStatic(Description, Materials, Slots);
+			FLBAStaticMeshOptions Options;
+			Options.bComplexAsSimple = true;
+			Options.bTwoSidedDistanceField = true;
+			CeilingMesh = Context.CreateStaticMesh(Context.GetContentPath(TEXT("Interiors/Grids/Enclosure")), FString::Printf(TEXT("SM_Grid_%03d_Ceiling"), GridIndex),
+				MoveTemp(Description), Materials, Slots, Options);
+		}
 		if (!EnclosureBuilder.IsEmpty())
 		{
 			FMeshDescription Description;
@@ -1508,6 +1727,19 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			Actor->Tags.Add(TEXT("LBAEnclosure"));
 		}
 	}
+	if (CeilingMesh)
+	{
+		if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform::Identity, TEXT("EnclosureCeiling"), TEXT("Grid")))
+		{
+			UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
+			Component->SetStaticMesh(CeilingMesh);
+			// The interior's light comes from overhead (the original's): through the ceilings it lights the rooms, which
+			// bounce it onto their walls and ceilings, as a lit room would look.
+			Component->SetCastShadow(false);
+			Component->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+			Actor->Tags.Add(TEXT("LBAEnclosure"));
+		}
+	}
 	if (FramesMesh)
 	{
 		if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform::Identity, TEXT("EnclosureFrames"), TEXT("Grid")))
@@ -1524,10 +1756,18 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	const FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::Interior();
 	for (const FLBARemakeAssets::FPlacement& Placement : Remade.Placements)
 	{
-		if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, Placement.Transform, Placement.Label, TEXT("Grid/RemakeModels")))
+		// Models of the frames the enclosure removed (the remake's wooden rims of the cut walls) go with the frames.
+		const bool bFrame = Placement.Cells.ContainsByPredicate([&RemovedFrames](const FIntVector& Cell) { return RemovedFrames.Contains(Cell); });
+		if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, Placement.Transform, Placement.Label,
+			bFrame ? TEXT("Grid/EnclosureFrames") : TEXT("Grid/RemakeModels")))
 		{
 			UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
 			Component->SetStaticMesh(Placement.Mesh);
+			if (bFrame)
+			{
+				Component->SetVisibility(false);
+				Actor->Tags.Add(TEXT("LBAEnclosureFrames"));
+			}
 			// The grid's brick collision already covers these.
 			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			if (Preset.RemakeLamps.Light > 0.f)
@@ -1541,6 +1781,52 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	}
 	// A light from nearly overhead: brick floors get about the neutral light (the interior preset is calibrated for it).
 	LBAEnvironment::Spawn(Context, World, Preset, FRotator(-84.0, 45.0, 0.0));
+
+	// The enclosed rooms' bounce light: the overhead light goes through their ceilings (they cast no shadow) onto
+	// their floors, which light the walls and ceilings back. Lumen alone gets little of it under a ceiling (the sky
+	// light is shut out), so each room gets a soft fill from its floor up, the floor's color, as bright as the floor
+	// would bounce: a panel of luminance albedo * E / pi over the room, times BounceCalibration (the palette shading
+	// and the light units make the floor's light read darker than E: set by eye on lib 0's houses).
+	constexpr float BounceCalibration = 20.f;
+	const float Bounce = Context.GetProjectSettings().RoomBounceLight * BounceCalibration;
+	float SunLux = 0.f;
+	for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+	{
+		if (It->GetActorLabel() == TEXT("Sun"))
+		{
+			SunLux = It->GetLightComponent()->Intensity;
+		}
+	}
+	for (int32 Space = 0; Space < RoomBoxes.Num() && CeilingMesh && Bounce > 0.f && SunLux > 0.f; ++Space)
+	{
+		const FRoomBox& Box = RoomBoxes[Space];
+		if (Box.Min.X > Box.Max.X || Box.Max.Y - Box.Min.Y < 2)
+		{
+			continue;
+		}
+		const FVector Low = FVector(CornerPos(Box.Min.X, Box.Min.Y, Box.Min.Z, Scale));
+		const FVector High = FVector(CornerPos(Box.Max.X + 1, Box.Max.Y + 1, Box.Max.Z + 1, Scale));
+		const FVector Center((Low.X + High.X) * 0.5, (Low.Y + High.Y) * 0.5, Low.Z + 10.0);
+		// Facing up: the light's +X turned to +Z, its width along Y, its height along X.
+		if (ARectLight* Actor = Context.SpawnGeneratedActor<ARectLight>(World, FTransform(FRotator(90.0, 0.0, 0.0), Center),
+			FString::Printf(TEXT("RoomBounce_%d"), Space), TEXT("Grid")))
+		{
+			URectLightComponent* Light = CastChecked<URectLightComponent>(Actor->GetLightComponent());
+			const float Width = float(High.Y - Low.Y), Height = float(High.X - Low.X);
+			// Bright floors (sand, tiles) would flood the room: real rooms' ceilings rarely get more than a fair bounce.
+			const float Albedo = FMath::Clamp(Box.Floor.GetLuminance(), 0.05f, 0.35f);
+			Light->SetMobility(EComponentMobility::Movable);
+			Light->SetIntensityUnits(ELightUnits::Candelas);
+			Light->SetIntensity(Bounce * Albedo * SunLux * (Width / 100.f) * (Height / 100.f) / UE_PI);
+			Light->SetLightColor(Box.Floor / FMath::Max(Box.Floor.GetMax(), 1e-3f));
+			Light->SetSourceWidth(Width);
+			Light->SetSourceHeight(Height);
+			Light->SetAttenuationRadius(FVector::Distance(Low, High) * 1.2f);
+			Light->SetCastShadows(false);
+			Light->SetVolumetricScatteringIntensity(0.f);
+			Actor->Tags.Add(TEXT("LBAEnclosure"));
+		}
+	}
 
 	// Fallback player start (scenes provide the real hero position): a low floor near the middle of the content.
 	{
