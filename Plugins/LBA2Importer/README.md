@@ -35,10 +35,20 @@ Importer settings come in two parts, both shown in the panel:
 - **Project Settings > Plugins > LBA2 Importer** (`Config/DefaultLBA2Importer.ini`, shared with the project and
   kept across imports): how things are imported, i.e. destination, look, interiors (back faces, kit pieces,
   remake models), demo scenes, language, and the **Enclosure** table for the coming enclosed interiors:
-  per layout library whether rooms get closed and the room height in cells (32 cm), with per-grid overrides.
-  The library defaults come from a survey of every grid: the most common height of the back walls the
-  original drew in full. Caves and outdoor grids are left open. Options that used to be per-user are picked
-  up from your old settings until the project settings are saved.
+  per layout library whether rooms get closed, the room height and door height in cells (32 cm) and the
+  layouts that frame doorways (jambs, thresholds), with per-grid overrides. The library defaults come from a
+  survey of every grid (`Saved/LookDev/tools/survey_grids.py`): the most common height of the back walls the
+  original drew in full, the median height of its doorways, the layouts found at its doors. Caves and outdoor
+  grids are left open. Options that used to be per-user are picked up from your old settings until the project
+  settings are saved.
+
+The Interiors layer analyses each grid's rooms and doorways (`FLBARoomAnalysis`) and logs a line per grid
+(`Grid 0: 5 spaces, 5 doorways (3 exits, ...)`; `-LogCmds="LogLBA2 Verbose"` lists every doorway). A doorway is
+an opening in a wall line (walls of at least 3 cells, so the walls cut down for the camera count) between two
+rooms, or out of the grid: the original closes exits with invisible collision just past their door zone.
+Openings count as doorways when they have a lintel, a jamb or threshold layout, or a door (cube-change zone)
+of one of the grid's scenes; 228 of the 322 interior door zones sit at one (most others are stairs, ladders
+or open ground).
 
 ## What gets imported
 
@@ -423,6 +433,7 @@ color, shade row / light, surfaces without fog).
 - [x] Citadel's storm: dense dark fog, rain (Niagara drops) and splashes
 - [x] Interior lamps (lba2remake models) glow and give light
 - [x] Importer settings split: per-user (paths, filters) and project (shared import rules, enclosure table per library and grid)
+- [x] Room and doorway analysis of interior grids (spaces, doorways and exits, door heights and doorway layouts per library)
 - [ ] Enclosed interiors (Enhanced look): walls raised to the room height, doorways kept, ceilings; hidden from the
   iso camera but still shading; see-through dithered walls between Twinsen and the camera; Original look stays open
 - [x] Citadel's storm wind: a small hurricane around the island (calm eye, wall, gusts, turbulent ceiling) that carries the Dinofly and blows the rain

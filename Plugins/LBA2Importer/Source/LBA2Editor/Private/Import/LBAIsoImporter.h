@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Formats/LBAIso.h"
+#include "Import/LBARoomAnalysis.h"
 
 class FLBAImportContext;
 class FLBAMeshBuilder;
@@ -47,6 +48,9 @@ public:
 
 private:
 	bool LoadHeader();
+	/** Cube-change zones (doors) of the interior scenes, per grid. */
+	void LoadDoorZones();
+	void LogRooms(int32 GridIndex, const FLBARoomAnalysis& Rooms, const TArray<FLBADoorway>& Doorways, const TArray<FLBACellBox>& Zones);
 	const FLBALibrary* GetLibrary(int32 LibraryIndex);
 	const FAtlas* GetAtlas(int32 LibraryIndex);
 	void BuildKitMeshes(int32 LibraryIndex);
@@ -57,6 +61,7 @@ private:
 	const FLBAHqrFile* Bkg = nullptr;
 	FLBABkgHeader Header;
 	TArray<FLBASceneMapEntry> SceneMap;
+	TMap<int32, TArray<FLBACellBox>> DoorZones;
 	TMap<int32, TUniquePtr<FLBALibrary>> Libraries;
 	TMap<int32, TUniquePtr<FAtlas>> Atlases;
 	TUniquePtr<class FLBARemakeAssets> Remake;

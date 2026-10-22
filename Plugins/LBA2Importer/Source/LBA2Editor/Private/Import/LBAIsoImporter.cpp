@@ -5,6 +5,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "Formats/LBAScene.h"
 #include "GameFramework/PlayerStart.h"
 #include "Import/LBABodyConverter.h"
 #include "Import/LBAEnvironment.h"
@@ -613,6 +614,71 @@ FString FLBAIsoImporter::GetGridLevelName(int32 GridIndex) const
 	return FString::Printf(TEXT("L_Grid_%03d"), GridIndex);
 }
 
+void FLBAIsoImporter::LoadDoorZones()
+{
+	DoorZones.Reset();
+	const FLBAHqrFile* SceneFile = Context.GetHqr(TEXT("SCENE.HQR"));
+	if (!SceneFile)
+	{
+		return;
+	}
+	auto ToCell = [](int32 Value, int32 Size)
+	{
+		return FMath::FloorToInt(double(Value) / Size);
+	};
+	for (int32 Index = 0; Index + 1 < SceneFile->Num() && SceneMap.IsValidIndex(Index); ++Index)
+	{
+		FLBAScene Scene;
+		if (SceneMap[Index].bIsIsland || !Scene.Load(SceneFile->GetEntry(Index + 1), Index))
+		{
+			continue;
+		}
+		for (const FLBASceneZoneData& Zone : Scene.Zones)
+		{
+			if (Zone.Type != ELBAZoneType::CubeChange)
+			{
+				continue;
+			}
+			FLBACellBox& Box = DoorZones.FindOrAdd(SceneMap[Index].SceneryIndex).AddDefaulted_GetRef();
+			Box.Min = FIntVector(ToCell(FMath::Min(Zone.Min.X, Zone.Max.X), LBA::BrickSizeXZ), ToCell(FMath::Min(Zone.Min.Y, Zone.Max.Y), LBA::BrickSizeY),
+				ToCell(FMath::Min(Zone.Min.Z, Zone.Max.Z), LBA::BrickSizeXZ));
+			Box.Max = FIntVector(ToCell(FMath::Max(Zone.Min.X, Zone.Max.X), LBA::BrickSizeXZ), ToCell(FMath::Max(Zone.Min.Y, Zone.Max.Y), LBA::BrickSizeY),
+				ToCell(FMath::Max(Zone.Min.Z, Zone.Max.Z), LBA::BrickSizeXZ));
+		}
+	}
+}
+
+void FLBAIsoImporter::LogRooms(int32 GridIndex, const FLBARoomAnalysis& Rooms, const TArray<FLBADoorway>& Doorways, const TArray<FLBACellBox>& Zones)
+{
+	int32 Exits = 0;
+	int32 Stubs = 0;
+	for (const FLBADoorway& Doorway : Doorways)
+	{
+		Exits += Doorway.bExit;
+		Stubs += Doorway.IsInStub();
+	}
+	int32 ZonesAtDoorways = 0;
+	for (const FLBACellBox& Zone : Zones)
+	{
+		ZonesAtDoorways += Doorways.ContainsByPredicate([&Zone](const FLBADoorway& Doorway) { return FLBARoomAnalysis::IsNear(Doorway.Cells, Zone); });
+	}
+	UE_LOG(LogLBA2, Display, TEXT("Grid %d: %d spaces, %d doorways (%d exits, %d between rooms, %d in cut-down walls), %d/%d door zones at a doorway"),
+		GridIndex, Rooms.GetSpaces().Num(), Doorways.Num(), Exits, Doorways.Num() - Exits, Stubs, ZonesAtDoorways, Zones.Num());
+	static const TCHAR* EndNames[] = { TEXT("room"), TEXT("plug"), TEXT("edge"), TEXT("void"), TEXT("drop"), TEXT("blocked") };
+	for (const FLBADoorway& Doorway : Doorways)
+	{
+		TArray<FString> Signals;
+		if (EnumHasAnyFlags(Doorway.Signals, ELBADoorwaySignal::Lintel)) { Signals.Add(TEXT("lintel")); }
+		if (EnumHasAnyFlags(Doorway.Signals, ELBADoorwaySignal::Jamb)) { Signals.Add(TEXT("jamb")); }
+		if (EnumHasAnyFlags(Doorway.Signals, ELBADoorwaySignal::Threshold)) { Signals.Add(TEXT("threshold")); }
+		if (EnumHasAnyFlags(Doorway.Signals, ELBADoorwaySignal::Zone)) { Signals.Add(TEXT("zone")); }
+		const FIntVector& First = Doorway.Cells[0];
+		UE_LOG(LogLBA2, Verbose, TEXT("DOORWAY %d %s %s %c w%d f%d c%d n%d (%d,%d,%d) %s"), GridIndex, Doorway.bExit ? TEXT("exit") : TEXT("interior"),
+			EndNames[int32(Doorway.End)], Doorway.Axis == 0 ? TEXT('X') : TEXT('Z'), Doorway.Width, Doorway.FlankHeight, Doorway.ClearHeight,
+			Doorway.Cells.Num(), First.X, First.Y, First.Z, *FString::Join(Signals, TEXT("+")));
+	}
+}
+
 bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 {
 	FLBAGrid Grid;
@@ -682,6 +748,26 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		CollisionMesh = Context.CreateStaticMesh(Folder / TEXT("Collision"), MeshName + TEXT("_Collision"), MoveTemp(Description), Materials, Slots, Options);
 		// The render mesh cooks its collision from this mesh, so it must be fully built first.
 		Context.FinishPendingBuilds();
+	}
+
+	// Rooms and doorways (for the enclosure of the Enhanced look).
+	{
+		const FLBARoomAnalysis Rooms(
+			[&Query](int32 X, int32 Y, int32 Z) { return Query.ShapeAt(X, Y, Z); },
+			[&Query](int32 X, int32 Y, int32 Z) { return Query.BrickAt(X, Y, Z); },
+			[&Grid](int32 X, int32 Y, int32 Z) { return int32(Grid.Get(X, Y, Z).Layout); });
+		FLBADoorwayHints Hints;
+		if (const FLBALibraryEnclosure* LibraryEnclosure = Context.GetProjectSettings().FindLibraryEnclosure(Grid.LibraryIndex))
+		{
+			Hints.Jambs.Append(LibraryEnclosure->DoorwayJambs);
+			Hints.Thresholds.Append(LibraryEnclosure->DoorwayThresholds);
+		}
+		if (const TArray<FLBACellBox>* Zones = DoorZones.Find(GridIndex))
+		{
+			Hints.Zones = *Zones;
+		}
+		const TArray<FLBADoorway> Doorways = Rooms.FindDoorways(Hints);
+		LogRooms(GridIndex, Rooms, Doorways, Hints.Zones);
 	}
 
 	FCellQuery VisualQuery = Query;
@@ -798,6 +884,7 @@ int32 FLBAIsoImporter::ImportAll()
 	}
 	Remake = MakeUnique<FLBARemakeAssets>(Context);
 	Remake->Initialize();
+	LoadDoorZones();
 	const ULBA2ImporterSettings& Settings = Context.GetSettings();
 
 	TArray<int32> Grids;

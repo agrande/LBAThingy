@@ -115,6 +115,17 @@ struct FLBALibraryEnclosure
 
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ShowOnlyInnerProperties))
 	FLBAEnclosureSettings Enclosure;
+
+	/**
+	 * Layouts that frame doorways (jambs, arches, posts), at least 3 cells tall. An opening in a wall with one of
+	 * them at its side is a doorway even without a lintel.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	TArray<int32> DoorwayJambs;
+
+	/** Flat layouts lying in doorways (doormats, sills). An opening whose floor is one of them is a doorway. */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	TArray<int32> DoorwayThresholds;
 };
 
 /** Enclosure changes for one grid, over its library's. */
@@ -221,4 +232,7 @@ public:
 
 	/** Enclosure of a grid: its library's settings (or the default), then the grid's overrides. */
 	FLBAEnclosureSettings GetEnclosure(int32 Library, int32 Grid) const;
+
+	/** The library's entry in Library Enclosures, or null. */
+	const FLBALibraryEnclosure* FindLibraryEnclosure(int32 Library) const;
 };

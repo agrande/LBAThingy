@@ -24,6 +24,13 @@ struct LBA2RUNTIME_API FLBAEnclosureSettings
 	/** Close rooms with a ceiling at the top of their walls. */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (EditCondition = "bEnclose"))
 	bool bCeiling = true;
+
+	/**
+	 * Clear height of doorways, in cells above the floor: raised walls close above the doorways the original cut
+	 * down with the walls facing the camera (those lost their lintel).
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ClampMin = "4", ClampMax = "16", EditCondition = "bEnclose"))
+	int32 DoorHeight = 7;
 };
 
 /** Changes to FLBAEnclosureSettings for one grid (or, later, one area of a level); unticked values are inherited. */
@@ -41,6 +48,9 @@ struct LBA2RUNTIME_API FLBAEnclosureOverrides
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (InlineEditConditionToggle))
 	bool bOverride_bCeiling = false;
 
+	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (InlineEditConditionToggle))
+	bool bOverride_DoorHeight = false;
+
 	/** Raise walls and close rooms. */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (EditCondition = "bOverride_bEnclose"))
 	bool bEnclose = true;
@@ -52,6 +62,10 @@ struct LBA2RUNTIME_API FLBAEnclosureOverrides
 	/** Close rooms with a ceiling at the top of their walls. */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (EditCondition = "bOverride_bCeiling"))
 	bool bCeiling = true;
+
+	/** Clear height of doorways, in cells above the floor. */
+	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ClampMin = "4", ClampMax = "16", EditCondition = "bOverride_DoorHeight"))
+	int32 DoorHeight = 7;
 
 	void ApplyTo(FLBAEnclosureSettings& Settings) const
 	{
@@ -66,6 +80,10 @@ struct LBA2RUNTIME_API FLBAEnclosureOverrides
 		if (bOverride_bCeiling)
 		{
 			Settings.bCeiling = bCeiling;
+		}
+		if (bOverride_DoorHeight)
+		{
+			Settings.DoorHeight = DoorHeight;
 		}
 	}
 };
