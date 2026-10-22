@@ -1,10 +1,13 @@
 #pragma once
 
 #include "GameFramework/Pawn.h"
+#include "LBAFlightMovementComponent.h"
 #include "LBADinofly.generated.h"
 
 class ALBACharacter;
 class ULBAAirflowComponent;
+class ULBADeathScreen;
+class ULBAHitPointsComponent;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
@@ -16,6 +19,24 @@ class USphereComponent;
 class USpringArmComponent;
 struct FInputActionValue;
 
+/** Shape of the Dinofly's procedural wings: beats (frequency, Hz; amplitude, degrees) and the pose they beat around. */
+struct FLBAWingShape
+{
+	float Frequency = 0.f;
+	float Amplitude = 0.f;
+	/** Wings raised (degrees, a V seen from the front), swept back, leading edge up, and a fast buffeting. */
+	float Dihedral = 0.f;
+	float Sweep = 0.f;
+	float Flare = 0.f;
+	float Flutter = 0.f;
+
+	FLBAWingShape Lerp(const FLBAWingShape& To, float Alpha) const
+	{
+		return { FMath::Lerp(Frequency, To.Frequency, Alpha), FMath::Lerp(Amplitude, To.Amplitude, Alpha), FMath::Lerp(Dihedral, To.Dihedral, Alpha),
+			FMath::Lerp(Sweep, To.Sweep, Alpha), FMath::Lerp(Flare, To.Flare, Alpha), FMath::Lerp(Flutter, To.Flutter, Alpha) };
+	}
+};
+
 /**
  * Rideable Dinofly (prototype): Twinsen gets on it (on the ground), rides it with simple flight controls, and
  * gets off once landed. The default body already has Twinsen on its back, so the hero is hidden while riding.
@@ -23,10 +44,15 @@ struct FInputActionValue;
  * On the ground (or the water) W/S and A/D walk slowly; climbing takes off after a crouch. Touching the ground
  * lands at once: the legs come down while descending, the landing absorbs the touchdown.
  *
- * Hover mode (default): W/S or left stick = forward / backward, A/D = turn, Space / A / right trigger = climb,
- * Ctrl / C / B / left trigger = descend (into the ground or the sea to land). The higher, the faster it cruises.
- * Shift / X / right bumper held = dive (forward steeper, backward shallower, turning spirals down); releasing pulls
- * out with the speed gained (climbing meanwhile zooms up). It pulls out by itself before hitting anything.
+ * Hover mode (default): W/S or left stick = forward / backward, A/D = turn. Space / A / right trigger = one wing beat
+ * per press: pump slowly to hold the altitude, faster to climb. Between beats it glides down slowly, but a few seconds
+ * without one it stalls and falls faster and faster. Shift / X / right bumper held = dive, the longer the steeper
+ * (turning spirals down); releasing pulls out with the speed gained (climbing meanwhile zooms up); it pulls out by
+ * itself before hitting anything. Ctrl / C / B / left trigger = brake: taps and holds kill the speed (land softly by
+ * tapping), until the wings tire. Flying forward lifts it, more near the ground. The body leans with the flight's
+ * forces, the wings move procedurally (Project Settings > Game > LBA2 Dinofly has the values).
+ * Hitting anything too fast hurts it (stars fly out, it flinches); at zero life it dies: it drops and lies on its
+ * side, then "You died!" offers to retry (the level starts over).
  * Glide mode (Tab / View): W/S pitch (W dives unless lba.Dinofly.InvertPitch 1), A/D bank, climb = flap,
  * descend = brake. The camera follows behind, rising and looking down when descending or high above the
  * ground; its field of view widens with speed, accelerations and altitude changes. Mouse / right stick look
@@ -63,6 +89,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Camera")
 	float MaxCameraDrop = 25.f;
 
+	/** Screen shown once dead. Empty uses ULBADeathScreen. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	TSubclassOf<ULBADeathScreen> DeathScreenClass;
+
 	/** A waiting Dinofly closer than this (cm) is mounted directly instead of flying in. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
 	float MountDistance = 500.f;
@@ -78,9 +108,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	bool Dismount();
 
-	/** Drives the Dinofly like the player would: move (X turn right, Y forward), vertical [-1, 1]. */
+	/**
+	 * Drives the Dinofly like the player would: move (X turn right, Y forward), vertical [-1, 1] held (pressing climb
+	 * beats once, pressing descend pushes down once).
+	 */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void SetHoverInput(FVector2D Move, float Vertical);
+
+	/** One wing beat, like a press of climb. */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void Flap();
+
+	/** One tap of the brake, like a press of descend (holding it: SetHoverInput). */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void BrakeTap();
+
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	bool IsDead() const { return bDead; }
+
+	ULBAHitPointsComponent* GetHitPoints() const { return HitPoints; }
 
 	/** Dive while held (hover mode, in flight). */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
@@ -120,15 +166,30 @@ private:
 	void OnSteer(const FInputActionValue& Value);
 	void OnSteerReleased(const FInputActionValue& Value);
 	void OnLook(const FInputActionValue& Value);
-	void OnAscend(const FInputActionValue& Value) { bAscendHeld = true; }
+	void OnAscend(const FInputActionValue& Value) { bAscendHeld = true; ++AscendPresses; }
 	void OnAscendReleased(const FInputActionValue& Value) { bAscendHeld = false; }
-	void OnDescend(const FInputActionValue& Value) { bDescendHeld = true; }
+	void OnDescend(const FInputActionValue& Value) { bDescendHeld = true; ++DescendPresses; }
 	void OnDescendReleased(const FInputActionValue& Value) { bDescendHeld = false; }
 	void OnDive(const FInputActionValue& Value) { bDiveHeld = true; }
 	void OnDiveReleased(const FInputActionValue& Value) { bDiveHeld = false; }
 	void OnToggleMode(const FInputActionValue& Value) { ToggleFlightMode(); }
 	void OnDismount(const FInputActionValue& Value) { Dismount(); }
 	bool IsHovering() const;
+	/**
+	 * Flying (hover mode, diving too): the wings and the tail moved over the held spread-wings pose by rules from the
+	 * flight's state (beats, gliding, falling fast, braking by height, spent, diving), eased so every change is smooth.
+	 */
+	void UpdateProceduralWings(float DeltaSeconds);
+	/** Braking near the ground: the landing flare. */
+	bool IsBrakingLow() const;
+	UFUNCTION()
+	void HandleImpact(float ImpactSpeed, ELBAFlightImpact Kind, FVector Location);
+	UFUNCTION()
+	void HandleHurt(float Damage, FVector Location);
+	UFUNCTION()
+	void HandleDeath();
+	void ShowDeathScreen();
+	void DrawDebug() const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<USphereComponent> Collision;
@@ -138,6 +199,10 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	TObjectPtr<ULBAFlightMovementComponent> Flight;
+
+	/** Life; hits that hurt send stars flying out of it. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ULBAHitPointsComponent> HitPoints;
 
 	/** Airflow strokes around the body (hotspots, look and physics in its details). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
@@ -183,8 +248,28 @@ private:
 	bool bAscendHeld = false;
 	bool bDescendHeld = false;
 	bool bDiveHeld = false;
-	/** The wings are folded (a layer) for the dive. */
-	bool bWingsTucked = false;
+	/** Presses since the last tick. */
+	int32 AscendPresses = 0;
+	int32 DescendPresses = 0;
+	bool bDead = false;
+	/** The last hit hurt and how: played as the hit reaction (a flinch, standing when it was a landing). */
+	bool bHurtPending = false;
+	bool bHurtOnGround = false;
+	/**
+	 * Procedural wings: wanted this tick, their eased shape and weight, the last beat count seen, strokes queued, the
+	 * stroke's phase (0..1), a fading kick of the last beat, the tail's yaw, a clock; the spread-wings pose playing.
+	 */
+	bool bProceduralWings = false;
+	FLBAWingShape Wings;
+	float WingWeight = 0.f;
+	int32 LastBeatCount = 0;
+	int32 WingCyclesLeft = 0;
+	float WingPhase = 0.f;
+	float BeatKick = 0.f;
+	float TailYaw = 0.f;
+	float WingClock = 0.f;
+	bool bGlideBase = false;
+	FTimerHandle DeathTimer;
 	/** Camera state: how far it is raised and tilted down (0-1), and the smoothed forward acceleration (cm/s^2). */
 	float CameraDrop = 0.f;
 	/** One-shot animation (landing, takeoff, legs coming down as a layer) running, or INDEX_NONE. */

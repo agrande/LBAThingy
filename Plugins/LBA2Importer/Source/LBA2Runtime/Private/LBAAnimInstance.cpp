@@ -500,6 +500,19 @@ void FLBAAnimInstanceProxy::ApplyProcedural(FPoseContext& Output) const
 			Pose.SafeSetCSBoneTransforms(Transforms);
 		}
 	}
+
+	// Free rotations, each about its bone's joint: the children follow.
+	for (const TPair<FName, FQuat>& BoneRotation : Procedural.BoneRotations)
+	{
+		const FCompactPoseBoneIndex Index = FindBone(Bones, BoneRotation.Key);
+		if (Index.IsValid())
+		{
+			FTransform Transform = Pose.GetComponentSpaceTransform(Index);
+			Transform.SetRotation(FQuat::Slerp(FQuat::Identity, BoneRotation.Value, Weight) * Transform.GetRotation());
+			const FBoneTransform Transforms[] = { FBoneTransform(Index, Transform) };
+			Pose.SafeSetCSBoneTransforms(Transforms);
+		}
+	}
 	FCSPose<FCompactPose>::ConvertComponentPosesToLocalPoses(MoveTemp(Pose), Output.Pose);
 }
 

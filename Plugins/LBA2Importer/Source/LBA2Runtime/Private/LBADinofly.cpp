@@ -5,6 +5,7 @@
 #include "Engine/CollisionProfile.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
@@ -23,15 +24,36 @@
 #include "LBAAirflowComponent.h"
 #include "LBAAnimInstance.h"
 #include "LBACharacter.h"
+#include "LBADeathScreen.h"
+#include "LBADinoflySettings.h"
 #include "LBAEntityAsset.h"
 #include "LBAFlightMovementComponent.h"
+#include "LBAHitPointsComponent.h"
 #include "LBATypes.h"
+#include "TimerManager.h"
 
 namespace
 {
 	TAutoConsoleVariable<bool> CVarInvertPitch(
 		TEXT("lba.Dinofly.InvertPitch"), false,
 		TEXT("Dinofly pitch controls: false = forward dives (flight stick), true = forward climbs."));
+
+	TAutoConsoleVariable<bool> CVarDinoflyDebug(
+		TEXT("lba.Dinofly.Debug"), false,
+		TEXT("Shows the Dinofly's life, air density, vertical speed and beats as text above it (debug builds)."));
+
+	FAutoConsoleCommandWithWorldAndArgs HurtCommand(
+		TEXT("lba.Dinofly.Hurt"),
+		TEXT("Hurts the ridden Dinofly: lba.Dinofly.Hurt <damage> (default 20; 1000 kills it)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+			if (ALBADinofly* Dinofly = PC ? Cast<ALBADinofly>(PC->GetPawn()) : nullptr)
+			{
+				const float Damage = Args.Num() > 0 ? FCString::Atof(*Args[0]) : 20.f;
+				Dinofly->GetHitPoints()->TakeHit(Damage, Dinofly->GetActorLocation() + FVector(0.f, 0.f, 150.f));
+			}
+		}));
 
 	constexpr float CollisionRadius = 70.f;
 
@@ -71,6 +93,18 @@ namespace
 		/** The flapping cycle, played in place for hovering too. */
 		constexpr int32 Flap = 218;
 		constexpr float ClimbFlapRate = 1.3f;
+		/**
+		 * The flapping cycle's wings: up at 0, spread wide at GlideTime, lowest at 0.32. Gliding holds the spread pose;
+		 * a beat plays one cycle from there back to it.
+		 */
+		constexpr float GlideTime = 0.12f;
+		/** A flinch, head thrown back, standing (the original's "takes a hit"). */
+		constexpr int32 Hurt = 5;
+		constexpr float HurtLength = 0.6f;
+		/** The flinch as a layer on the head and neck, flying. */
+		constexpr int32 HurtLayer = -5;
+		/** Lying on its side, the rider thrown off (337: the same, raising its head; 338: getting up). */
+		constexpr int32 Dead = 335;
 
 		/** Bone branches for layered animations: the wings (bone_16, bone_19 chains) and the legs (bone_08, bone_12). */
 		TArray<FName> WingBones() { return {TEXT("bone_16"), TEXT("bone_19")}; }
@@ -146,6 +180,8 @@ ALBADinofly::ALBADinofly()
 		};
 	}
 
+	HitPoints = CreateDefaultSubobject<ULBAHitPointsComponent>(TEXT("HitPoints"));
+
 	// The camera follows the heading, never the bank.
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(Collision);
@@ -169,7 +205,13 @@ UPawnMovementComponent* ALBADinofly::GetMovementComponent() const
 
 void ALBADinofly::BeginPlay()
 {
+	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
+	HitPoints->MaxLife = Settings.MaxLife;
+	HitPoints->DamagePerStar = Settings.DamagePerStar;
 	Super::BeginPlay();
+	Flight->OnImpact.AddDynamic(this, &ALBADinofly::HandleImpact);
+	HitPoints->OnHurt.AddDynamic(this, &ALBADinofly::HandleHurt);
+	HitPoints->OnDeath.AddDynamic(this, &ALBADinofly::HandleDeath);
 	ApplyEntity();
 	CameraBase = FRotator(-15.f, GetActorRotation().Yaw, 0.f);
 }
@@ -287,18 +329,21 @@ void ALBADinofly::Mount(ALBACharacter* Hero)
 	// Already standing: no landing to play.
 	bWasLanded = Flight->IsLanded();
 	ActionSlot = INDEX_NONE;
-	bWingsTucked = false;
 	if (ULBAAnimInstance* Anim = GetLBAAnimInstance())
 	{
 		Anim->StopLBALayer(0.f);
 	}
 	LastYaw = GetActorRotation().Yaw;
+	LastBeatCount = Flight->GetBeatCount();
+	WingCyclesLeft = 0;
+	WingPhase = 0.f;
+	bGlideBase = false;
 }
 
 bool ALBADinofly::Dismount()
 {
 	// On the ground only: floating on the sea would drop the rider into deep water.
-	if (!Flight->IsLanded() || Flight->IsFloating())
+	if (!Flight->IsLanded() || Flight->IsFloating() || bDead)
 	{
 		return false;
 	}
@@ -370,8 +415,21 @@ void ALBADinofly::SetDiveInput(bool bDive)
 void ALBADinofly::SetHoverInput(FVector2D Move, float Vertical)
 {
 	SteerInput = Move;
+	// Pressing (not holding) beats or pushes, like the buttons.
+	AscendPresses += Vertical > 0.f && !bAscendHeld ? 1 : 0;
+	DescendPresses += Vertical < 0.f && !bDescendHeld ? 1 : 0;
 	bAscendHeld = Vertical > 0.f;
 	bDescendHeld = Vertical < 0.f;
+}
+
+void ALBADinofly::Flap()
+{
+	++AscendPresses;
+}
+
+void ALBADinofly::BrakeTap()
+{
+	++DescendPresses;
 }
 
 void ALBADinofly::SetFlightInput(float Pitch, float Roll, bool bFlap, bool bBrake)
@@ -392,6 +450,8 @@ void ALBADinofly::ToggleFlightMode()
 	// Keep the view where it is across the switch.
 	const FRotator View = CameraBoom->GetComponentRotation();
 	Flight->SetMode(IsHovering() ? ELBAFlightMode::Glide : ELBAFlightMode::Hover);
+	// Glide mode plays the clips at their own rates.
+	bGlideBase = false;
 	CameraBase = FRotator(View.Pitch, View.Yaw, 0.f);
 	LookOffset = FVector2D::ZeroVector;
 }
@@ -401,8 +461,8 @@ void ALBADinofly::ToggleFlightMode()
 void ALBADinofly::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	// The landing absorbs the touchdown: no input meanwhile.
-	const bool bLocked = ActionSlot == DinoflyAnim::Land;
+	// The landing (or a flinch) absorbs the touchdown: no input meanwhile; none at all once dead.
+	const bool bLocked = ActionSlot == DinoflyAnim::Land || ActionSlot == DinoflyAnim::Hurt || bDead;
 	const FVector2D Steer = bLocked ? FVector2D::ZeroVector : SteerInput;
 	const bool bAscend = bAscendHeld && !bLocked;
 	const bool bDescend = bDescendHeld && !bLocked;
@@ -412,15 +472,102 @@ void ALBADinofly::Tick(float DeltaSeconds)
 		Flight->SetHoverInput(Steer.Y, Steer.X, (bAscend ? 1.f : 0.f) - (bDescend ? 1.f : 0.f));
 	}
 	Flight->SetDiveInput(bDiveHeld && !bLocked && IsHovering());
+	if (!bLocked && IsHovering())
+	{
+		for (; AscendPresses > 0; --AscendPresses)
+		{
+			Flight->Beat();
+		}
+		for (; DescendPresses > 0; --DescendPresses)
+		{
+			Flight->BrakeTap();
+		}
+	}
+	AscendPresses = DescendPresses = 0;
+	if (Flight->IsLanded() && !Flight->IsFloating())
+	{
+		HitPoints->Heal(ULBADinoflySettings::Get().LifeRegenPerSecond * DeltaSeconds);
+	}
 	if (!IsHovering())
 	{
 		const float PitchInput = CVarInvertPitch.GetValueOnGameThread() ? Steer.Y : -Steer.Y;
 		Flight->SetFlightInput(PitchInput, Steer.X, bAscend ? 1.f : 0.f, bDescend ? 1.f : 0.f);
 	}
+	bProceduralWings = false;
 	UpdateAnimation(DeltaSeconds);
+	UpdateProceduralWings(DeltaSeconds);
 	UpdateCamera(DeltaSeconds);
 	// No wake on the ground or the water.
 	Airflow->SetEmitting(!Flight->IsLanded());
+	DrawDebug();
+}
+
+// Pain -----------------------------------------------------------------------------------------------------------
+
+void ALBADinofly::HandleImpact(float ImpactSpeed, ELBAFlightImpact Kind, FVector Location)
+{
+	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
+	const float Damage = Kind == ELBAFlightImpact::Ground ? Settings.GetDamage(ImpactSpeed, Settings.GroundPainSpeed)
+		: Kind == ELBAFlightImpact::Water ? Settings.GetDamage(ImpactSpeed, Settings.WaterPainSpeed, Settings.WaterDamageScale)
+		: Settings.GetDamage(ImpactSpeed, Settings.ObstaclePainSpeed);
+	if (Damage > 0.f)
+	{
+		UE_LOG(LogLBA2, Log, TEXT("%s: hit %s at %.0f cm/s, %.1f damage"), *GetName(),
+			*StaticEnum<ELBAFlightImpact>()->GetNameStringByValue(int64(Kind)), ImpactSpeed, Damage);
+		// The stars fly out of the Dinofly's back, like the original's from the top of the hurt object.
+		bHurtOnGround = Kind == ELBAFlightImpact::Ground;
+		HitPoints->TakeHit(Damage, GetActorLocation() + FVector(0.f, 0.f, 150.f));
+	}
+}
+
+void ALBADinofly::HandleHurt(float Damage, FVector Location)
+{
+	bHurtPending = !HitPoints->IsDead();
+}
+
+void ALBADinofly::HandleDeath()
+{
+	if (bDead)
+	{
+		return;
+	}
+	bDead = true;
+	bHurtPending = false;
+	Flight->SetDead(true);
+	if (ULBAAnimInstance* Instance = GetLBAAnimInstance())
+	{
+		Instance->StopLBALayer(0.2f);
+	}
+	ActionSlot = INDEX_NONE;
+	// Lying on its side, the rider thrown off: limp in the air already, it falls that way.
+	PlaySlot(DinoflyAnim::Dead, 1.f, 0.35f);
+	UE_LOG(LogLBA2, Display, TEXT("%s died."), *GetName());
+	if (IsPlayerControlled())
+	{
+		GetWorldTimerManager().SetTimer(DeathTimer, this, &ALBADinofly::ShowDeathScreen, FMath::Max(ULBADinoflySettings::Get().RetryDelay, 0.01f));
+	}
+}
+
+void ALBADinofly::ShowDeathScreen()
+{
+	ULBADeathScreen::Show(Cast<APlayerController>(GetController()), DeathScreenClass);
+}
+
+void ALBADinofly::DrawDebug() const
+{
+#if ENABLE_DRAW_DEBUG
+	if (!CVarDinoflyDebug.GetValueOnGameThread())
+	{
+		return;
+	}
+	const FVector Air = Flight->GetAirVelocity();
+	const FString Text = FString::Printf(TEXT("life %.0f/%.0f\nalt %.1f m  air x%.2f\nvz %+.1f m/s  speed %.1f m/s\nbeats %d, last %.1f s ago\nstall %.0f%%  brake %.0f%%, endurance %.0f%%%s\ndive %.0f%%"),
+		HitPoints->GetLife(), HitPoints->MaxLife, GetActorLocation().Z / 100.f, Flight->GetAirDensity(),
+		Air.Z / 100.f, Air.Size2D() / 100.f, Flight->GetBeatCount(), Flight->GetTimeSinceBeat(),
+		100.f * Flight->GetStall(), 100.f * Flight->GetBrakeAmount(), 100.f * Flight->GetBrakeStamina(), Flight->IsBrakeExhausted() ? TEXT(" (spent)") : TEXT(""),
+		100.f * Flight->GetDiveAggression());
+	DrawDebugString(GetWorld(), GetActorLocation() + FVector(0.f, 0.f, 320.f), Text, nullptr, HitPoints->IsDead() ? FColor::Red : FColor::White, 0.f, true, 1.1f);
+#endif
 }
 
 void ALBADinofly::PlaySlot(int32 AnimType, float PlayRate, float BlendTime)
@@ -430,6 +577,7 @@ void ALBADinofly::PlaySlot(int32 AnimType, float PlayRate, float BlendTime)
 	if (Anim && Anim->Sequence && Instance)
 	{
 		Instance->PlayLBAAnimation(Anim->Sequence, true, Anim->LoopStartTime, BlendTime, PlayRate);
+		bGlideBase = false;
 	}
 }
 
@@ -441,6 +589,7 @@ void ALBADinofly::PlayAction(int32 AnimType, float StartTime, float EndTime, flo
 	if (Anim && Anim->Sequence && Instance)
 	{
 		Instance->PlayLBAAnimation(Anim->Sequence, false, 0.f, 0.12f, PlayRate, true, StartTime);
+		bGlideBase = false;
 		ActionSlot = AnimType;
 		ActionEndTime = EndTime;
 		ActionRate = PlayRate;
@@ -471,25 +620,61 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 	{
 		return;
 	}
+	if (bDead)
+	{
+		// Lying on its side (set when it died), wherever it falls.
+		bWasLanded = bLanded;
+		return;
+	}
 
 	// One-shot actions, started by the flight state.
 	if (bLanded && !bWasLanded)
 	{
-		// The legs are already down after a descent: start after the swing.
-		PlayAction(DinoflyAnim::Land, ActionSlot == DinoflyAnim::LegsDown ? 0.1f : 0.f, DinoflyAnim::LandEnd, 1.f);
+		if (bHurtPending && bHurtOnGround)
+		{
+			// A landing that hurt: a flinch instead of the landing.
+			PlayAction(DinoflyAnim::Hurt, 0.f, 10.f, 1.f);
+			bHurtPending = false;
+		}
+		else
+		{
+			// The legs are already down after a descent: start after the swing.
+			PlayAction(DinoflyAnim::Land, ActionSlot == DinoflyAnim::LegsDown ? 0.1f : 0.f, DinoflyAnim::LandEnd, 1.f);
+		}
 		Instance->StopLBALayer(0.12f);
+	}
+	else if (bHurtPending && bLanded && ActionSlot != DinoflyAnim::Takeoff)
+	{
+		// Hurt standing or floating: flinch.
+		PlayAction(DinoflyAnim::Hurt, 0.f, 10.f, 1.f);
+		Instance->StopLBALayer(0.12f);
+		bHurtPending = false;
+	}
+	else if (bHurtPending && !bLanded && !Instance->IsLayerActive())
+	{
+		// Hurt flying: the head and neck flinch, the wings carry on.
+		PlayLayer(DinoflyAnim::Hurt, { TEXT("bone_03") }, 0.f, 1.f, 0.08f);
+		ActionSlot = DinoflyAnim::HurtLayer;
+		ActionEndTime = DinoflyAnim::HurtLength;
+		bHurtPending = false;
+	}
+	else if (bHurtPending && !bLanded)
+	{
+		// Legs down or wings tucked already (one layer at a time): the stars say it.
+		bHurtPending = false;
 	}
 	else if (Flight->IsTakingOff() && ActionSlot != DinoflyAnim::Takeoff)
 	{
 		PlayAction(DinoflyAnim::Takeoff, DinoflyAnim::TakeoffStart, DinoflyAnim::TakeoffEnd, DinoflyAnim::TakeoffRate);
 		Instance->StopLBALayer(0.12f);
 	}
-	else if (!bLanded && IsHovering() && !Flight->IsDiving() && ActionSlot == INDEX_NONE && Velocity.Z < -150.f
+	else if (!bLanded && IsHovering() && !Flight->IsDiving() && ActionSlot == INDEX_NONE && (Velocity.Z < -150.f || IsBrakingLow())
 		&& Flight->GetHeightAboveSurface(DinoflyAnim::LegsDownHeight + 200.f) < DinoflyAnim::LegsDownHeight)
 	{
-		// Coming down near the ground: unfold the legs over the time left before touchdown, the wings keep flapping.
+		// Coming down near the ground, or braking to land: unfold the legs over the time left before touchdown (at most
+		// a moment), the wings keep flapping.
 		const float Height = FMath::Max(Flight->GetHeightAboveSurface(DinoflyAnim::LegsDownHeight + 200.f) - CollisionRadius, 1.f);
-		const float TimeLeft = FMath::Max(Height / -Velocity.Z, 0.15f);
+		const float TimeLeft = FMath::Clamp(Height / FMath::Max(-Velocity.Z, 1.f), 0.15f, 0.8f);
 		const float Span = DinoflyAnim::TakeoffEnd - DinoflyAnim::TakeoffLiftoff;
 		PlayLayer(DinoflyAnim::Takeoff, DinoflyAnim::LegBones(), DinoflyAnim::TakeoffEnd, -Span / TimeLeft, 0.1f);
 		ActionSlot = DinoflyAnim::LegsDown;
@@ -498,31 +683,28 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 	}
 	bWasLanded = bLanded;
 
-	// Diving: no takeoff or legs down any more, the wings fold (the walk's folded wings, as a layer) until pulling out.
+	// Diving: no takeoff or legs down any more (the wings fold procedurally).
 	const bool bDiving = !bLanded && Flight->IsDiving();
 	if (bDiving && ActionSlot != INDEX_NONE)
 	{
 		Instance->StopLBALayer(0.1f);
 		ActionSlot = INDEX_NONE;
 	}
-	const bool bTuck = bDiving && !Flight->IsPullingOut();
-	if (bTuck != bWingsTucked)
+
+	if (ActionSlot == DinoflyAnim::HurtLayer)
 	{
-		bWingsTucked = bTuck;
-		if (bTuck)
+		// Seconds left in ActionEndTime.
+		ActionEndTime -= DeltaSeconds;
+		if (ActionEndTime <= 0.f || bLanded)
 		{
-			PlayLayer(DinoflyAnim::Walk, DinoflyAnim::WingBones(), 0.f, 0.f, 0.25f);
-		}
-		else
-		{
-			Instance->StopLBALayer(0.3f);
+			Instance->StopLBALayer(0.15f);
+			ActionSlot = INDEX_NONE;
 		}
 	}
-
-	if (ActionSlot == DinoflyAnim::LegsDown)
+	else if (ActionSlot == DinoflyAnim::LegsDown)
 	{
 		// Legs down (a layer over the flight animations): held until the touchdown; climbing again folds them back.
-		if (Velocity.Z > 0.f)
+		if (Velocity.Z > 50.f && !IsBrakingLow())
 		{
 			Instance->StopLBALayer(0.3f);
 			ActionSlot = INDEX_NONE;
@@ -548,11 +730,10 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 				const float Beats = FMath::Max(1.f, FMath::RoundToFloat(TimeLeft * DinoflyAnim::ClimbFlapRate / Cycle));
 				PlayLayer(DinoflyAnim::Flap, DinoflyAnim::WingBones(), Flap->LoopStartTime, Beats * Cycle / TimeLeft, 0.1f);
 			}
-			else if (!bRunning && Instance->IsLayerActive() && Flap && Flap->Sequence)
+			else if (!bRunning && Instance->IsLayerActive())
 			{
-				// Flying: the flapping cycle carries on from the wings' beat.
-				Instance->PlayLBAAnimation(Flap->Sequence, true, Flap->LoopStartTime, 0.12f, DinoflyAnim::ClimbFlapRate, false, Instance->GetLayerTime());
-				Instance->StopLBALayer(0.12f);
+				// Flying: the procedural wings take over from the takeoff's beats.
+				Instance->StopLBALayer(0.2f);
 			}
 		}
 		if (bRunning)
@@ -582,44 +763,15 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 	}
 	if (IsHovering())
 	{
-		// Through the air: drifting with the wind still looks like hovering.
-		const float Horizontal = Flight->GetAirVelocity().Size2D();
-		if (bDiving)
+		// Flying (diving too): the spread-wings pose of the flapping cycle, held, and the wings and tail moved
+		// procedurally over it (UpdateProceduralWings), so every change of state is a smooth one.
+		const FLBAEntityAnim* FlapAnim = Entity ? Entity->Anims.Find(DinoflyAnim::Flap) : nullptr;
+		if (FlapAnim && FlapAnim->Sequence && (Instance->GetCurrentAnimation() != FlapAnim->Sequence || !bGlideBase))
 		{
-			// Tail steering in the spiral; pulling out of a straight dive beats the wings.
-			if (FMath::Abs(Flight->GetTurnRate()) > 20.f)
-			{
-				PlaySlot(Flight->GetTurnRate() > 0.f ? DinoflyAnim::TurnRight : DinoflyAnim::TurnLeft);
-			}
-			else
-			{
-				PlaySlot(DinoflyAnim::Flap, bTuck ? 0.6f : 1.2f);
-			}
-			return;
+			Instance->PlayLBAAnimation(FlapAnim->Sequence, true, FlapAnim->LoopStartTime, 0.3f, 0.f, true, DinoflyAnim::GlideTime);
+			bGlideBase = true;
 		}
-		if (Horizontal < 250.f)
-		{
-			// Hovering in place: the flapping cycle, beating faster when climbing.
-			const float Vertical = Flight->GetAirVelocity().Z;
-			if (Vertical < -250.f)
-			{
-				PlaySlot(DinoflyAnim::Descend);
-			}
-			else
-			{
-				PlaySlot(DinoflyAnim::Flap, Vertical > 100.f ? DinoflyAnim::ClimbFlapRate : 1.f);
-			}
-		}
-		else if (FMath::Abs(Flight->GetTurnRate()) > 60.f)
-		{
-			PlaySlot(Flight->GetTurnRate() > 0.f ? DinoflyAnim::TurnRight : DinoflyAnim::TurnLeft);
-		}
-		else
-		{
-			// Faster beats with speed.
-			const float Rate = FMath::GetMappedRangeValueClamped(FVector2D(250.f, Flight->GetMaxHoverSpeed()), FVector2D(0.8f, 1.4f), Horizontal);
-			PlaySlot(DinoflyAnim::Flap, Rate);
-		}
+		bProceduralWings = true;
 		return;
 	}
 	const float Speed = Flight->GetAirVelocity().Size();
@@ -648,6 +800,123 @@ void ALBADinofly::UpdateAnimation(float DeltaSeconds)
 	}
 }
 
+bool ALBADinofly::IsBrakingLow() const
+{
+	return Flight->GetBrakeAmount() > 0.f
+		&& Flight->GetHeightAboveSurface(ULBADinoflySettings::Get().BrakeStyleHeights.X + 100.f) < ULBADinoflySettings::Get().BrakeStyleHeights.X;
+}
+
+namespace
+{
+	// Braking styles by height above the ground: reaching forward to land, hovering, a flared parachute.
+	const FLBAWingShape BrakeLow = { 3.f, 55.f, 15.f, -25.f, 35.f, 0.f };
+	const FLBAWingShape BrakeMid = { 4.2f, 38.f, 8.f, -8.f, 18.f, 0.f };
+	const FLBAWingShape BrakeHigh = { 1.4f, 22.f, 14.f, 0.f, 32.f, 2.f };
+	/** Spent: weak flaps, the wings drooping. */
+	const FLBAWingShape Exhausted = { 1.2f, 12.f, -14.f, 5.f, 0.f, 2.f };
+	constexpr float BeatAmplitude = 45.f;
+}
+
+void ALBADinofly::UpdateProceduralWings(float DeltaSeconds)
+{
+	ULBAAnimInstance* Instance = GetLBAAnimInstance();
+	if (!Instance)
+	{
+		return;
+	}
+	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
+	WingClock += DeltaSeconds;
+
+	// What the flight asks of the wings.
+	FLBAWingShape Target;
+	bool bContinuous = false;
+	const FVector Air = Flight->GetAirVelocity();
+	if (Flight->IsDiving())
+	{
+		// Folded back, the harder the dive the tighter; the air buffets them. Pulling out spreads them, flared.
+		const float Aggression = Flight->IsPullingOut() ? 0.f : Flight->GetDiveAggression();
+		Target = Flight->IsPullingOut() ? FLBAWingShape{ 0.f, 0.f, 5.f, 15.f, 15.f, 3.f }
+			: FLBAWingShape{ 0.f, 0.f, FMath::Lerp(-4.f, -14.f, Aggression), FMath::Lerp(35.f, 75.f, Aggression), 0.f, FMath::Lerp(2.f, 6.f, Aggression) };
+	}
+	else
+	{
+		// Gliding, breathing a little; stalling (a fast fall) pushes the wings up and makes them flutter: danger.
+		const float Fall = FMath::Max(-Air.Z, 0.f);
+		const float Danger = FMath::Max(Flight->GetStall(), FMath::Clamp((Fall - 300.f) / 1000.f, 0.f, 1.f));
+		Target = { 0.f, 0.f, 4.f + 28.f * Danger, 8.f * Danger, 0.f, 6.f * Danger };
+		if (Flight->IsBrakeExhausted())
+		{
+			Target = Exhausted;
+			bContinuous = true;
+		}
+		else if (Flight->GetBrakeAmount() > 0.f)
+		{
+			const float Height = Flight->GetHeightAboveSurface(Settings.BrakeStyleHeights.Y * 1.3f);
+			const FVector2D& Heights = Settings.BrakeStyleHeights;
+			const float Low = 1.f - FMath::SmoothStep(float(Heights.X) * 0.75f, float(Heights.X) * 1.25f, Height);
+			const float High = FMath::SmoothStep(float(Heights.Y) * 0.8f, float(Heights.Y) * 1.2f, Height);
+			const FLBAWingShape Style = BrakeMid.Lerp(BrakeLow, Low).Lerp(BrakeHigh, High);
+			Target = Target.Lerp(Style, Flight->GetBrakeAmount());
+			bContinuous = true;
+		}
+	}
+
+	// Eased toward it: every change is smooth.
+	const float Ease = 1.f - FMath::Exp(-5.f * DeltaSeconds);
+	Wings = Wings.Lerp(Target, Ease);
+	WingWeight = FMath::FInterpTo(WingWeight, bProceduralWings ? 1.f : 0.f, DeltaSeconds, 8.f);
+	TailYaw = FMath::FInterpTo(TailYaw, -25.f * FMath::Clamp(Flight->GetTurnRate() / FMath::Max(Flight->HoverTurnRate, 1.f), -1.f, 1.f), DeltaSeconds, 4.f);
+
+	// Beats: one full stroke per beat (down first, the power stroke), queued; continuous flapping while braking.
+	if (Flight->GetBeatCount() != LastBeatCount)
+	{
+		LastBeatCount = Flight->GetBeatCount();
+		WingCyclesLeft = FMath::Min(WingCyclesLeft + 1, 2);
+		BeatKick = 1.f;
+	}
+	BeatKick = FMath::FInterpTo(BeatKick, 0.f, DeltaSeconds, 3.f);
+	const bool bBeating = WingCyclesLeft > 0;
+	if (bContinuous || bBeating || WingPhase > 0.f)
+	{
+		const float Frequency = bBeating ? FMath::Max(Settings.BeatFrequency, Wings.Frequency) : Wings.Frequency;
+		WingPhase += Frequency * DeltaSeconds;
+		if (WingPhase >= 1.f)
+		{
+			WingPhase -= 1.f;
+			WingCyclesLeft = FMath::Max(WingCyclesLeft - 1, 0);
+			if (!bContinuous && WingCyclesLeft == 0)
+			{
+				// Back at rest, spread.
+				WingPhase = 0.f;
+			}
+		}
+	}
+	const float Amplitude = FMath::Max(Wings.Amplitude + 15.f * BeatKick * (bContinuous ? 1.f : 0.f), bBeating ? BeatAmplitude : 0.f);
+	const float Stroke = -Amplitude * FMath::Sin(2.f * UE_PI * WingPhase);
+	const float Sway = 2.f * FMath::Sin(2.f * UE_PI * 0.35f * WingClock);
+	const float Flutter = Wings.Flutter * FMath::Sin(2.f * UE_PI * 9.f * WingClock);
+
+	// Bone rotations in the mesh's component space (+Y forward, +Z up; the right wing, bone_16-18, toward +X): about
+	// each joint, raising (about the body's long axis), sweeping back (about the vertical) and flaring (about the
+	// lateral axis, leading edge up). The elbow and the tip follow the shoulder's stroke, smaller.
+	FLBAProceduralPose Pose;
+	Pose.Weight = WingWeight;
+	auto Wing = [&](const TCHAR* Shoulder, const TCHAR* Elbow, const TCHAR* Tip, float Side, float Phase)
+	{
+		auto Raise = [Side](float Degrees) { return FQuat(FVector(0.f, -Side, 0.f), FMath::DegreesToRadians(Degrees)); };
+		const FQuat Back(FVector(0.f, 0.f, -Side), FMath::DegreesToRadians(Wings.Sweep));
+		const FQuat Flare(FVector(1.f, 0.f, 0.f), FMath::DegreesToRadians(Wings.Flare));
+		Pose.BoneRotations.Emplace(Shoulder, Back * Raise(Wings.Dihedral + Stroke + Sway * Phase) * Flare);
+		Pose.BoneRotations.Emplace(Elbow, FQuat(FVector(0.f, 0.f, -Side), FMath::DegreesToRadians(0.6f * Wings.Sweep)) * Raise(0.45f * Stroke + Flutter));
+		Pose.BoneRotations.Emplace(Tip, Raise(0.3f * Stroke + 1.5f * Flutter));
+	};
+	Wing(TEXT("bone_16"), TEXT("bone_17"), TEXT("bone_18"), 1.f, 1.f);
+	Wing(TEXT("bone_19"), TEXT("bone_20"), TEXT("bone_21"), -1.f, -1.f);
+	// The tail steers the turns.
+	Pose.BoneRotations.Emplace(TEXT("bone_22"), FQuat(FVector::UpVector, FMath::DegreesToRadians(TailYaw)));
+	Instance->SetProceduralPose(Pose);
+}
+
 void ALBADinofly::UpdateCamera(float DeltaSeconds)
 {
 	// Raised and looking down toward the Dinofly and the ground when descending or high above the ground.
@@ -655,7 +924,8 @@ void ALBADinofly::UpdateCamera(float DeltaSeconds)
 	const FVector Velocity = Flight->Velocity;
 	const float HeightAlpha = Flight->IsLanded() ? 0.f
 		: FMath::Clamp((Flight->GetHeightAboveSurface(HighAltitude + 500.f) - 400.f) / (HighAltitude - 400.f), 0.f, 1.f);
-	const float DescendAlpha = bHovering ? FMath::Clamp(-Velocity.Z / Flight->DescendSpeed, 0.f, 1.f) : 0.f;
+	const float DescendSpeed = ULBADinoflySettings::Get().GroundPainSpeed;
+	const float DescendAlpha = bHovering ? FMath::Clamp(-Velocity.Z / DescendSpeed, 0.f, 1.f) : 0.f;
 	CameraDrop = FMath::FInterpTo(CameraDrop, FMath::Clamp(0.65f * HeightAlpha + 0.65f * DescendAlpha, 0.f, 1.f), DeltaSeconds, 1.5f);
 	// Tilting the boom down raises the camera along its arc, looking down at the Dinofly; bring the Dinofly a bit
 	// toward the center of the view meanwhile, so it stays framed with the ground around it.
@@ -678,10 +948,10 @@ void ALBADinofly::UpdateCamera(float DeltaSeconds)
 	}
 	LastHorizontalSpeed = HorizontalSpeed;
 	const float SpeedAlpha = bHovering
-		? FMath::Clamp((Velocity.Size() - Flight->HoverSpeed) / (0.8f * Flight->DiveTerminalSpeed - Flight->HoverSpeed), 0.f, 1.f)
+		? FMath::Clamp((Velocity.Size() - Flight->GetCruiseSpeed()) / (0.8f * Flight->DiveTerminalSpeed - Flight->GetCruiseSpeed()), 0.f, 1.f)
 		: FMath::Clamp((Velocity.Size() - Flight->GetTrimSpeed()) / 1500.f, 0.f, 1.f);
 	const float AccelerationAlpha = FMath::Clamp(SmoothedAcceleration / 1500.f, 0.f, 1.f);
-	const float VerticalAlpha = bHovering ? FMath::Clamp(FMath::Abs(Velocity.Z) / Flight->DescendSpeed, 0.f, 1.f) : 0.f;
+	const float VerticalAlpha = bHovering ? FMath::Clamp(FMath::Abs(Velocity.Z) / DescendSpeed, 0.f, 1.f) : 0.f;
 	const float FieldOfView = FMath::Min(75.f + 14.f * SpeedAlpha + 10.f * AccelerationAlpha + 6.f * VerticalAlpha + 8.f * HeightAlpha, 105.f);
 	CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, 850.f + 300.f * SpeedAlpha + 200.f * HeightAlpha, DeltaSeconds, 2.f);
 	FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, FieldOfView, DeltaSeconds, 3.f));

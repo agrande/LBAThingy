@@ -2,6 +2,7 @@
 
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Pawn.h"
+#include "LBADinoflySettings.h"
 #include "LBAWindSubsystem.h"
 #include "WaterBodyComponent.h"
 #include "WaterBodyManager.h"
@@ -55,10 +56,166 @@ void ULBAFlightMovementComponent::SetDiveInput(bool bInDive)
 	bDiveInput = bInDive;
 }
 
+void ULBAFlightMovementComponent::Beat()
+{
+	if (!bDead)
+	{
+		++PendingBeats;
+	}
+}
+
+void ULBAFlightMovementComponent::BrakeTap()
+{
+	if (!bDead)
+	{
+		BrakeTapLeft = ULBADinoflySettings::Get().BrakeTapTime;
+	}
+}
+
+float ULBAFlightMovementComponent::GetDiveAggression() const
+{
+	return FMath::Clamp(DiveHoldTime / FMath::Max(ULBADinoflySettings::Get().DiveRampTime, 0.01f), 0.f, 1.f);
+}
+
+void ULBAFlightMovementComponent::SetDead(bool bInDead)
+{
+	bDead = bInDead;
+	PendingBeats = 0;
+	PunchForce = TailForce = 0.f;
+	BrakeAmount = BrakeTapLeft = 0.f;
+	DivePhase = EDivePhase::None;
+	TakeoffCountdown = -1.f;
+	if (bDead && bLanded && !bOnWater)
+	{
+		Velocity = FVector::ZeroVector;
+	}
+}
+
+float ULBAFlightMovementComponent::GetAirDensity() const
+{
+	return UpdatedComponent ? ULBADinoflySettings::Get().GetAirDensity(UpdatedComponent->GetComponentLocation().Z) : 1.f;
+}
+
 float ULBAFlightMovementComponent::GetCruiseSpeed() const
 {
-	const float Fast = FMath::Clamp((CruiseHeight - FastHeights.X) / FMath::Max(FastHeights.Y - FastHeights.X, 1.f), 0.f, 1.f);
-	return FMath::Lerp(HoverSpeed, HighCruiseSpeed, Fast);
+	return ULBADinoflySettings::Get().CruiseSpeed;
+}
+
+void ULBAFlightMovementComponent::AddVerticalImpulse(float Impulse)
+{
+	// Integrated over time, the punch gives BeatPunch of the impulse and the tail the rest.
+	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
+	PunchForce += Settings.BeatPunch * Impulse / Settings.BeatPunchTime;
+	TailForce += (1.f - Settings.BeatPunch) * Impulse / Settings.BeatTailTime;
+}
+
+void ULBAFlightMovementComponent::UpdateVertical(float DeltaTime, float HorizontalSpeed)
+{
+	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
+	const float Z = UpdatedComponent->GetComponentLocation().Z;
+	const float Density = Settings.GetAirDensity(Z);
+
+	// Beats: every press, or by themselves while climb is held (when enabled). A beat soon after another is weaker,
+	// and thin air gives less; flapping also loses its strength toward MaxAltitude.
+	if (Vertical > 0.5f && Settings.HeldBeatInterval > 0.f && TimeSinceBeat >= Settings.HeldBeatInterval)
+	{
+		++PendingBeats;
+	}
+	for (; PendingBeats > 0; --PendingBeats)
+	{
+		const float CeilingFade = FMath::Clamp((MaxAltitude - Z) / 1000.f, 0.f, 1.f);
+		AddVerticalImpulse(Settings.GetBeatImpulse() * Settings.GetBeatStrength(TimeSinceBeat) * Density * CeilingFade);
+		TimeSinceBeat = 0.f;
+		++BeatCount;
+		Stall = FMath::Max(0.f, Stall - Settings.BeatStallRecovery);
+	}
+
+	// The glide, lifted by speed, giving way to a stall a while after the last beat (ULBADinoflySettings: the same model
+	// as its derived values); braking spreads the wings out of a stall.
+	// Any wing work (a beat, the brake) holds the stall off.
+	TimeSinceBrake = BrakeAmount > 0.f ? 0.f : TimeSinceBrake + DeltaTime;
+	Stall = Settings.StepStall(Stall, FMath::Min(TimeSinceBeat, TimeSinceBrake), Z, HorizontalSpeed, DeltaTime);
+	Velocity.Z += Settings.GetVerticalAcceleration(Velocity.Z, Z, HorizontalSpeed, Stall) * DeltaTime;
+
+	// The beats' exact integral over the step, then their decay.
+	const float PunchDecay = FMath::Exp(-DeltaTime / Settings.BeatPunchTime);
+	const float TailDecay = FMath::Exp(-DeltaTime / Settings.BeatTailTime);
+	Velocity.Z += PunchForce * Settings.BeatPunchTime * (1.f - PunchDecay) + TailForce * Settings.BeatTailTime * (1.f - TailDecay);
+	PunchForce *= PunchDecay;
+	TailForce *= TailDecay;
+
+	// Braking kills the vertical speed, whichever way (less in thin air).
+	if (BrakeAmount > 0.f)
+	{
+		const float Bite = FMath::Clamp(FMath::Sqrt(Density), 0.5f, 1.5f);
+		Velocity.Z *= FMath::Exp(-Settings.BrakeVerticalRate * BrakeAmount * Bite * DeltaTime);
+	}
+}
+
+void ULBAFlightMovementComponent::UpdateBrake(float DeltaTime)
+{
+	// Held, or for a moment after a tap; nothing once the wings are spent, until they recover enough.
+	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
+	BrakeTapLeft = FMath::Max(0.f, BrakeTapLeft - DeltaTime);
+	const float Tap = Settings.BrakeTapTime > 0.f ? BrakeTapLeft / Settings.BrakeTapTime : 0.f;
+	const bool bFlying = !bLanded && !bDead && Mode == ELBAFlightMode::Hover;
+	BrakeAmount = bFlying && !bBrakeExhausted ? FMath::Max(Vertical < -0.5f ? 1.f : 0.f, Tap) : 0.f;
+	if (BrakeAmount > 0.f)
+	{
+		BrakeStamina -= BrakeAmount * DeltaTime / Settings.BrakeEndurance;
+		if (BrakeStamina <= 0.f)
+		{
+			BrakeStamina = 0.f;
+			bBrakeExhausted = true;
+		}
+		return;
+	}
+	BrakeStamina = FMath::Min(1.f, BrakeStamina + DeltaTime / Settings.BrakeRecoveryTime * (bLanded ? 3.f : 1.f));
+	if (bBrakeExhausted && BrakeStamina >= Settings.BrakeResumeFraction)
+	{
+		bBrakeExhausted = false;
+	}
+}
+
+void ULBAFlightMovementComponent::UpdateAttitude(float DeltaTime, float NoseUp)
+{
+	// The lean the flight's forces give: at speed the nose follows the path (in the heading's vertical plane: flying
+	// backward or sideways never points it), slower the body tips with the accelerations like a pendulum under its
+	// wings, and sideways accelerations bank it (a coordinated turn).
+	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
+	const float Gravity = -GetGravityZ();
+	const FVector Right = FRotationMatrix(Heading.Rotation()).GetScaledAxis(EAxis::Y);
+	const float Forward = FMath::Max(Velocity | Heading, 0.f);
+	const float PathSpeed = FMath::Sqrt(FMath::Square(Forward) + FMath::Square(Velocity.Z));
+	const float Align = FMath::SmoothStep(float(Settings.AlignSpeeds.X), float(Settings.AlignSpeeds.Y), PathSpeed);
+	const float PathAngle = FMath::RadiansToDegrees(FMath::Atan2(Velocity.Z, Forward));
+	const float PathPitch = PathAngle > 0.f ? PathAngle * Settings.ClimbNoseFollow : PathAngle;
+	const float Tilt = -FMath::RadiansToDegrees(FMath::Atan((SmoothedAcceleration | Heading) / Gravity)) * Settings.AccelerationTilt;
+	const float TargetPitch = FMath::Clamp(FMath::Lerp(Tilt, PathPitch, Align) + NoseUp, Settings.PitchLimits.X, Settings.PitchLimits.Y);
+	// Turning in place leans a little too, as the wings push it round.
+	const float TurnLean = 10.f * FMath::Clamp(TurnRate / FMath::Max(HoverTurnRate, 1.f), -1.f, 1.f) * (1.f - Align);
+	const float TargetBank = FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan((SmoothedAcceleration | Right) / Gravity)) + TurnLean,
+		-Settings.MaxBank, Settings.MaxBank);
+
+	// Followed like a spring: a little late, swinging slightly past, settling.
+	const float Omega = 2.f * UE_PI * Settings.AttitudeFrequency;
+	for (float Remaining = DeltaTime; Remaining > UE_KINDA_SMALL_NUMBER; Remaining -= SimulationStep)
+	{
+		const float Step = FMath::Min(SimulationStep, Remaining);
+		LeanPitchRate += (Omega * Omega * (TargetPitch - LeanPitch) - 2.f * Settings.AttitudeDamping * Omega * LeanPitchRate) * Step;
+		LeanBankRate += (Omega * Omega * (TargetBank - LeanBank) - 2.f * Settings.AttitudeDamping * Omega * LeanBankRate) * Step;
+		LeanPitch += LeanPitchRate * Step;
+		LeanBank += LeanBankRate * Step;
+	}
+}
+
+void ULBAFlightMovementComponent::ReportImpact(const FHitResult& Hit, ELBAFlightImpact Kind)
+{
+	const float Into = -(Velocity | Hit.Normal);
+	if (Into > 0.f && !bDead)
+	{
+		OnImpact.Broadcast(Into, Kind, FVector(Hit.ImpactPoint));
+	}
 }
 
 bool ULBAFlightMovementComponent::IsBlocked(const FVector& Delta) const
@@ -127,6 +284,7 @@ void ULBAFlightMovementComponent::SetMode(ELBAFlightMode NewMode)
 		const FRotator Current = UpdatedComponent ? UpdatedComponent->GetComponentRotation() : FRotator::ZeroRotator;
 		LeanPitch = FRotator::NormalizeAxis(Current.Pitch);
 		LeanBank = FRotator::NormalizeAxis(Current.Roll);
+		LeanPitchRate = LeanBankRate = 0.f;
 	}
 }
 
@@ -144,6 +302,7 @@ void ULBAFlightMovementComponent::StartHovering()
 	WindDrift = FVector::ZeroVector;
 	LeanPitch = LeanBank = 0.f;
 	TurnRate = 0.f;
+	PunchForce = TailForce = 0.f;
 	DivePhase = EDivePhase::None;
 	UpdateComponentVelocity();
 }
@@ -160,6 +319,7 @@ void ULBAFlightMovementComponent::StartLanded()
 	Velocity = FVector::ZeroVector;
 	WindDrift = FVector::ZeroVector;
 	Bank = LeanPitch = LeanBank = TurnRate = 0.f;
+	PunchForce = TailForce = 0.f;
 	DivePhase = EDivePhase::None;
 	TakeoffCountdown = -1.f;
 	UpdateComponentVelocity();
@@ -167,8 +327,8 @@ void ULBAFlightMovementComponent::StartLanded()
 
 bool ULBAFlightMovementComponent::WantsTakeoff() const
 {
-	// Walking inputs never take off: only climbing (hover) or flapping (glide) does.
-	return Mode == ELBAFlightMode::Hover ? Vertical > 0.5f : Flap > 0.5f;
+	// Walking inputs never take off: only climbing (a beat, or held, in hover) or flapping (glide) does.
+	return Mode == ELBAFlightMode::Hover ? Vertical > 0.5f || PendingBeats > 0 : Flap > 0.5f;
 }
 
 bool ULBAFlightMovementComponent::TickTakeoff(float DeltaTime)
@@ -213,9 +373,19 @@ void ULBAFlightMovementComponent::TakeOff()
 	bLanded = false;
 	bOnWater = false;
 	Alpha = FMath::DegreesToRadians(TrimAngle);
-	Velocity = Mode == ELBAFlightMode::Hover
-		? FVector(0.f, 0.f, ClimbSpeed)
-		: Heading * TakeoffVelocity.X + FVector::UpVector * TakeoffVelocity.Y;
+	if (Mode == ELBAFlightMode::Hover)
+	{
+		// The push-off, and the first wing beat.
+		Velocity = FVector(0.f, 0.f, 0.5f * TakeoffVelocity.Y);
+		PunchForce = TailForce = 0.f;
+		PendingBeats = 1;
+		TimeSinceBeat = 100.f;
+		LeanPitchRate = LeanBankRate = 0.f;
+	}
+	else
+	{
+		Velocity = Heading * TakeoffVelocity.X + FVector::UpVector * TakeoffVelocity.Y;
+	}
 }
 
 float ULBAFlightMovementComponent::UpdateTurn(float DeltaTime, float HorizontalSpeed)
@@ -230,19 +400,26 @@ float ULBAFlightMovementComponent::UpdateTurn(float DeltaTime, float HorizontalS
 
 void ULBAFlightMovementComponent::TickHover(float DeltaTime)
 {
-	// The higher above the ground, the faster the cruise (smoothed: cliffs come and go below).
 	const float Height = GetHeightAboveSurface(5000.f);
-	CruiseHeight = FMath::FInterpTo(CruiseHeight, Height, DeltaTime, 1.f);
-
-	if (bDivePressed && DivePhase == EDivePhase::None)
+	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
+	if (BrakeAmount > 0.f && DivePhase != EDivePhase::None)
+	{
+		// Braking spreads the wings: out of the dive, the brake kills the speed.
+		DivePhase = EDivePhase::None;
+	}
+	if (bDivePressed && DivePhase == EDivePhase::None && BrakeAmount <= 0.f)
 	{
 		// Into the dive from the current flight path.
 		DivePhase = EDivePhase::Diving;
 		DiveSpeed = Velocity.Size();
 		DivePath = DiveSpeed > 100.f ? FMath::Asin(FMath::Clamp(-Velocity.Z / DiveSpeed, -1.f, 1.f)) : 0.f;
+		PunchForce = TailForce = 0.f;
 	}
 	if (DivePhase != EDivePhase::None)
 	{
+		// Wings tucked: no beats meanwhile, nor a stall (the dive is flown).
+		PendingBeats = 0;
+		Stall = 0.f;
 		TickDive(DeltaTime, Height);
 		return;
 	}
@@ -251,35 +428,31 @@ void ULBAFlightMovementComponent::TickHover(float DeltaTime)
 	FVector2D Horizontal(Velocity.X, Velocity.Y);
 	const float Speed = Horizontal.Size();
 	const float Turned = UpdateTurn(DeltaTime, Speed);
-	const float Banked = FMath::Clamp((Speed - HoverSpeed) / HoverSpeed, 0.f, 1.f);
+	const float Banked = FMath::Clamp((Speed - GetCruiseSpeed()) / GetCruiseSpeed(), 0.f, 1.f);
 	if (Banked > 0.f && FVector2D::DotProduct(Horizontal, FVector2D(Heading)) > 0.f)
 	{
 		Horizontal = Horizontal.GetRotated(Turned * Banked);
 	}
 
-	// Velocity eases toward the requested one: inertia without piloting.
-	const FVector Location = UpdatedComponent->GetComponentLocation();
+	// Horizontal velocity eases toward the requested one: inertia without piloting; the wings bite more in thick air.
+	// Braking kills it instead.
 	const float Cruise = GetCruiseSpeed() * (ForwardInput < 0.f ? BackwardSpeedFactor : 1.f);
-	const FVector2D TargetHorizontal = FVector2D(Heading) * ForwardInput * Cruise;
-	const float CeilingFade = FMath::Clamp((MaxAltitude - Location.Z) / 1000.f, 0.f, 1.f);
-	const float TargetVertical = Vertical > 0.f ? Vertical * ClimbSpeed * CeilingFade : Vertical * DescendSpeed;
+	const FVector2D TargetHorizontal = FVector2D(Heading) * ForwardInput * Cruise * (1.f - BrakeAmount);
+	const float Bite = FMath::Clamp(FMath::Sqrt(GetAirDensity()), 0.5f, 1.5f);
 
 	const bool bSpeedingUp = TargetHorizontal.SizeSquared() > Horizontal.SizeSquared();
-	// Fast (after a dive, or coming down from high up): the extra speed bleeds off slowly, unless pulling back.
-	const bool bCoasting = !bSpeedingUp && ForwardInput >= 0.f && Speed > HoverSpeed;
+	// Fast (after a dive): the extra speed bleeds off slowly, unless pulling back or braking.
+	const bool bCoasting = !bSpeedingUp && ForwardInput >= 0.f && Speed > GetCruiseSpeed() && BrakeAmount <= 0.f;
+	const float Deceleration = FMath::Lerp(bCoasting ? CoastDeceleration : HoverDeceleration, Settings.BrakeDeceleration * Bite, BrakeAmount);
 	const FVector2D Change = TargetHorizontal - Horizontal;
-	Horizontal += Change.GetClampedToMaxSize((bSpeedingUp ? HoverAcceleration : bCoasting ? CoastDeceleration : HoverDeceleration) * DeltaTime);
-	const float VerticalSpeed = Velocity.Z + FMath::Clamp(TargetVertical - Velocity.Z, -VerticalAcceleration * DeltaTime, VerticalAcceleration * DeltaTime);
-	Velocity = FVector(Horizontal.X, Horizontal.Y, VerticalSpeed);
+	Horizontal += Change.GetClampedToMaxSize((bSpeedingUp ? HoverAcceleration * Bite : Deceleration) * DeltaTime);
+	Velocity.X = Horizontal.X;
+	Velocity.Y = Horizontal.Y;
+	UpdateVertical(DeltaTime, Horizontal.Size());
 
-	// Cosmetic lean: nose down with forward speed, bank with the turn (as much as the turn needs, at speed).
-	const float ForwardSpeed = FVector2D::DotProduct(Horizontal, FVector2D(Heading));
-	const float TargetPitch = -MaxLeanPitch * FMath::Clamp(ForwardSpeed / GetMaxHoverSpeed(), -1.f, 1.f);
-	const float LeanTurn = MaxLeanBank * FMath::Clamp(TurnRate / HoverTurnRate, -1.f, 1.f) * FMath::Clamp(Horizontal.Size() / HoverSpeed, 0.f, 1.f);
-	const float BankedTurn = FMath::RadiansToDegrees(FMath::Atan(FMath::DegreesToRadians(TurnRate) * ForwardSpeed / -GetGravityZ()));
-	const float TargetBank = FMath::Abs(BankedTurn * Banked) > FMath::Abs(LeanTurn) ? FMath::Clamp(BankedTurn * Banked, -50.f, 50.f) : LeanTurn;
-	LeanPitch = FMath::FInterpTo(LeanPitch, TargetPitch, DeltaTime, 4.f);
-	LeanBank = FMath::FInterpTo(LeanBank, TargetBank, DeltaTime, 4.f);
+	// The body leans with the flight; the nose rises when the wings flare (braking) and on the beats' power strokes.
+	const float BeatPull = FMath::Clamp((PunchForce * Settings.BeatPunchTime + TailForce * Settings.BeatTailTime) / FMath::Max(Settings.GetBeatImpulse(), 1.f), 0.f, 1.f);
+	UpdateAttitude(DeltaTime, Settings.GlideNoseUp + Settings.BrakeNoseUp * BrakeAmount + Settings.BeatNoseUp * BeatPull);
 
 	const FVector Delta = Velocity * DeltaTime;
 	FHitResult Hit;
@@ -291,10 +464,12 @@ void ULBAFlightMovementComponent::TickHover(float DeltaTime)
 	if (Hit.Normal.Z > WalkableNormalZ)
 	{
 		// Ground is sticky: touching it from anywhere lands.
+		ReportImpact(Hit, ELBAFlightImpact::Ground);
 		TouchDown(Hit);
 		return;
 	}
 	// Bump: lose the speed going into the obstacle and slide along it.
+	ReportImpact(Hit, ELBAFlightImpact::Obstacle);
 	const float Into = Velocity | Hit.Normal;
 	if (Into < 0.f)
 	{
@@ -326,9 +501,9 @@ void ULBAFlightMovementComponent::TickDive(float DeltaTime, float Height)
 	float TargetPath = 0.f;
 	if (bDiving)
 	{
-		TargetPath = FMath::DegreesToRadians(ForwardInput >= 0.f
-			? FMath::Lerp(DiveAngle, SteepDiveAngle, ForwardInput)
-			: FMath::Lerp(DiveAngle, ShallowDiveAngle, -ForwardInput));
+		// The longer the dive is held, the steeper.
+		const FVector2D& Angles = ULBADinoflySettings::Get().DiveAngles;
+		TargetPath = FMath::DegreesToRadians(FMath::Lerp(Angles.X, Angles.Y, GetDiveAggression()));
 	}
 	else if (Vertical > 0.f && UpdatedComponent->GetComponentLocation().Z < MaxAltitude - 1000.f)
 	{
@@ -352,10 +527,8 @@ void ULBAFlightMovementComponent::TickDive(float DeltaTime, float Height)
 	UpdateTurn(DeltaTime, HorizontalSpeed);
 	Velocity = Heading * HorizontalSpeed - FVector::UpVector * DiveSpeed * FMath::Sin(DivePath);
 
-	// Body along the path, banked into the turn.
-	const float TargetBank = FMath::RadiansToDegrees(FMath::Atan(FMath::DegreesToRadians(TurnRate) * HorizontalSpeed / Gravity));
-	LeanPitch = FMath::FInterpTo(LeanPitch, -FMath::RadiansToDegrees(DivePath), DeltaTime, 6.f);
-	LeanBank = FMath::FInterpTo(LeanBank, FMath::Clamp(TargetBank, -60.f, 60.f), DeltaTime, 4.f);
+	// The body along the path, banked into the turn: wings tucked the nose points the way; pulling out they flare a bit.
+	UpdateAttitude(DeltaTime, bDiving ? 0.f : ULBADinoflySettings::Get().GlideNoseUp);
 
 	// Level again, or slowed down to cruising speed in the zoom climb: flying on normally with the speed.
 	if (!bDiving && (TargetPath < 0.f ? DiveSpeed <= GetCruiseSpeed() : FMath::Abs(DivePath) < 0.01f))
@@ -373,9 +546,11 @@ void ULBAFlightMovementComponent::TickDive(float DeltaTime, float Height)
 	DivePhase = EDivePhase::None;
 	if (Hit.Normal.Z > WalkableNormalZ)
 	{
+		ReportImpact(Hit, ELBAFlightImpact::Ground);
 		TouchDown(Hit);
 		return;
 	}
+	ReportImpact(Hit, ELBAFlightImpact::Obstacle);
 	const float Into = Velocity | Hit.Normal;
 	if (Into < 0.f)
 	{
@@ -413,11 +588,11 @@ float ULBAFlightMovementComponent::GetTrimSpeed() const
 
 float ULBAFlightMovementComponent::LiftCoefficient(float AngleOfAttack) const
 {
-	const float Stall = FMath::DegreesToRadians(StallAngle);
+	const float StallRadians = FMath::DegreesToRadians(StallAngle);
 	const float Angle = FMath::Abs(AngleOfAttack);
-	const float Coefficient = Angle < Stall
+	const float Coefficient = Angle < StallRadians
 		? LiftSlope * Angle
-		: LiftSlope * Stall * FMath::Max(0.3f, 1.f - (Angle - Stall) / Stall * 0.7f);
+		: LiftSlope * StallRadians * FMath::Max(0.3f, 1.f - (Angle - StallRadians) / StallRadians * 0.7f);
 	return FMath::Sign(AngleOfAttack) * Coefficient;
 }
 
@@ -430,9 +605,16 @@ void ULBAFlightMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	}
 	// Hitches must not explode the integration.
 	DeltaTime = FMath::Min(DeltaTime, 0.1f);
+	TimeSinceBeat += DeltaTime;
+	DiveHoldTime = DivePhase == EDivePhase::Diving && bDiveInput ? DiveHoldTime + DeltaTime : 0.f;
+	UpdateBrake(DeltaTime);
 	// The flight model works in the air; the wind's drift is added back once it moved.
 	Velocity -= WindDrift;
-	if (bLanded && bOnWater)
+	if (bDead && !(bLanded && bOnWater))
+	{
+		TickDead(DeltaTime);
+	}
+	else if (bLanded && bOnWater)
 	{
 		TickFloating(DeltaTime);
 	}
@@ -455,6 +637,17 @@ void ULBAFlightMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	ApplyWind(DeltaTime);
 	Velocity += WindDrift;
 	bDivePressed = false;
+	// What the body feels (smoothed; bumps and landings clipped): leans it the next tick.
+	if (bLanded || DeltaTime <= 0.f)
+	{
+		SmoothedAcceleration = FVector::ZeroVector;
+	}
+	else
+	{
+		const FVector Raw = ((Velocity - LastVelocity) / DeltaTime).GetClampedToMaxSize(-3.f * GetGravityZ());
+		SmoothedAcceleration = FMath::VInterpTo(SmoothedAcceleration, Raw, DeltaTime, 8.f);
+	}
+	LastVelocity = Velocity;
 	UpdateComponentVelocity();
 }
 
@@ -584,6 +777,7 @@ void ULBAFlightMovementComponent::TickAirborne(float DeltaTime)
 	{
 		return;
 	}
+	ReportImpact(Hit, Hit.Normal.Z > WalkableNormalZ ? ELBAFlightImpact::Ground : ELBAFlightImpact::Obstacle);
 	const float Into = Velocity | Hit.Normal;
 	if (Hit.Normal.Z > WalkableNormalZ && -Into < MaxLandingSinkSpeed && Velocity.Size() < MaxLandingSpeed)
 	{
@@ -626,6 +820,18 @@ void ULBAFlightMovementComponent::HandleWater()
 	}
 	FHitResult Hit;
 	MoveUpdatedComponent(FVector(0.f, 0.f, SurfaceZ + WaterlineHeight - Location.Z), UpdatedComponent->GetComponentQuat(), true, &Hit);
+	if (-Velocity.Z > 0.f && !bDead)
+	{
+		OnImpact.Broadcast(-Velocity.Z, ELBAFlightImpact::Water, FVector(Location.X, Location.Y, SurfaceZ));
+	}
+	if (bDead)
+	{
+		// Floats where it fell.
+		bLanded = true;
+		bOnWater = true;
+		Velocity = FVector(Velocity.X, Velocity.Y, 0.f) * 0.3f;
+		return;
+	}
 	if (Mode == ELBAFlightMode::Hover || (-Velocity.Z < MaxLandingSinkSpeed && Velocity.Size() < MaxLandingSpeed))
 	{
 		bLanded = true;
@@ -674,6 +880,46 @@ void ULBAFlightMovementComponent::TickFloating(float DeltaTime)
 			SlideAlongSurface(Delta, 1.f - Hit.Time, Hit.Normal, Hit, true);
 		}
 	}
+}
+
+void ULBAFlightMovementComponent::TickDead(float DeltaTime)
+{
+	if (bLanded)
+	{
+		// Lying where it fell.
+		Velocity = FVector::ZeroVector;
+		return;
+	}
+	// Limp: falls, the nose dipping, keeping some of its momentum.
+	const float Damping = FMath::Exp(-0.6f * DeltaTime);
+	Velocity.X *= Damping;
+	Velocity.Y *= Damping;
+	Velocity.Z = FMath::Max(Velocity.Z + GetGravityZ() * DeltaTime, -DeadFallSpeed);
+	LeanPitch = FMath::FInterpTo(LeanPitch, -20.f, DeltaTime, 2.f);
+	LeanBank = FMath::FInterpTo(LeanBank, 0.f, DeltaTime, 2.f);
+
+	const FVector Delta = Velocity * DeltaTime;
+	FHitResult Hit;
+	SafeMoveUpdatedComponent(Delta, FRotator(LeanPitch, Heading.Rotation().Yaw, LeanBank).Quaternion(), true, Hit);
+	if (Hit.IsValidBlockingHit())
+	{
+		if (Hit.Normal.Z > WalkableNormalZ)
+		{
+			bLanded = true;
+			bOnWater = false;
+			Velocity = FVector::ZeroVector;
+			// On the ground, level: the lying pose is in the animation.
+			SafeMoveUpdatedComponent(FVector::ZeroVector, FRotator(0.f, Heading.Rotation().Yaw, 0.f).Quaternion(), true, Hit);
+			return;
+		}
+		const float Into = Velocity | Hit.Normal;
+		if (Into < 0.f)
+		{
+			Velocity -= Into * Hit.Normal;
+		}
+		SlideAlongSurface(Delta, 1.f - Hit.Time, Hit.Normal, Hit, true);
+	}
+	HandleWater();
 }
 
 void ULBAFlightMovementComponent::TouchDown(const FHitResult& Hit)

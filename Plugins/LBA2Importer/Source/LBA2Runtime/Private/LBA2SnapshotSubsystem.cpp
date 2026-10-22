@@ -20,6 +20,7 @@
 #include "LBAAnimInstance.h"
 #include "LBACharacter.h"
 #include "LBADinofly.h"
+#include "LBAHitPointsComponent.h"
 #include "LBAFlightMovementComponent.h"
 #include "LBASceneAsset.h"
 #include "LBASceneTravelSubsystem.h"
@@ -411,6 +412,10 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 		bool bDive;
 		/** Ends early once landed. */
 		bool bUntilLanded;
+		/** Pumps the climb button every this many seconds (0: no; negative: taps the brake instead). */
+		float Pump = 0.f;
+		/** Hurts the Dinofly this much when the step starts. */
+		float Damage = 0.f;
 	};
 	static const FStep Steps[] =
 	{
@@ -419,29 +424,40 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 		{ TEXT("walk_turn_right"), 1.5f, { 1, 1 }, 0, false, false },
 		{ TEXT("dive_on_ground_ignored"), 1.0f, { 0, 0 }, 0, true, false },
 		{ TEXT("takeoff"), 2.5f, { 0, 0 }, 1, false, false },
-		{ TEXT("forward"), 2.0f, { 0, 1 }, 0, false, false },
-		{ TEXT("climb_high"), 8.0f, { 0, 0.3f }, 1, false, false },
-		{ TEXT("fast_high"), 5.0f, { 0, 1 }, 0, false, false },
-		{ TEXT("dive_spiral"), 1.8f, { 1, 0 }, 0, true, false },
-		{ TEXT("pull_out"), 2.5f, { 0, 1 }, 0, false, false },
-		{ TEXT("climb_again"), 5.0f, { 0, 0.5f }, 1, false, false },
-		{ TEXT("dive_steep"), 1.6f, { 0, 1 }, 0, true, false },
-		{ TEXT("zoom_climb"), 4.0f, { 0, 0 }, 1, false, false },
-		{ TEXT("coast"), 3.0f, { 0, 0 }, 0, false, false },
-		{ TEXT("stop"), 2.0f, { 0, 0 }, 0, false, false },
-		{ TEXT("descend_land"), 15.0f, { 0, 0 }, -1, false, true },
+		{ TEXT("pump_fast"), 5.0f, { 0, 0 }, 0, false, false, 0.5f },
+		{ TEXT("pump_hold"), 6.0f, { 0, 0 }, 0, false, false, 2.5f },
+		{ TEXT("pump_climb"), 5.0f, { 0, 0.3f }, 0, false, false, 1.f },
+		{ TEXT("climb_high"), 6.0f, { 0, 0 }, 0, false, false, 0.4f },
+		{ TEXT("fall_hands_off"), 5.5f, { 0, 0 }, 0, false, false },
+		{ TEXT("brake_high"), 1.5f, { 0, 0 }, -1, false, false },
+		{ TEXT("pump_again"), 4.0f, { 0, 0 }, 0, false, false, 0.5f },
+		{ TEXT("forward_cruise"), 4.0f, { 0, 1 }, 0, false, false, 1.5f },
+		{ TEXT("turn_right_cruise"), 2.0f, { 1, 1 }, 0, false, false, 1.5f },
+		{ TEXT("dive_short"), 0.5f, { 0, 1 }, 0, true, false },
+		{ TEXT("pull_out_short"), 3.0f, { 0, 1 }, 0, false, false },
+		{ TEXT("climb_again"), 5.0f, { 0, 0.5f }, 0, false, false, 0.4f },
+		{ TEXT("dive_long"), 2.0f, { 0, 1 }, 0, true, false },
+		{ TEXT("zoom_climb"), 3.0f, { 0, 0 }, 1, false, false },
+		{ TEXT("brake_kill_speed"), 2.0f, { 0, 1 }, -1, false, false },
+		{ TEXT("pump_after_brake"), 3.0f, { 0, 0 }, 0, false, false, 1.f },
+		{ TEXT("morse_landing"), 20.0f, { 0, 0 }, 0, false, true, -0.45f },
 		{ TEXT("landed"), 1.0f, { 0, 0 }, 0, false, false },
-		{ TEXT("walk_after_landing"), 2.0f, { 0, 1 }, 0, false, false },
+		{ TEXT("hurt_standing"), 1.0f, { 0, 0 }, 0, false, false, 0.f, 15.f },
 		{ TEXT("takeoff_again"), 2.5f, { 0, 0 }, 1, false, false },
-		{ TEXT("turn_around"), 1.75f, { 1, 0 }, 0, false, false },
-		{ TEXT("return_over_land"), 3.0f, { 0, 1 }, 0, false, false },
-		{ TEXT("turn_left"), 1.0f, { -1, 0.3f }, 0, false, false },
-		{ TEXT("forward_over_land"), 2.0f, { 0, 1 }, 0, false, false },
-		{ TEXT("stop_over_land"), 1.5f, { 0, 0 }, 0, false, false },
-		{ TEXT("land_on_ground"), 15.0f, { 0, 0 }, -1, false, true },
-		{ TEXT("landed_again"), 1.0f, { 0, 0 }, 0, false, false },
+		{ TEXT("climb_for_crash"), 6.0f, { 0, 0.2f }, 0, false, false, 0.45f },
+		{ TEXT("brake_exhaust"), 7.0f, { 0, 0 }, -1, false, false, 0.6f },
+		{ TEXT("exhausted_pump"), 3.0f, { 0, 0 }, -1, false, false, 0.5f },
+		{ TEXT("hurt_flying"), 1.0f, { 0, 0 }, 0, false, false, 0.5f, 20.f },
+		{ TEXT("fall_crash"), 20.0f, { 0, 0 }, 0, false, true },
+		{ TEXT("landed_again"), 1.5f, { 0, 0 }, 0, false, false },
 		{ TEXT("dismount"), 1.5f, { 0, 0 }, 0, false, false },
 		{ TEXT("on_foot"), 1.5f, { 0, 0 }, 0, false, false },
+		{ TEXT("summon_again"), 1.5f, { 0, 0 }, 0, false, false },
+		{ TEXT("takeoff_to_die"), 2.5f, { 0, 0 }, 1, false, false },
+		{ TEXT("climb_to_die"), 3.0f, { 0, 0.5f }, 0, false, false, 0.5f },
+		{ TEXT("die"), 0.4f, { 0, 0 }, 0, false, false, 0.f, 1000.f },
+		{ TEXT("dying_fall"), 3.0f, { 0, 0 }, 0, false, false },
+		{ TEXT("you_died"), 1.0f, { 0, 0 }, 0, false, false },
 	};
 	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
 
@@ -480,10 +496,41 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 	}
 
 	const FStep& Step = Steps[HeroStep];
+	// Once per step: getting back on, hurting, and the first beat of pumping.
+	static int32 StartedStep = INDEX_NONE;
+	static double NextPump = 0.0;
+	const bool bStepStart = StartedStep != HeroStep;
+	StartedStep = HeroStep;
+	if (bStepStart)
+	{
+		NextPump = Elapsed;
+		ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+		if (Hero && FCString::Strcmp(Step.Name, TEXT("summon_again")) == 0)
+		{
+			Hero->SummonDinofly();
+			Pawn = PC->GetPawn();
+		}
+	}
 	ALBADinofly* Dinofly = Cast<ALBADinofly>(Pawn);
 	if (Dinofly)
 	{
 		Dinofly->DisableInput(PC);
+		if (bStepStart && Step.Damage > 0.f)
+		{
+			Dinofly->GetHitPoints()->TakeHit(Step.Damage, Dinofly->GetActorLocation() + FVector(0.f, 0.f, 150.f));
+		}
+		if (Step.Pump != 0.f && Elapsed >= NextPump)
+		{
+			if (Step.Pump > 0.f)
+			{
+				Dinofly->Flap();
+			}
+			else
+			{
+				Dinofly->BrakeTap();
+			}
+			NextPump += FMath::Abs(Step.Pump);
+		}
 		const bool bWaitingToLand = Step.bUntilLanded && !Dinofly->GetFlight()->IsLanded();
 		Dinofly->SetHoverInput(Step.Move, Step.Vertical);
 		Dinofly->SetDiveInput(Step.bDive);
@@ -494,9 +541,11 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 			const ULBAAnimInstance* LBAAnim = Cast<ULBAAnimInstance>(Anim);
 			const FRotator Rotation = Dinofly->GetActorRotation();
 			const UCameraComponent* ViewCamera = Dinofly->FindComponentByClass<UCameraComponent>();
-			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly %s t=%.2f loc=(%.0f %.0f %.0f) vel=(%.0f %.0f %.0f) speed2d=%.0f cruise=%.0f dive=%d height=%.0f pitch=%.1f yaw=%.0f roll=%.1f cam(pitch=%.1f fov=%.1f) landed=%d floating=%d takingoff=%d anim=%s@%.2f layer=%d@%.2f"),
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly %s t=%.2f loc=(%.0f %.0f %.0f) vel=(%.0f %.0f %.0f) speed2d=%.0f air=%.2f beats=%d stall=%.2f brake=%.2f/%.2f%s life=%.0f dead=%d dive=%d@%.2f height=%.0f pitch=%.1f yaw=%.0f roll=%.1f cam(pitch=%.1f fov=%.1f) landed=%d floating=%d takingoff=%d anim=%s@%.2f layer=%d@%.2f"),
 				Step.Name, Elapsed - HeroStepStart, Dinofly->GetActorLocation().X, Dinofly->GetActorLocation().Y, Dinofly->GetActorLocation().Z,
-				Flight->Velocity.X, Flight->Velocity.Y, Flight->Velocity.Z, Flight->Velocity.Size2D(), Flight->GetCruiseSpeed(), Flight->IsDiving() ? (Flight->IsPullingOut() ? 2 : 1) : 0, Flight->GetHeightAboveSurface(10000.f),
+				Flight->Velocity.X, Flight->Velocity.Y, Flight->Velocity.Z, Flight->Velocity.Size2D(), Flight->GetAirDensity(), Flight->GetBeatCount(),
+					Flight->GetStall(), Flight->GetBrakeAmount(), Flight->GetBrakeStamina(), Flight->IsBrakeExhausted() ? TEXT("!") : TEXT(""),
+					Dinofly->GetHitPoints()->GetLife(), Dinofly->IsDead() ? 1 : 0, Flight->IsDiving() ? (Flight->IsPullingOut() ? 2 : 1) : 0, Flight->GetDiveAggression(), Flight->GetHeightAboveSurface(10000.f),
 				Rotation.Pitch, Rotation.Yaw, Rotation.Roll,
 				ViewCamera ? ViewCamera->GetComponentRotation().Pitch : 0.f, ViewCamera ? ViewCamera->FieldOfView : 0.f,
 				Flight->IsLanded() ? 1 : 0, Flight->IsFloating() ? 1 : 0, Flight->IsTakingOff() ? 1 : 0, LBAAnim && LBAAnim->GetCurrentAnimation() ? *LBAAnim->GetCurrentAnimation()->GetName() : TEXT("none"), LBAAnim ? LBAAnim->GetCurrentAnimationTime() : 0.f,
@@ -513,7 +562,8 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 	if (Elapsed - HeroStepStart >= Step.Duration)
 	{
 		const FString File = ShotDirectory / FString::Printf(TEXT("Dinofly_%02d_%s.png"), HeroStep, Step.Name);
-		FScreenshotRequest::RequestScreenshot(File, false, false);
+		// The death screen is UI.
+		FScreenshotRequest::RequestScreenshot(File, FCString::Strcmp(Step.Name, TEXT("you_died")) == 0, false);
 		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots dinofly step %s done, pawn %s"), Step.Name, Pawn ? *Pawn->GetName() : TEXT("none"));
 		if (Dinofly && FCString::Strcmp(Step.Name, TEXT("dismount")) == 0)
 		{

@@ -168,22 +168,22 @@ frames, root motion, a bone-branch layer, synced cycle blends, smoothed keys and
 F gets Twinsen on the Dinofly, on the ground: a Dinofly waiting nearby is mounted where it stands, otherwise
 one comes to Twinsen's spot (body 0 of `DA_Dinofly` has Twinsen on its back). On the ground (or the sea) it
 walks slowly (get off to go faster); climbing takes off, with a crouch and a push-off, the legs folding up
-as it rises. Touching the ground from anywhere lands at once: the legs come down during the last meters of a
+as it rises (each press of climb is a wing beat). Touching the ground from anywhere lands at once: the legs come down during the last meters of a
 descent and the landing absorbs the touchdown. Legs and wings are animated separately there (a layer of
 `ULBAAnimInstance` on some bone branches): the wings keep beating at a natural pace while the legs fold or
 unfold as fast as needed. `ALBADinofly` flies with `ULBAFlightMovementComponent`, in two
 modes:
 
-- **Hover** (default), a simplified helicopter: hands-off it holds its position and altitude; it flies
-  forward or backward and turns, with some inertia. Thrusters: each tap adds a burst of forward speed on top
-  of the cruise (up to three times the cruise speed), fading unless you tap again. Its body stays level,
-  with a small cosmetic lean and bank.
+- **Hover** (default): steered like a simplified helicopter (forward or backward and turn, with some inertia),
+  held up like a bird: pump A to climb, hold X to dive, tap and hold B to brake (see
+  [Dinofly flight: choices and tradeoffs](#dinofly-flight-choices-and-tradeoffs)). Its body leans the way the flight's
+  forces lean it, and its wings move procedurally with what it does.
 - **Glide** (Tab): a small aerodynamic model (lift and drag from speed and angle of attack, banked turns,
   flapping thrust) where speed and altitude trade; harder to fly.
 
 The camera stays behind the Dinofly, swinging after it with some lag (`CameraFollowSpeed`). It rises and
 looks down at the Dinofly and the ground when descending or high above the ground (`HighAltitude`,
-`MaxCameraDrop`), and its field of view widens with speed, accelerations (each thrust), climbing or
+`MaxCameraDrop`), and its field of view widens with speed, accelerations, climbing or
 descending, and height. Looking around with the mouse or right stick (vertical inverted on the stick) turns all the
 way around, and the view stays where it was left. It never
 goes under water: it floats on the sea (and skims off it when gliding in fast).
@@ -192,15 +192,122 @@ goes under water: it floats on the sea (and skims off it when gliding in fast).
 |---|---|---|
 | W/S, up/down, left stick | Forward / backward (half speed); walk on the ground | Nose down / up (`lba.Dinofly.InvertPitch 1` swaps); walk on the ground |
 | A/D, left/right, left stick | Turn | Bank; turn on the ground |
-| Space, gamepad A or right trigger (hold) | Climb (take off) | Flap (take off) |
-| Left Ctrl, C, gamepad B or left trigger (hold) | Descend (land) | Brake |
-| Left Shift, gamepad X or right bumper (tap, repeat) | Thrusters (in the air only) | |
+| Space, gamepad A or right trigger (press, pump) | One wing beat (take off) | Flap, held (take off) |
+| Left Ctrl, C, gamepad B or left trigger | Brake: taps and holds kill the speed (tires after about 5 s) | Brake |
+| Left Shift, gamepad X or right bumper (hold) | Dive, the longer the steeper (in the air only); release to pull out | |
 | Mouse, right stick | Look around (all around; stays put) | Look around (all around; stays put) |
 | Tab, gamepad View | Switch to glide | Switch to hover |
 | F / gamepad Y | Get off (once landed on the ground, not at sea); the Dinofly waits there | |
 
-`-LBA2Shots=dinofly` runs a scripted ride (mount, walk, takeoff, moves, turns, thrusters, landing at sea, paddling, landing on the ground, dismount) that logs the
-flight state and screenshots each step.
+`-LBA2Shots=dinofly` runs a scripted ride (mount, walk, takeoff, pumping at three paces, a hands-off stall caught by the
+brake, cruising and a banked turn, a short and a long dive, braking the speed away, a landing tapped out in Morse, a hit
+standing, braking until the wings are spent, a hit in flight, a hands-off fall that hurts, dismount, then a death and the
+retry screen) that logs the flight state (air density, beats, stall, brake and its endurance, dive, life) and screenshots
+each step.
+
+#### Dinofly flight: choices and tradeoffs
+
+Three buttons, three rhythms:
+
+- **Pump A at different rates: different rates of climb.** A beat is a punch that fades quickly, then a long tail, with
+  a lot of inertia. One beat every 2.5 s holds the altitude, one per second gains some, one every 0.5 s climbs faster:
+  more effort for quickly decreasing returns (a beat soon after another is weaker), so frantic pumping is barely better
+  than a steady pace, and each player finds their own sweet spot. The wings beat once per press, twice as fast as they
+  used to.
+- **Hold X for different durations: a more or less aggressive dive.** The path steepens from 20 to 80 degrees over the
+  1.5 s it is held, the wings folding tighter; releasing pulls out with the speed gained (holding A meanwhile zooms up).
+- **Play Morse on B to stick a smooth landing.** Braking kills the speed, the fall and the forward speed; a tap brakes a
+  moment, a hold longer. Taps and holds keep the wings working, so tapping all the way down lands softly. The wings
+  tire: about 5 s of braking spends them (they droop, the brake stops) until they recover (10 s, faster standing).
+
+Between beats the Dinofly glides down slowly. But a few seconds without a beat or the brake (3 s), unless it flies fast
+enough to carry its weight, the wings give up: it **stalls** and falls faster and faster, nose first, up to 20 m/s. A fall
+left alone is dangerous: from more than about 9 m it hurts, from 20 m it costs a third of the life. A beat (two from a
+full stall) or the brake catches it. Staying up is a choice made all the time, between options with different costs:
+
+- **Flying forward.** Speed gives lift, much more in the thick air near the ground: low and forward, speed gives
+  altitude for free (cruising climbs by itself up to about 21 m) and never stalls. But low and fast is where hitting
+  things hurts.
+- **Thin air.** The air thins out quickly with altitude (half as dense every 30 m): up high, beats, speed and the brake
+  lift less, the glide sinks and stalls fall faster, speeding up is harder. Cruising up there stalls slowly unless you
+  pump. That sets the practical ceiling (about 41 m pumping three times a second).
+
+**How it shows.** No display: the body and the wings tell what the Dinofly does. The body leans the way the flight's
+forces lean it, following like a spring (a little late, swinging slightly past): at speed its nose follows its path (down
+in a dive or a stall, a bit up in a climb), slower it tips with the accelerations (nose down speeding up, up braking),
+sideways accelerations bank it (turns are coordinated), and the nose rises on the power strokes and when the wings flare.
+The wings are moved procedurally over the spread-wings pose of the flapping cycle (animation 218 held at 0.12 s;
+`FLBAProceduralPose::BoneRotations` turn the shoulder, elbow and tip bones), every change eased:
+
+| State | Wings |
+|---|---|
+| Gliding | Spread, breathing slowly |
+| A beat | One full stroke, the power stroke first |
+| Stalling, falling fast | Pushed up into a V, fluttering |
+| Braking low (under 4 m) | Big beats reaching forward, flared, legs down: landing |
+| Braking (4 to 15 m) | Fast hovering beats |
+| Braking high (over 15 m) | Flared wide like a parachute, slow strong beats |
+| Spent | Drooping, weak flaps |
+| Diving | Swept back, the longer the tighter, buffeted; spread and flared pulling out |
+| Turning | The tail steers |
+
+**Pain.** Hitting anything faster than its pain speed (the part of the velocity going into the surface) hurts the
+Dinofly: landing on the ground, hitting walls, trees, rocks, or the water (which hurts a bit less). Like the original,
+there is no life display: white line-drawn stars fly out of it (the original's hit star, RESS.HQR POF 0; one per
+5 life points lost, up to 5), and it flinches (animation 5: standing after a hard landing, the head and neck in
+flight). Standing on the ground it slowly recovers. At zero life it dies: it drops limp and lies on its side (animation
+335, the rider thrown off), and after a moment "You died!" offers to retry: the level starts over
+(`ULBADeathScreen`). Hits are accepted only by actors with a `ULBAHitPointsComponent` (life, stars, hurt and death
+events); actors without one don't take hits.
+
+**The key values** (everything that shapes the experience) are in Project Settings > Game > LBA2 Dinofly
+(`ULBADinoflySettings`, saved in `Config/DefaultGame.ini`, applied at once, even while playing). Its read-only
+*Derived* summary shows what they give, simulated with the flight model itself: steady climb rates per pumping pace and
+altitude, ceilings, falls, the brake, damage examples.
+
+| Setting | Default | Intended effect |
+|---|---|---|
+| Hold Beat Interval | 2.5 s | THE pumping value: one beat every 2.5 s holds the altitude at the reference altitude; each beat's strength follows from it |
+| Beat Recovery Time | 0.7 s | Diminishing returns: a beat this soon after the previous one has 63% of its strength |
+| Beat Punch, Punch Time, Tail Time | 60%, 0.12 s, 0.9 s | Shape of a beat: the punch, then the long tail |
+| Held Beat Interval | 0 (off) | Holding A beats by itself at this pace |
+| Beat Frequency | 3.25 strokes/s | Speed of a beat's wing stroke |
+| Glide Sink Speed | 2.2 m/s | Sinking between beats at the reference altitude (faster higher) |
+| Vertical Inertia, Catch Rate | 0.5/s, 1.5/s | How slowly the vertical speed settles back to the glide (long carry after a beat), and how fast the spread wings catch a fall |
+| Stall Grace Time, Stall Time | 3 s, 1.5 s | How long without a beat or the brake before the wings give up, and how quickly the stall sets in |
+| Stall Acceleration, Fall Terminal Speed | 7 m/s², 20 m/s | How hard and how fast a stall falls |
+| Beat Stall Recovery | 0.5 | Share of a stall one beat recovers |
+| Brake Vertical Rate, Brake Deceleration | 2.5/s, 9 m/s² | How fast braking kills the fall (or rise) and the forward speed |
+| Brake Tap Time | 0.15 s | The shortest brake (a tap) |
+| Brake Endurance, Recovery Time, Resume Fraction | 5 s, 10 s, 30% | Seconds of braking before the wings are spent, time to recover, and how much must come back before it works again |
+| Brake Style Heights | 4 m, 15 m | Which wing style braking uses (landing, hovering, parachute) |
+| Dive Angles, Dive Ramp Time | 20 to 80 degrees, 1.5 s | How the dive steepens the longer X is held |
+| Reference Altitude, Air Halving Height | 10 m, 30 m | Where the values above apply; how quickly the air thins out |
+| Cruise Speed, Cruise Lift, Max Speed Lift | 8 m/s, 1.3, 4 | Forward flight, and the share of the weight its speed carries (x density x speed squared; above 1 it climbs) |
+| Align Speeds, Acceleration Tilt, Climb Nose Follow | 3 to 10 m/s, 0.6, 0.6 | Attitude: from which speed the nose follows the path, how much accelerations tip the body, how much the nose follows a climb |
+| Glide / Brake / Beat Nose Up | 4, 20, 8 degrees | The nose above the path |
+| Pitch Limits, Max Bank | -80 to 50, 60 degrees | |
+| Attitude Frequency, Damping | 0.9 Hz, 0.6 | The body's spring: how quickly it follows, how much it swings past |
+| Max Life | 100 | |
+| Ground / Obstacle / Water Pain Speed | 6.5, 4.5, 9 m/s | Speed into the surface that starts to hurt |
+| Damage Per Speed, Water Damage Scale | 0.06 per cm/s, 0.7 | How fast it dies: a wall at cruise speed costs 21, at twice the cruise 69, the ground at the stall's terminal speed 81 |
+| Life Regen Per Second, Damage Per Star, Retry Delay | 2, 5, 2.5 s | |
+
+With the defaults, pumping without moving forward gives (m/s; the last column cruises forward without pumping, averaged
+over 20 to 40 s: up high it ends up stalling):
+
+| Altitude | every 2.5 s | 1 s | 0.5 s | 0.3 s | cruising |
+|---|---|---|---|---|---|
+| sea level | +0.8 | +3.5 | +5.3 | +6.3 | +1.3 |
+| 10 m (reference) | 0 | +2.1 | +3.6 | +4.4 | +0.7 |
+| 25 m | -1.1 | +0.4 | +1.5 | +2.0 | stalls |
+| 40 m | -2.0 | -1.0 | -0.2 | +0.2 | stalls |
+
+Pumping once a second holds up to 29 m, three times a second up to 41 m. Stopping pumping while hovering, the drop starts
+to hurt from 8.6 m; from 20 m it hits at 12 m/s (34 damage), from 40 m at 17 m/s (62). Braking takes a fall at the
+terminal speed below the pain speed in 0.4 s. `lba.Dinofly.Debug 1` shows life, altitude, air density, vertical speed,
+beats, stall, brake and its endurance, and the dive as text above the Dinofly; `lba.Dinofly.Hurt <damage>` hurts it
+(1000 kills it).
 
 **Wind.** The Dinofly flies through the air and the level's wind carries it (its velocity = its motion through the air +
 a drift that follows the wind over about a second, air pockets at once; Dinofly > Flight > Wind). Hands-off it drifts;
@@ -494,6 +601,7 @@ color, shade row / light, surfaces without fog).
   sprites; shallows (a seabed sloping down from the coast), Zeelich's cloud sea
 - [x] L3c Modern controls (third-person template style; procedural layer over the LBA clips rather than motion matching, too few clips)
 - [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off
+- [x] Dinofly flight choices: pump A (climb rate), hold X (dive), Morse on B (brake, tires), stalls when not pumping, lift from speed in thick air, attitude from the flight's forces, procedural wings, pain (hit stars, flinch), death and retry
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [x] L4 Scenes: per-scene levels streamed into islands and interiors, objects, sprites, typed zone volumes,
   track points, hero starts; doors and ladders work in game

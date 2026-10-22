@@ -78,6 +78,11 @@ struct FLBAProceduralPose
 	TArray<TPair<FName, float>> HeadBones;
 	/** Degrees, positive turns right. */
 	float HeadYaw = 0.f;
+	/**
+	 * Free rotations (component space, about each bone's own joint), applied last and in order: list parents before
+	 * their children (e.g. a wing's shoulder, elbow, tip), each child turning on top of its parent's rotation.
+	 */
+	TArray<TPair<FName, FQuat>> BoneRotations;
 	/** How much the feet follow the ground's slope (0..1). */
 	float FootTilt = 0.6f;
 };

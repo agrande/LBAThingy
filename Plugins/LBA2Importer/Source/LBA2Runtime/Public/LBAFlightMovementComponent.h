@@ -12,15 +12,34 @@ enum class ELBAFlightMode : uint8
 	Glide,
 };
 
+UENUM(BlueprintType)
+enum class ELBAFlightImpact : uint8
+{
+	/** Walkable ground (landing). */
+	Ground,
+	/** Anything else: walls, trees, rocks, from any side. */
+	Obstacle,
+	Water,
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FLBAFlightImpactSignature, float, ImpactSpeed, ELBAFlightImpact, Kind, FVector, Location);
+
 /**
  * Winged flight (the Dinofly), in two modes.
  *
- * Hover (default): a simplified helicopter. The inputs are forward/backward, turn and climb/descend; the
- * velocity and the turn rate ease toward the requested ones with limited accelerations, so there is inertia but
- * no piloting. The body stays level, with a small cosmetic lean and bank. Touching walkable ground (or the water)
- * lands at once, from any direction. The higher above the ground, the faster the cruise; at speed, turns are
- * banked and wider, and the extra speed is lost slowly. Holding the dive tucks the wings and dives (turning
- * spirals down); releasing it pulls out to level flight with the speed gained, or zooms up when climbing.
+ * Hover (default): steered like a simplified helicopter, held up like a bird. Forward/backward and turn: the
+ * horizontal velocity and the turn rate ease toward the requested ones with limited accelerations (inertia without
+ * piloting). Vertically, it glides down slowly between beats, but a few seconds without one (and without the speed to
+ * carry its weight) it stalls and falls faster and faster, up to a speed that hurts; each press of climb is a wing beat
+ * (Beat): a punch that fades quickly, then a long tail, and it recovers from a stall. Pumping slowly holds the
+ * altitude, faster climbs, with decreasing returns. Braking (held, and taps: BrakeTap) kills the speed, vertical and
+ * horizontal, until the wings tire (BrakeEndurance). Flying forward lifts, more in the thick air near the ground; the
+ * air thins out with altitude (ULBADinoflySettings has the values and the design). The body leans the way the flight's
+ * forces lean it (path, accelerations, turns), following like a spring. Touching walkable ground (or the water) lands
+ * at once, from any direction; at speed, turns are banked and wider, and the extra speed is lost slowly. Holding the
+ * dive tucks the wings and dives, the longer the steeper (turning spirals down); releasing it pulls out to level flight
+ * with the speed gained, or zooms up when climbing. Every hit (landing, bumping, the water) reports its speed into the
+ * surface (OnImpact).
  *
  * On the ground (both modes) the inputs walk slowly (and paddle on water); only climbing (hover) or flapping
  * (glide) takes off, after a short crouch (TakeoffDelay) for the push-off animation.
@@ -50,22 +69,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight")
 	ELBAFlightMode Mode = ELBAFlightMode::Hover;
 
-	/** Horizontal cruising speed (cm/s) near the ground or the water. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float HoverSpeed = 700.f;
-
-	/**
-	 * Cruising speed high above the ground (cm/s): the cruise grows from HoverSpeed at FastHeights.X to this at
-	 * FastHeights.Y (height above the ground or the water, cm). 18 m/s, about 65 km/h: the cruise of a large
-	 * flapping flyer.
-	 */
+	/** Fast flight (cm/s), out of a dive: the body leans and the wings beat their fastest there. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float HighCruiseSpeed = 1800.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	FVector2D FastHeights = FVector2D(400.f, 3500.f);
-
-	/** Speed above HoverSpeed is lost this slowly (cm/s^2) unless pulling back: drag, not braking. */
+	/** Speed above the cruise is lost this slowly (cm/s^2) unless pulling back: drag, not braking. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float CoastDeceleration = 250.f;
 
@@ -73,22 +81,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float MaxTurnLoad = 2.f;
 
-	/** Vertical speeds (cm/s). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float ClimbSpeed = 400.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float DescendSpeed = 500.f;
-
-	/** Horizontal acceleration when speeding up and when slowing down (cm/s^2). */
+	/**
+	 * Horizontal acceleration when speeding up and when slowing down (cm/s^2), at the reference air density: the
+	 * thicker the air, the more the wings bite (x sqrt(density), within 0.5 - 1.5).
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float HoverAcceleration = 450.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float HoverDeceleration = 650.f;
 
+	/** Dead, the body drops (cm/s, the fastest fall) limp, on its side. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float VerticalAcceleration = 700.f;
+	float DeadFallSpeed = 2500.f;
 
 	/** Backward speed, as a fraction of the forward one. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
@@ -100,19 +105,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float HoverTurnAcceleration = 360.f;
-
-	/**
-	 * Dive (held): the wings tucked, the path heads down at DiveAngle (degrees below the horizon; forward steepens
-	 * it to SteepDiveAngle, backward flattens it to ShallowDiveAngle) and speed builds up; turning spirals down.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
-	float DiveAngle = 55.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
-	float SteepDiveAngle = 75.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
-	float ShallowDiveAngle = 30.f;
 
 	/** Speed of a vertical dive (cm/s), where drag balances gravity: 36 m/s, about 130 km/h. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
@@ -135,13 +127,6 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Dive")
 	float ZoomClimbAngle = 35.f;
-
-	/** Cosmetic lean (degrees): nose down at full speed, bank in turns. 0 keeps the body perfectly level. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float MaxLeanPitch = 8.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float MaxLeanBank = 15.f;
 
 	/** Lift (and drag) per (cm/s)^2 per unit of coefficient: wing area * air density / mass. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Aerodynamics")
@@ -273,9 +258,63 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void SetFlightInput(float InPitch, float InRoll, float InFlap, float InBrake);
 
-	/** Hover mode input: forward [-1 backward, 1 forward], turn [-1 left, 1 right], vertical [-1 descend, 1 climb]. */
+	/**
+	 * Hover mode input: forward [-1 backward, 1 forward], turn [-1 left, 1 right], vertical [-1 descend, 1 climb] held
+	 * (holding descend sinks faster; holding climb takes off, and beats if ULBADinoflySettings::HeldBeatInterval).
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Flight")
 	void SetHoverInput(float InForward, float InTurn, float InVertical);
+
+	/** Hover mode: one wing beat (a press of climb). On the ground, takes off. */
+	UFUNCTION(BlueprintCallable, Category = "Flight")
+	void Beat();
+
+	/** Hover mode: a tap of the brake (descend): brakes at least ULBADinoflySettings::BrakeTapTime. Held: SetHoverInput. */
+	UFUNCTION(BlueprintCallable, Category = "Flight")
+	void BrakeTap();
+
+	/** Hover mode: how hard it brakes now (0..1), what is left of the brake's endurance (0..1), and whether it is spent. */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	float GetBrakeAmount() const { return BrakeAmount; }
+
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	float GetBrakeStamina() const { return BrakeStamina; }
+
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	bool IsBrakeExhausted() const { return bBrakeExhausted; }
+
+	/** Hover mode: how aggressive the dive is (0..1, from how long the dive is held). */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	float GetDiveAggression() const;
+
+	/** Hover mode: how far the wings gave up (0 gliding, 1 falling like a stone). */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	float GetStall() const { return Stall; }
+
+	/** Smoothed acceleration (cm/s^2) of the flight, as the body feels it. */
+	FVector GetFlightAcceleration() const { return SmoothedAcceleration; }
+
+	/** Dead: no more control, the body drops and lies where it falls. */
+	UFUNCTION(BlueprintCallable, Category = "Flight")
+	void SetDead(bool bInDead);
+
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	bool IsDead() const { return bDead; }
+
+	/** Wing beats so far (changes on every beat), and seconds since the last one. */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	int32 GetBeatCount() const { return BeatCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	float GetTimeSinceBeat() const { return TimeSinceBeat; }
+
+	/** Air density (1 at the reference altitude) where the Dinofly is. */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	float GetAirDensity() const;
+
+	/** Every hit: speed into the surface (cm/s), what was hit, where. */
+	UPROPERTY(BlueprintAssignable, Category = "Flight")
+	FLBAFlightImpactSignature OnImpact;
 
 	/** Hover mode: dive while held (pressing starts a dive, in flight only); releasing pulls out. */
 	UFUNCTION(BlueprintCallable, Category = "Flight")
@@ -328,11 +367,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	float GetVerticalInput() const { return Vertical; }
 
-	/** Hover mode: top cruising speed, high above the ground (cm/s). */
+	/** Hover mode: fast flight, out of a dive (cm/s). */
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	float GetMaxHoverSpeed() const { return HighCruiseSpeed; }
 
-	/** Hover mode: cruising speed at the current height (cm/s). */
+	/** Hover mode: speed of forward flight (cm/s), ULBADinoflySettings::CruiseSpeed. */
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	float GetCruiseSpeed() const;
 
@@ -402,6 +441,17 @@ private:
 	void TakeOff();
 	/** The wind carries the Dinofly: updates its drift and moves it by it (after the flight's own move). */
 	void ApplyWind(float DeltaTime);
+	/** Hover mode: the vertical speed from the glide, the beats and pushes, forward speed's lift (see the class comment). */
+	void UpdateVertical(float DeltaTime, float HorizontalSpeed);
+	/** Adds a beat (velocity, cm/s) to the vertical forces: a punch and a tail. */
+	void AddVerticalImpulse(float Impulse);
+	/** Brake intensity from the held input and taps, and its endurance. */
+	void UpdateBrake(float DeltaTime);
+	/** The body's pitch and bank from the flight's forces, through a spring (LeanPitch, LeanBank). */
+	void UpdateAttitude(float DeltaTime, float NoseUp);
+	/** Reports a blocking hit of the move with Velocity (before the hit changes it). */
+	void ReportImpact(const FHitResult& Hit, ELBAFlightImpact Kind);
+	void TickDead(float DeltaTime);
 
 	float Pitch = 0.f;
 	float Roll = 0.f;
@@ -417,8 +467,29 @@ private:
 	/** Dive: speed along the path (cm/s), and the path angle (radians below the horizon, negative climbing). */
 	float DiveSpeed = 0.f;
 	float DivePath = 0.f;
-	/** Height above the surface (cm), smoothed: sets the cruising speed. */
-	float CruiseHeight = 0.f;
+	/** Beats asked for since the last tick. */
+	int32 PendingBeats = 0;
+	/** Vertical forces of the beats (cm/s^2): the punch and the tail, each fading on its own. */
+	float PunchForce = 0.f;
+	float TailForce = 0.f;
+	int32 BeatCount = 0;
+	float TimeSinceBeat = 100.f;
+	bool bDead = false;
+	/** 0 gliding .. 1 stalled; seconds since the brake was last used. */
+	float Stall = 0.f;
+	float TimeSinceBrake = 100.f;
+	/** Brake: seconds of a tap left, intensity (0..1), endurance left (0..1). */
+	float BrakeTapLeft = 0.f;
+	float BrakeAmount = 0.f;
+	float BrakeStamina = 1.f;
+	bool bBrakeExhausted = false;
+	/** Seconds the dive has been held. */
+	float DiveHoldTime = 0.f;
+	/** Attitude spring: angular speeds (degrees/s); acceleration estimate. */
+	float LeanPitchRate = 0.f;
+	float LeanBankRate = 0.f;
+	FVector SmoothedAcceleration = FVector::ZeroVector;
+	FVector LastVelocity = FVector::ZeroVector;
 	/** Seconds left crouching before taking off, or negative. */
 	float TakeoffCountdown = -1.f;
 	/** Hover mode: degrees/s of heading change, and the cosmetic lean (degrees). */
