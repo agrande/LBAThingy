@@ -63,11 +63,24 @@ frames the original put on its cut walls (the **CutFrames** layouts of each libr
 `SM_Grid_NNN_Frames` (an `EnclosureFrames` actor, hidden until the look switch shows it with the Original
 look); bricks without any art count as empty. Every face looks into a room, so a camera outside sees
 through while the walls and ceiling still cast shadows (two-sided shadows and distance fields); the camera
-ignores its collision, Twinsen doesn't. For now the enclosure shows in both looks; its walls continue the
-art of the wall below (or along it, or the other side of a wall panel), else a darker flat color.
+ignores its collision, Twinsen doesn't. For now the enclosure shows in both looks.
+
+Its walls are dressed with the library's **wall styles** (`DA_LibNN_WallStyles`, `ULBAWallStyleLibrary`),
+found by the importer in all the library's grids: how the original stacks layout rows into a full wall, as a
+foot, a body (the rows it repeats to stretch a wall, or its tallest panel) and a top (caps, cornices), for
+indoor and outdoor sides (lib 0: wallpaper panel L1 rows 0-7 under the wooden cap L4; outdoor L59 foundation,
+L32 stone rows repeated). Only opaque runs in lines of 3+ columns count (no fences, ladders, posts), and the
+crops of a style count as it. The walls the original cut down are these styles cropped, so a raised wall goes
+on with the rest of its own layout, then its style's body, with the top under the ceiling. The sides the
+original never drew (the inner side of the camera-side walls, above doorways) and walls cut to a slice in no
+style (Twinsen's partitions) take their room's style (the one its back walls use most) from its floor up.
+They are also the vocabulary for the procedural wall builder. Ceilings take the library's **CeilingColor**
+(seeded from the top of its main wall style, lighter) or **CeilingMaterial**; per library, **IgnoredWallLayouts**,
+**IndoorWallLayout** and **bWallTops** tune the styles.
 `-LBA2EnclosureDebug` on an import colors it by part (walls red, backings gray, ceilings green, risers
-blue, above doorways yellow, partitions and stubs orange), `-LBA2EnclosureDebugArt` shows the walls that
-found no art in magenta, and the first dumps its cells to
+blue, above doorways yellow, partitions and stubs orange), `-LBA2EnclosureDebugArt` colors the walls by where
+their art comes from (own wall's style green, room style cyan, style without art yellow, the brick below orange,
+none magenta); both dump its cells and wall faces to
 `Saved/LookDev/enclosure/cells/`; `Saved/LookDev/tools/raycast_leaks.py` checks a grid for holes by
 casting rays from its rooms against the exported meshes (`export_enclosure_obj.py`).
 

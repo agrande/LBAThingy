@@ -120,6 +120,21 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 	Library(16, TEXT("Control tower stairs"), 8, 6, { 177 }, {}, {});
 	Library(17, TEXT("Control tower"), 9, 8, { 5, 7, 61, 72, 79, 80, 118 }, { 9, 10, 17, 64 }, { 68, 85, 86, 88 });
 
+	// Ceilings: the color of the top of each library's most used indoor wall style (DA_LibNN_WallStyles), 55% of the
+	// way to a warm light gray, so they read lighter than the walls and in their hue.
+	const TPair<int32, FColor> Ceilings[] = { {0, FColor(136, 138, 128)}, {1, FColor(158, 152, 138)}, {2, FColor(171, 164, 150)},
+		{3, FColor(136, 134, 126)}, {4, FColor(125, 129, 117)}, {5, FColor(156, 146, 129)}, {6, FColor(148, 143, 128)},
+		{7, FColor(173, 165, 151)}, {8, FColor(157, 142, 124)}, {9, FColor(178, 170, 136)}, {10, FColor(138, 133, 122)},
+		{11, FColor(134, 126, 113)}, {12, FColor(134, 126, 113)}, {13, FColor(152, 146, 132)}, {14, FColor(146, 140, 126)},
+		{15, FColor(145, 135, 120)}, {16, FColor(172, 168, 155)}, {17, FColor(154, 146, 138)} };
+	for (const TPair<int32, FColor>& Ceiling : Ceilings)
+	{
+		if (FLBALibraryEnclosure* Entry = LibraryEnclosures.FindByPredicate([&Ceiling](const FLBALibraryEnclosure& E) { return E.Library == Ceiling.Key; }))
+		{
+			Entry->CeilingColor = Ceiling.Value;
+		}
+	}
+
 	auto Grid = [this](int32 Index, const TCHAR* Note, bool bEnclose, int32 RoomHeight = 0)
 	{
 		FLBAGridEnclosure& Entry = GridEnclosures.AddDefaulted_GetRef();

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Formats/LBAIso.h"
 #include "Import/LBARoomAnalysis.h"
+#include "LBAWallStyles.h"
 
 class FLBAImportContext;
 class FLBAMeshBuilder;
@@ -20,7 +21,7 @@ class UTexture2D;
  * diagonal half ramps) exactly as the original engine resolves them.
  *
  * Output layout under <Root>/Interiors/:
- *   Libraries/Lib_NN/   T_LibNN_Bricks atlas, material, SM_LibNN_Layout_MMM kit pieces
+ *   Libraries/Lib_NN/   T_LibNN_Bricks atlas, material, SM_LibNN_Layout_MMM kit pieces, DA_LibNN_WallStyles
  *   Grids/              SM_Grid_NNN (+ _Collision), L_Grid_NNN_<SceneName> levels
  */
 class FLBAIsoImporter
@@ -54,6 +55,8 @@ private:
 	const FLBALibrary* GetLibrary(int32 LibraryIndex);
 	const FAtlas* GetAtlas(int32 LibraryIndex);
 	void BuildKitMeshes(int32 LibraryIndex);
+	/** The wall styles of a library, found in all its grids (DA_LibNN_WallStyles). */
+	const TArray<FLBAWallStyle>& GetWallStyles(int32 LibraryIndex);
 	bool ImportGrid(int32 GridIndex);
 	FString GetGridLevelName(int32 GridIndex) const;
 
@@ -64,5 +67,6 @@ private:
 	TMap<int32, TArray<FLBACellBox>> DoorZones;
 	TMap<int32, TUniquePtr<FLBALibrary>> Libraries;
 	TMap<int32, TUniquePtr<FAtlas>> Atlases;
+	TMap<int32, TArray<FLBAWallStyle>> WallStyles;
 	TUniquePtr<class FLBARemakeAssets> Remake;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Engine/DeveloperSettings.h"
+#include "Materials/MaterialInterface.h"
 #include "LBAEnclosure.h"
 #include "LBA2ImporterSettings.generated.h"
 
@@ -133,6 +134,32 @@ struct FLBALibraryEnclosure
 	 */
 	UPROPERTY(EditAnywhere, Category = "Enclosure")
 	TArray<int32> CutFrames;
+
+	/** Color of the ceilings (and of the risers where they step). */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	FColor CeilingColor = FColor(150, 140, 125);
+
+	/** Material of the ceilings instead of CeilingColor (UVs tile once per cell). */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	TSoftObjectPtr<UMaterialInterface> CeilingMaterial;
+
+	/**
+	 * Wall styles (DA_LibNN_WallStyles) are found in the library's grids: layouts listed here never make one (windows,
+	 * posters, a wall used only once in a special place).
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	TArray<int32> IgnoredWallLayouts;
+
+	/**
+	 * Layout of the wall style that dresses the inner sides of the walls facing the camera (which the original never
+	 * drew). -1: the most used style of each room's back walls.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ClampMin = "-1"))
+	int32 IndoorWallLayout = INDEX_NONE;
+
+	/** Raised walls end in their style's top (caps, cornices) under the ceiling. */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	bool bWallTops = true;
 };
 
 /** Enclosure changes for one grid, over its library's. */

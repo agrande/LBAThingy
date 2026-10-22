@@ -5,7 +5,7 @@
 
 namespace
 {
-	const FIntPoint Directions[4] = { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) };
+	const FIntPoint ColumnDirections[4] = { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) };
 
 	/** Highest solid cell of a column below Below, or INDEX_NONE. */
 	int32 TopBelow(const FLBARoomAnalysis& Rooms, const FIntPoint& Column, int32 Below)
@@ -130,7 +130,7 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 		for (const FIntVector& Cell : Spaces[SpaceIndex])
 		{
 			bool bInner = true;
-			for (const FIntPoint& Dir : Directions)
+			for (const FIntPoint& Dir : ColumnDirections)
 			{
 				bInner &= FloorSpaces.FindRef(FIntVector(Cell.X + Dir.X, Cell.Y, Cell.Z + Dir.Y), INDEX_NONE) == SpaceIndex;
 			}
@@ -184,7 +184,7 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 					continue;
 				}
 				Outside.Add(Column);
-				for (const FIntPoint& Dir : Directions)
+				for (const FIntPoint& Dir : ColumnDirections)
 				{
 					Stack.Add(Column + Dir);
 				}
@@ -201,7 +201,7 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 		for (int32 Head = 0; Head < Todo.Num(); ++Head)
 		{
 			const FIntPoint Column = Todo[Head];
-			for (const FIntPoint& Dir : Directions)
+			for (const FIntPoint& Dir : ColumnDirections)
 			{
 				const FIntPoint Next = Column + Dir;
 				if (IsInGrid(Next) && !Outside.Contains(Next) && !Region.Floor.Contains(Next))
@@ -220,7 +220,7 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 			{
 				continue;
 			}
-			for (const FIntPoint& Dir : Directions)
+			for (const FIntPoint& Dir : ColumnDirections)
 			{
 				if (Outside.Contains(Pair.Key + Dir))
 				{
@@ -268,7 +268,7 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 		{
 			int32 Ceiling = 0;
 			int32 Floor = SizeY;
-			for (const FIntPoint& Dir : Directions)
+			for (const FIntPoint& Dir : ColumnDirections)
 			{
 				if (const int32* Next = Region.Ceiling.Find(Wall + Dir))
 				{
@@ -322,7 +322,7 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 			bool bRaise = SolidTop - Top >= MinCutCollision;
 			for (int32 D = 0; D < 4 && !bRaise; ++D)
 			{
-				const FIntPoint Outer = Column + Directions[D];
+				const FIntPoint Outer = Column + ColumnDirections[D];
 				if (Region.Perimeter.Contains(Outer))
 				{
 					const int32* Ceiling = Region.Ceiling.Find(Column);
@@ -341,7 +341,7 @@ FLBAEnclosureCells FLBAEnclosureCells::Build(const FLBARoomAnalysis& Rooms, TCon
 			for (const TPair<FIntPoint, int32>& Pair : Region.Ceiling)
 			{
 				int32 Top = Pair.Value + 1;
-				for (const FIntPoint& Dir : Directions)
+				for (const FIntPoint& Dir : ColumnDirections)
 				{
 					if (const int32* Next = Region.Ceiling.Find(Pair.Key + Dir))
 					{
