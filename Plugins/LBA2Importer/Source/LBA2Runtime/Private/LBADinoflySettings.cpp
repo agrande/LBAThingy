@@ -2,7 +2,7 @@
 
 namespace
 {
-	constexpr float SimulationStep = 1.f / 60.f;
+	constexpr float DerivedSimulationStep = 1.f / 60.f;
 }
 
 ULBADinoflySettings::ULBADinoflySettings()
@@ -65,7 +65,7 @@ float ULBADinoflySettings::SimulatePumping(float Interval, float Z, float Impuls
 	const float Strength = Interval > 0.f ? GetBeatStrength(Interval) : 0.f;
 	float Vz = 0.f, Punch = 0.f, Tail = 0.f, NextBeat = 0.f, Sum = 0.f, Stall = 0.f, SinceBeat = 0.f;
 	int32 Counted = 0;
-	for (float Time = 0.f; Time < 40.f; Time += SimulationStep)
+	for (float Time = 0.f; Time < 40.f; Time += DerivedSimulationStep)
 	{
 		if (Interval > 0.f && Time >= NextBeat)
 		{
@@ -76,11 +76,11 @@ float ULBADinoflySettings::SimulatePumping(float Interval, float Z, float Impuls
 			Stall = FMath::Max(0.f, Stall - BeatStallRecovery);
 			SinceBeat = 0.f;
 		}
-		SinceBeat += SimulationStep;
-		Stall = StepStall(Stall, SinceBeat, Z, HorizontalSpeed, SimulationStep);
-		Vz += GetVerticalAcceleration(Vz, Z, HorizontalSpeed, Stall) * SimulationStep;
-		const float PunchDecay = FMath::Exp(-SimulationStep / BeatPunchTime);
-		const float TailDecay = FMath::Exp(-SimulationStep / BeatTailTime);
+		SinceBeat += DerivedSimulationStep;
+		Stall = StepStall(Stall, SinceBeat, Z, HorizontalSpeed, DerivedSimulationStep);
+		Vz += GetVerticalAcceleration(Vz, Z, HorizontalSpeed, Stall) * DerivedSimulationStep;
+		const float PunchDecay = FMath::Exp(-DerivedSimulationStep / BeatPunchTime);
+		const float TailDecay = FMath::Exp(-DerivedSimulationStep / BeatTailTime);
 		Vz += Punch * BeatPunchTime * (1.f - PunchDecay) + Tail * BeatTailTime * (1.f - TailDecay);
 		Punch *= PunchDecay;
 		Tail *= TailDecay;
@@ -97,11 +97,11 @@ float ULBADinoflySettings::SimulateDrop(float Height, float Z) const
 {
 	// From hovering still, the last beat just done.
 	float Vz = 0.f, Fallen = 0.f, Stall = 0.f;
-	for (float Time = 0.f; Time < 60.f && Fallen < Height; Time += SimulationStep)
+	for (float Time = 0.f; Time < 60.f && Fallen < Height; Time += DerivedSimulationStep)
 	{
-		Stall = StepStall(Stall, Time, Z - Fallen, 0.f, SimulationStep);
-		Vz += GetVerticalAcceleration(Vz, Z - Fallen, 0.f, Stall) * SimulationStep;
-		Fallen -= Vz * SimulationStep;
+		Stall = StepStall(Stall, Time, Z - Fallen, 0.f, DerivedSimulationStep);
+		Vz += GetVerticalAcceleration(Vz, Z - Fallen, 0.f, Stall) * DerivedSimulationStep;
+		Fallen -= Vz * DerivedSimulationStep;
 	}
 	return -Vz;
 }
@@ -183,8 +183,15 @@ void ULBADinoflySettings::UpdateDerived()
 	}
 	Text += FString::Printf(TEXT("\nBraking takes a fall at the terminal speed below the pain speed in %.1f s; it lasts %.1f s, recovers in %.0f s.\n"),
 		FMath::Loge(FMath::Max(FallTerminalSpeed / FMath::Max(GroundPainSpeed, 1.f), 1.f)) / FMath::Max(BrakeVerticalRate, 0.01f), BrakeEndurance, BrakeRecoveryTime);
-	Text += FString::Printf(TEXT("Damage (life %.0f): wall at cruise %.0f, wall at 2x cruise %.0f, ground at the terminal fall %.0f, water at 15 m/s %.0f."),
+	Text += FString::Printf(TEXT("Damage (life %.0f): wall at cruise %.0f, wall at 2x cruise %.0f, ground at the terminal fall %.0f, water at 15 m/s %.0f.\n"),
 		MaxLife, GetDamage(CruiseSpeed, ObstaclePainSpeed), GetDamage(2.f * CruiseSpeed, ObstaclePainSpeed),
 		GetDamage(FallTerminalSpeed, GroundPainSpeed), GetDamage(1500.f, WaterPainSpeed, WaterDamageScale));
+
+	// How many of each kill a healthy Dinofly.
+	auto ToDie = [this](float Damage) { return Damage > 0.f ? FString::FromInt(FMath::CeilToInt(MaxLife / Damage)) : FString(TEXT("never")); };
+	Text += FString::Printf(TEXT("Deadly: hands-off drops from 20 m x%s, from 40 m x%s; walls hit at cruise x%s, at 2x cruise x%s; water at 15 m/s x%s."),
+		*ToDie(GetDamage(SimulateDrop(2000.f, 2000.f), GroundPainSpeed)), *ToDie(GetDamage(SimulateDrop(4000.f, 4000.f), GroundPainSpeed)),
+		*ToDie(GetDamage(CruiseSpeed, ObstaclePainSpeed)), *ToDie(GetDamage(2.f * CruiseSpeed, ObstaclePainSpeed)),
+		*ToDie(GetDamage(1500.f, WaterPainSpeed, WaterDamageScale)));
 	Summary = Text;
 }

@@ -248,14 +248,14 @@ public:
 	float GroundPainSpeed = 650.f;
 
 	UPROPERTY(Config, EditAnywhere, Category = "Pain", meta = (ClampMin = "0", Units = "cm/s"))
-	float ObstaclePainSpeed = 450.f;
+	float ObstaclePainSpeed = 300.f;
 
 	UPROPERTY(Config, EditAnywhere, Category = "Pain", meta = (ClampMin = "0", Units = "cm/s"))
 	float WaterPainSpeed = 900.f;
 
 	/** Life lost per cm/s above the pain speed. */
 	UPROPERTY(Config, EditAnywhere, Category = "Pain", meta = (ClampMin = "0"))
-	float DamagePerSpeed = 0.06f;
+	float DamagePerSpeed = 0.11f;
 
 	/** Water hurts less than terrain and objects: damage scale. */
 	UPROPERTY(Config, EditAnywhere, Category = "Pain", meta = (ClampMin = "0", ClampMax = "2"))
@@ -263,7 +263,7 @@ public:
 
 	/** Life recovered per second while standing on the ground. */
 	UPROPERTY(Config, EditAnywhere, Category = "Pain", meta = (ClampMin = "0"))
-	float LifeRegenPerSecond = 2.f;
+	float LifeRegenPerSecond = 0.5f;
 
 	/** One star flies out per this much damage (the original: 5 life points per star, up to 5 stars). */
 	UPROPERTY(Config, EditAnywhere, Category = "Pain", meta = (ClampMin = "0.1"))

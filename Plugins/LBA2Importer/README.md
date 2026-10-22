@@ -222,7 +222,7 @@ Three buttons, three rhythms:
 
 Between beats the Dinofly glides down slowly. But a few seconds without a beat or the brake (3 s), unless it flies fast
 enough to carry its weight, the wings give up: it **stalls** and falls faster and faster, nose first, up to 20 m/s. A fall
-left alone is dangerous: from more than about 9 m it hurts, from 20 m it costs a third of the life. A beat (two from a
+left alone is deadly: from more than about 9 m it hurts, two from 20 m kill it, one from 40 m does. A beat (two from a
 full stall) or the brake catches it. Staying up is a choice made all the time, between options with different costs:
 
 - **Flying forward.** Speed gives lift, much more in the thick air near the ground: low and forward, speed gives
@@ -289,9 +289,9 @@ altitude, ceilings, falls, the brake, damage examples.
 | Pitch Limits, Max Bank | -80 to 50, 60 degrees | |
 | Attitude Frequency, Damping | 0.9 Hz, 0.6 | The body's spring: how quickly it follows, how much it swings past |
 | Max Life | 100 | |
-| Ground / Obstacle / Water Pain Speed | 6.5, 4.5, 9 m/s | Speed into the surface that starts to hurt |
-| Damage Per Speed, Water Damage Scale | 0.06 per cm/s, 0.7 | How fast it dies: a wall at cruise speed costs 21, at twice the cruise 69, the ground at the stall's terminal speed 81 |
-| Life Regen Per Second, Damage Per Star, Retry Delay | 2, 5, 2.5 s | |
+| Ground / Obstacle / Water Pain Speed | 6.5, 3, 9 m/s | Speed into the surface that starts to hurt |
+| Damage Per Speed, Water Damage Scale | 0.11 per cm/s, 0.7 | How fast it dies (flying is dangerous): a wall at cruise speed costs 55 (two kill it), at twice the cruise 143, a 20 m drop 63 (two kill it), a 40 m drop 114 |
+| Life Regen Per Second, Damage Per Star, Retry Delay | 0.5, 5, 2.5 s | Standing on the ground heals slowly (a 20 m drop takes two minutes) |
 
 With the defaults, pumping without moving forward gives (m/s; the last column cruises forward without pumping, averaged
 over 20 to 40 s: up high it ends up stalling):
@@ -304,7 +304,8 @@ over 20 to 40 s: up high it ends up stalling):
 | 40 m | -2.0 | -1.0 | -0.2 | +0.2 | stalls |
 
 Pumping once a second holds up to 29 m, three times a second up to 41 m. Stopping pumping while hovering, the drop starts
-to hurt from 8.6 m; from 20 m it hits at 12 m/s (34 damage), from 40 m at 17 m/s (62). Braking takes a fall at the
+to hurt from 8.6 m; from 20 m it hits at 12 m/s (63 damage: two such falls kill it), from 40 m at 17 m/s (114: dead). The
+settings' *Derived* summary counts how many of each kill a healthy Dinofly. Braking takes a fall at the
 terminal speed below the pain speed in 0.4 s. `lba.Dinofly.Debug 1` shows life, altitude, air density, vertical speed,
 beats, stall, brake and its endurance, and the dive as text above the Dinofly; `lba.Dinofly.Hurt <damage>` hurts it
 (1000 kills it).

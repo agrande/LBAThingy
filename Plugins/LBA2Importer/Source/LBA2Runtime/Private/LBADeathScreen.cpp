@@ -16,7 +16,7 @@
 
 namespace
 {
-	UTextBlock* MakeText(UWidgetTree* Tree, const FText& Text, int32 Size, const FLinearColor& Color)
+	UTextBlock* MakeScreenText(UWidgetTree* Tree, const FText& Text, int32 Size, const FLinearColor& Color)
 	{
 		UTextBlock* Block = Tree->ConstructWidget<UTextBlock>();
 		Block->SetText(Text);
@@ -75,13 +75,13 @@ void ULBADeathScreen::BuildTree()
 	UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Content"));
 	Dim->SetContent(Box);
 
-	UVerticalBoxSlot* TitleSlot = Box->AddChildToVerticalBox(MakeText(WidgetTree, LOCTEXT("Title", "You died!"), 56, TitleColor));
+	UVerticalBoxSlot* TitleSlot = Box->AddChildToVerticalBox(MakeScreenText(WidgetTree, LOCTEXT("Title", "You died!"), 56, TitleColor));
 	TitleSlot->SetHorizontalAlignment(HAlign_Center);
 	TitleSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 28.f));
 
 	RetryButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Retry"));
 	RetryButton->SetBackgroundColor(ButtonColor);
-	UTextBlock* Label = MakeText(WidgetTree, LOCTEXT("Retry", "Retry"), 32, FLinearColor::White);
+	UTextBlock* Label = MakeScreenText(WidgetTree, LOCTEXT("Retry", "Retry"), 32, FLinearColor::White);
 	RetryButton->SetContent(Label);
 	if (UBorderSlot* LabelSlot = Cast<UBorderSlot>(Label->Slot))
 	{
