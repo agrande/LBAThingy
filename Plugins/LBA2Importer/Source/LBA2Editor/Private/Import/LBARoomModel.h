@@ -73,10 +73,14 @@ struct FLBAWallBrickCounts
  * - Rooms: from a plateau's floors, the columns with something standing on its floor (furniture), not walls, not
  *   doorways, not the floors of other room plateaus; each connected part is a room.
  * - Walls: columns with WallHeight solid cells over the level, either cut down (CutCollision collision cells above
- *   what is drawn), or drawn mostly with wall bricks (or not drawn at all, invisible collision), or reaching TallWall
- *   (in themselves or through the band one column out that tops a camera-side wall's stub) with the outside behind
- *   them (without wall bricks: reaching TallWall). A wall goes on: another wall column next to it, or the outside
- *   behind it; a lone column inside a room is a pillar or furniture.
+ *   what is drawn), or the jamb of an exit, or drawn mostly with wall bricks (or not drawn at all, invisible
+ *   collision), or reaching TallWall (in themselves or through the band one column out that tops a camera-side wall's
+ *   stub) with the outside behind them (without wall bricks: reaching TallWall). A wall goes on:
+ *   another wall column next to it, or the outside behind it; a lone column inside a room is a pillar or furniture.
+ *   Met from a room, a column standing against the wall behind it (IsAgainstWall: lower than that wall) is furniture:
+ *   a bookcase, a lamp, curtains, shelves; the room's wall is the one behind. Runs go through windows (WindowGap).
+ * - Pockets of floor at the room's level behind furniture (too small to be spaces) are part of the room.
+ * The rules beyond the height rules apply with learned wall bricks only (the height rules learn them).
  * - Doorways: the room goes around those that lead nowhere else (a gap between furniture): they are part of it.
  * - Gaps between rooms that none reaches (a stairwell's top) belong to the highest room around them.
  * - Ceilings: RoomHeight cells over a room's level; over stairs, RoomHeight over each step.
@@ -96,12 +100,17 @@ public:
 	static constexpr int32 TallWall = 6;
 	/** Collision cells above the drawn top of a wall the original cut down for the camera. */
 	static constexpr int32 CutCollision = 2;
+	/** Furniture columns in front of a wall (IsAgainstWall). */
+	static constexpr int32 AgainstDepth = 3;
+	/** Empty cells of a window in a wall (GetWallRun). */
+	static constexpr int32 WindowGap = 2;
 	/** -X, +X, -Z, +Z. */
 	static const FIntPoint Sides[4];
 
-	/** Shape (collision, 0 = none) and Brick (art, 0 = none) of each cell. Empty WallBricks: the height rules only. */
+	/** Shape (collision, 0 = none) and Brick (0 = none) of each cell, HasArt of a brick (blank bricks have none). Empty
+	 * WallBricks: the height rules only. */
 	FLBARoomModel(TFunctionRef<int32(int32, int32, int32)> Shape, TFunctionRef<int32(int32, int32, int32)> Brick,
-		TConstArrayView<FLBADoorway> Doorways, int32 RoomHeight, const TSet<int32>& WallBricks);
+		TFunctionRef<bool(int32)> HasArt, TConstArrayView<FLBADoorway> Doorways, int32 RoomHeight, const TSet<int32>& WallBricks);
 
 	const TArray<FLBARoom>& GetRooms() const { return Rooms; }
 	/** Wall columns met around the rooms, with the level they were judged from. */
@@ -113,8 +122,11 @@ public:
 	int32 GetBrick(int32 X, int32 Y, int32 Z) const;
 	/** Solid cells stacked right above height Y in column (X, Z); OutDrawnTop: cells up to the highest drawn one of them. */
 	int32 GetRun(int32 X, int32 Y, int32 Z, int32* OutDrawnTop = nullptr) const;
-	/** A wall rises from floor level Level in the column, and goes on (see the class comment). */
-	bool IsWall(const FIntPoint& Column, int32 Level) const;
+	/** GetRun through windows: gaps of at most WindowGap cells with the column solid again above them. */
+	int32 GetWallRun(int32 X, int32 Y, int32 Z, int32* OutDrawnTop = nullptr) const;
+	/** A wall rises from floor level Level in the column, and goes on (see the class comment); met from a room going
+	 * Sides[Side], not standing against the wall behind it. */
+	bool IsWall(const FIntPoint& Column, int32 Level, int32 Side = INDEX_NONE) const;
 
 	/** Adds the bricks of this grid's back walls, free-standing furniture and floors (to learn a library's wall bricks). */
 	void CountBricks(FLBAWallBrickCounts& Counts) const;
@@ -126,6 +138,11 @@ private:
 	static bool IsInGrid(const FIntPoint& Column) { return Column.X >= 0 && Column.Y >= 0 && Column.X < SizeXZ && Column.Y < SizeXZ; }
 	static int32 ToIndex(int32 X, int32 Y, int32 Z) { return (Z * SizeXZ + X) * SizeY + Y; }
 	bool IsWallLike(const FIntPoint& Column, int32 Level) const;
+	/** The column, met from a room going Sides[Side], stands against a wall (furniture: a bookcase, a lamp, a bed's
+	 * post): going on in Side through at most AgainstDepth wall-like columns, the last one is the wall: it has art (not
+	 * only a camera-side wall's invisible plug or blank band), it is part of a wall across Side, and it reaches higher
+	 * than the columns in front of it (a wall seen end-on is as tall). Only with learned wall bricks. */
+	bool IsAgainstWall(const FIntPoint& Column, int32 Level, int32 Side) const;
 	/** Nothing stands in the column from floor level Level up (the outside, a drop), or it is beyond the grid. */
 	bool IsOutside(const FIntPoint& Column, int32 Level) const;
 	/** Top of the wall surface rising above height Y: the column's run, continued by a band over it next door. */
@@ -134,10 +151,14 @@ private:
 
 	TBitArray<> Solid;
 	TArray<int32> Bricks;
+	/** Cells with a brick that has art. */
+	TBitArray<> Art;
 	TSet<int32> WallBricks;
 	int32 RoomHeight = 0;
 	/** Doorway index and floor height of each doorway column. */
 	TMap<FIntPoint, TPair<int32, int32>> DoorColumns;
+	/** Columns of the doorways that lead out (FLBADoorway::bExit). */
+	TSet<FIntPoint> ExitColumns;
 	/** Levels of the room plateaus with a floor in each column. */
 	TMap<FIntPoint, TArray<int32, TInlineAllocator<2>>> RoomFloorLevels;
 	TMap<FIntPoint, int32> Walls;

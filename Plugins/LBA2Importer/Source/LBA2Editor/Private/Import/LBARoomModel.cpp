@@ -67,11 +67,12 @@ namespace
 }
 
 FLBARoomModel::FLBARoomModel(TFunctionRef<int32(int32, int32, int32)> Shape, TFunctionRef<int32(int32, int32, int32)> Brick,
-	TConstArrayView<FLBADoorway> Doorways, int32 InRoomHeight, const TSet<int32>& InWallBricks)
+	TFunctionRef<bool(int32)> HasArt, TConstArrayView<FLBADoorway> Doorways, int32 InRoomHeight, const TSet<int32>& InWallBricks)
 	: WallBricks(InWallBricks)
 	, RoomHeight(InRoomHeight)
 {
 	Solid.Init(false, SizeXZ * SizeY * SizeXZ);
+	Art.Init(false, SizeXZ * SizeY * SizeXZ);
 	Bricks.SetNumZeroed(SizeXZ * SizeY * SizeXZ);
 	for (int32 Z = 0; Z < SizeXZ; ++Z)
 	{
@@ -81,6 +82,7 @@ FLBARoomModel::FLBARoomModel(TFunctionRef<int32(int32, int32, int32)> Shape, TFu
 			{
 				Solid[ToIndex(X, Y, Z)] = Shape(X, Y, Z) != 0;
 				Bricks[ToIndex(X, Y, Z)] = Brick(X, Y, Z);
+				Art[ToIndex(X, Y, Z)] = Bricks[ToIndex(X, Y, Z)] != 0 && HasArt(Bricks[ToIndex(X, Y, Z)]);
 			}
 		}
 	}
@@ -89,6 +91,10 @@ FLBARoomModel::FLBARoomModel(TFunctionRef<int32(int32, int32, int32)> Shape, TFu
 		for (const FIntVector& Cell : Doorways[Index].Cells)
 		{
 			DoorColumns.Add(FIntPoint(Cell.X, Cell.Z), TPair<int32, int32>(Index, Cell.Y));
+			if (Doorways[Index].bExit)
+			{
+				ExitColumns.Add(FIntPoint(Cell.X, Cell.Z));
+			}
 		}
 	}
 
@@ -302,7 +308,7 @@ FLBARoomModel::FLBARoomModel(TFunctionRef<int32(int32, int32, int32)> Shape, TFu
 					Edge.Kind = ELBARoomEdge::Door;
 					Edge.Other = Door->Key;
 				}
-				else if (IsWall(Next, Room.Level))
+				else if (IsWall(Next, Room.Level, Side))
 				{
 					Edge.Kind = ELBARoomEdge::Wall;
 				}
@@ -393,7 +399,7 @@ void FLBARoomModel::BuildRooms(int32 Level, const TSet<FIntVector>& Plateau)
 		}
 	}
 	// Floors, and what stands on the floor that is not a wall: furniture, steps.
-	auto IsPassable = [&](const FIntPoint& Column)
+	auto IsPassable = [&](const FIntPoint& Column, int32 Side)
 	{
 		if (!IsInGrid(Column) || DoorColumns.Contains(Column))
 		{
@@ -403,6 +409,23 @@ void FLBARoomModel::BuildRooms(int32 Level, const TSet<FIntVector>& Plateau)
 		{
 			return true;
 		}
+		// A pocket of floor at the room's level (behind furniture, too small to be a space of its own): drawn as a floor
+		// (art, not a wall brick: not the top of a wall), not another room's floor. Rules beyond the height rules, which
+		// learn the wall bricks, only with them.
+		const int32 Top = GetBrick(Column.X, Level, Column.Y);
+		if (WallBricks.Num() > 0 && !RoomFloorLevels.Contains(Column) && IsSolid(Column.X, Level, Column.Y) && Art[ToIndex(Column.X, Level, Column.Y)]
+			&& !WallBricks.Contains(Top))
+		{
+			bool bClear = true;
+			for (int32 K = 1; K <= Headroom; ++K)
+			{
+				bClear &= !IsSolid(Column.X, Level + K, Column.Y);
+			}
+			if (bClear)
+			{
+				return true;
+			}
+		}
 		if (const TArray<int32, TInlineAllocator<2>>* Levels = RoomFloorLevels.Find(Column))
 		{
 			if (Levels->ContainsByPredicate([Level](int32 Other) { return Other != Level; }))
@@ -410,7 +433,7 @@ void FLBARoomModel::BuildRooms(int32 Level, const TSet<FIntVector>& Plateau)
 				return false;
 			}
 		}
-		if (IsWall(Column, Level))
+		if (IsWall(Column, Level, Side))
 		{
 			Walls.FindOrAdd(Column, Level);
 			return false;
@@ -435,10 +458,10 @@ void FLBARoomModel::BuildRooms(int32 Level, const TSet<FIntVector>& Plateau)
 		while (Todo.Num() > 0)
 		{
 			const FIntPoint Column = Todo.Pop(EAllowShrinking::No);
-			for (const FIntPoint& Side : Sides)
+			for (int32 Side = 0; Side < 4; ++Side)
 			{
-				const FIntPoint Next = Column + Side;
-				if (!Room.Footprint.Contains(Next) && IsPassable(Next))
+				const FIntPoint Next = Column + Sides[Side];
+				if (!Room.Footprint.Contains(Next) && IsPassable(Next, Side))
 				{
 					Room.Footprint.Add(Next);
 					Todo.Add(Next);
@@ -446,6 +469,11 @@ void FLBARoomModel::BuildRooms(int32 Level, const TSet<FIntVector>& Plateau)
 			}
 		}
 		Seen.Append(Room.Footprint);
+		// Met as a wall from one side, furniture against a wall from another.
+		for (const FIntPoint& Column : WallBricks.Num() > 0 ? Room.Footprint : TSet<FIntPoint>())
+		{
+			Walls.Remove(Column);
+		}
 		for (const FIntPoint& Column : Room.Footprint)
 		{
 			if (const int32* Y = FloorY.Find(Column))
@@ -508,10 +536,46 @@ int32 FLBARoomModel::GetReach(const FIntPoint& Column, int32 Y) const
 	return Top;
 }
 
+int32 FLBARoomModel::GetWallRun(int32 X, int32 Y, int32 Z, int32* OutDrawnTop) const
+{
+	int32 End = Y;
+	for (int32 K = Y + 1; K < SizeY; ++K)
+	{
+		if (IsSolid(X, K, Z))
+		{
+			End = K;
+			continue;
+		}
+		bool bGoesOn = false;
+		for (int32 J = 1; J <= WindowGap && K > Y + 1; ++J)
+		{
+			bGoesOn |= IsSolid(X, K + J, Z);
+		}
+		if (!bGoesOn)
+		{
+			break;
+		}
+	}
+	if (OutDrawnTop)
+	{
+		*OutDrawnTop = 0;
+		for (int32 K = End; K > Y; --K)
+		{
+			if (GetBrick(X, K, Z) != 0)
+			{
+				*OutDrawnTop = K - Y;
+				break;
+			}
+		}
+	}
+	return End - Y;
+}
+
 bool FLBARoomModel::IsWallLike(const FIntPoint& Column, int32 Level) const
 {
 	int32 DrawnTop = 0;
-	const int32 Run = GetRun(Column.X, Level, Column.Y, &DrawnTop);
+	// Through windows, with the learned wall bricks (the height rules that learn them do without).
+	const int32 Run = WallBricks.Num() > 0 ? GetWallRun(Column.X, Level, Column.Y, &DrawnTop) : GetRun(Column.X, Level, Column.Y, &DrawnTop);
 	if (Run < WallHeight)
 	{
 		return false;
@@ -519,6 +583,14 @@ bool FLBARoomModel::IsWallLike(const FIntPoint& Column, int32 Level) const
 	if (Run - DrawnTop >= CutCollision)
 	{
 		return true;
+	}
+	// The jamb of an exit (rules beyond the height rules, which learn the wall bricks, only with them).
+	for (const FIntPoint& Side : Sides)
+	{
+		if (WallBricks.Num() > 0 && ExitColumns.Contains(Column + Side))
+		{
+			return true;
+		}
 	}
 	if (WallBricks.Num() > 0)
 	{
@@ -537,7 +609,7 @@ bool FLBARoomModel::IsWallLike(const FIntPoint& Column, int32 Level) const
 		}
 	}
 	// A tall column with the outside behind it is a wall, whatever stands at its foot (a bathtub, curtains).
-	if (GetReach(Column, Level) - Level < TallWall)
+	if (FMath::Max(GetReach(Column, Level) - Level, Run) < TallWall)
 	{
 		return false;
 	}
@@ -571,15 +643,68 @@ bool FLBARoomModel::IsOutside(const FIntPoint& Column, int32 Level) const
 	return true;
 }
 
-bool FLBARoomModel::IsWall(const FIntPoint& Column, int32 Level) const
+bool FLBARoomModel::IsAgainstWall(const FIntPoint& Column, int32 Level, int32 Side) const
 {
-	if (!IsWallLike(Column, Level))
+	if (WallBricks.Num() == 0)
 	{
 		return false;
 	}
-	for (const FIntPoint& Side : Sides)
+	// Columns from this one on, going Side while wall-like: the last is the wall.
+	TArray<FIntPoint, TInlineAllocator<AgainstDepth + 2>> Chain = { Column };
+	while (true)
 	{
-		if (IsOutside(Column + Side, Level) || IsWallLike(Column + Side, Level))
+		const FIntPoint Next = Chain.Last() + Sides[Side];
+		if (!IsInGrid(Next) || !IsWallLike(Next, Level))
+		{
+			break;
+		}
+		Chain.Add(Next);
+		if (Chain.Num() > AgainstDepth + 1)
+		{
+			return false;
+		}
+	}
+	if (Chain.Num() < 2)
+	{
+		return false;
+	}
+	const FIntPoint Wall = Chain.Last();
+	bool bArt = false;
+	for (int32 Y = Level + 1; Y < SizeY && !bArt; ++Y)
+	{
+		bArt = Art[ToIndex(Wall.X, Y, Wall.Y)];
+	}
+	// Part of a wall across Side.
+	const FIntPoint Across(Sides[Side].Y, Sides[Side].X);
+	bool bAcross = false;
+	for (const FIntPoint& Next : { Wall + Across, Wall - Across })
+	{
+		bAcross |= IsInGrid(Next) && IsWallLike(Next, Level);
+	}
+	if (!bArt || !bAcross)
+	{
+		return false;
+	}
+	const int32 Top = GetReach(Wall, Level);
+	for (int32 Index = 0; Index + 1 < Chain.Num(); ++Index)
+	{
+		if (GetReach(Chain[Index], Level) >= Top)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool FLBARoomModel::IsWall(const FIntPoint& Column, int32 Level, int32 Side) const
+{
+	if (!IsWallLike(Column, Level) || (Side != INDEX_NONE && IsAgainstWall(Column, Level, Side)))
+	{
+		return false;
+	}
+	for (const FIntPoint& Offset : Sides)
+	{
+		if (IsOutside(Column + Offset, Level) || IsWallLike(Column + Offset, Level))
 		{
 			return true;
 		}

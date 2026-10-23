@@ -57,12 +57,15 @@ them (`FLBARoomModel`, prototyped with top-down plans in `Tools/room_model.py`):
   plateau, its floors and the furniture standing on them, split at doorways. Small plateaus are stairs and
   furniture tops. A doorway the room goes around (a gap between furniture) is part of it; a gap between two rooms
   that neither reaches (a stairwell's top) belongs to the higher one.
-- **Walls**: columns rising at least 3 cells over the room's floor that were cut down (collision above what is
-  drawn), are drawn mostly with the library's **wall bricks**, or are tall with the outside behind them; and that
-  go on (another wall next to them, or the outside behind), so a lone column is furniture. The wall bricks are
-  learned per library from all its grids: the bricks of the back-most walls around rooms, not those of
-  free-standing furniture or floor tiles. A camera-side wall is a stub with an undrawn band one column further
-  out, and counts as a wall through it.
+- **Walls**: columns rising at least 3 cells over the room's floor (through windows) that were cut down (collision
+  above what is drawn), are the jambs of an exit, are drawn mostly with the library's **wall bricks**, or are tall
+  with the outside behind them; and that go on (another wall next to them, or the outside behind), so a lone column
+  is furniture. The wall bricks are learned per library from all its grids: the bricks of the back-most walls around
+  rooms, not those of free-standing furniture or floor tiles. A camera-side wall is a stub with an undrawn band one
+  column further out, and counts as a wall through it.
+- **Furniture against a wall** (a bookcase, a lamp, curtains, shelves, a bed's posts): a column with the wall right
+  behind it (up to 3 columns deep), lower than that wall, is part of the room and the wall behind it is the room's
+  wall, so the rooms stay rectangles. Pockets of floor behind furniture join the room.
 - **Ceilings**: the library's room height (cells, 32 cm) over each room's floor, and over each step of stairs.
 
 The enclosure (`SM_Grid_NNN_Enclosure`, an `Enclosure` actor tagged `LBAEnclosure`) is made of faces on the
@@ -76,9 +79,12 @@ each room gets a soft bounce light from its floor, **RoomBounceLight**), in the 
 **CeilingMaterial**. A camera outside a room sees through it, while walls still cast shadows (two-sided shadows and
 distance fields); the camera ignores the enclosure's collision, Twinsen doesn't. For now it shows in both looks.
 
-Each room has one **wallpaper** per wall orientation: the wall layout row drawn most on its back walls a few cells
-over its floor (wall panels only), repeated up the walls, with the row drawn right over the floor as its foot; a
-room without back walls of its own takes the grid's (**WallpaperLayout** forces one per library). The frames the
+Each room has one **wallpaper** per wall orientation: at each height over its floor, the wall layout row drawn most
+there on its back walls (wall panels only), so a wall stacked from several layouts keeps its stack (a dado, a rail,
+a band, the body, a cornice). It is laid from the floor, the row under its top (the body) repeated where the room is
+taller than the original's walls, its top row right under the ceiling, also over the original's own top row on the
+sides it drew; a room without back walls of its own takes the grid's (**WallpaperLayout** forces one layout per
+library). The frames the
 original put on its cut walls (the **CutFrames** layouts of each library, seeded from
 `Tools/survey_frames.py`, and the topmost piece under a wall's invisible collision, the cut through
 the wall) come off as whole instances where the enclosure covers them, with the remake models replacing them, into
@@ -92,7 +98,9 @@ Every import logs each enclosed grid's rooms (`R0 level 7 ceiling 17 floors 194 
 `-LBA2EnclosureDebug` colors the enclosure by part (walls red, camera-side walls orange, over doorways yellow,
 doorway passages gray, steps purple, ceilings green, risers blue), `-LBA2EnclosureDebugArt` its walls by art
 (wallpaper cyan, its foot green, flat magenta). `Tools/raycast_leaks.py` checks a grid for holes by
-casting rays from its rooms against the exported meshes (`export_enclosure_obj.py`).
+casting rays from its rooms against the exported meshes (`export_enclosure_obj.py`, grids in `LBA2_GRIDS`).
+`Tools/sides.ps1 -Name <run> -Grids <grids> [-Unlit]` shoots every side and corner of each room from the last
+import's model (`side_poses.py`), one sheet per grid in `Saved/LookDev/sides/<run>`.
 
 The interior tools in `Tools/` (Python 3 with numpy and Pillow; they read the game from `LBA2_GAME`, else the GOG
 install, and write under `Saved/LookDev`): `room_model.py <grid ...>` prints the room model and draws a top-down plan

@@ -8,7 +8,8 @@ Model (grid axes: X, Z horizontal, Y up; the iso camera looks from +X +Z):
   Room     walkable floor (Headroom free cells above) joined by steps of one cell, split at doorways; its level is the
            most common floor height; its footprint adds the furniture among its floors (columns lower than a wall).
   Wall     a footprint column's neighbor that is a wall column (>= WALL_H solid cells above the room's level, visible
-           or invisible collision), grouped per room into sides (-X, +X, -Z, +Z) and straight runs.
+           or invisible collision, through windows), grouped per room into sides (-X, +X, -Z, +Z) and straight runs.
+           A column standing against the wall behind it (lower than it) is furniture, part of the room (against).
   Opening  doorways (survey_grids.DoorFinder), open joins to another room, open edges (drops, voids, grid edge).
 
 Plan: columns shaded by their top height; room footprints colored per room (floors lighter); side edges drawn on the
@@ -20,6 +21,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import survey_grids as S
 from dump_scenes import parse as parse_scene
+from survey_walls import blank
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 SETTINGS = os.path.join(TOOLS, "..", "Source", "LBA2Editor", "Private", "LBA2ImporterSettings.cpp")
@@ -30,6 +32,8 @@ TALL_H = 5
 TALL_WALL = 6        # solid cells above the floor that make a wall inside the footprint (furniture is lower)
 MIN_ROOM = 16        # floor cells of a plateau that holds rooms
 CUT_COLLISION = 2    # collision cells above the drawn top of a wall the original cut down
+AGAINST_DEPTH = 3    # furniture columns in front of a wall
+WINDOW_GAP = 2       # empty cells of a window in a wall
 DIRS = {"-X": (-1, 0), "+X": (1, 0), "-Z": (0, -1), "+Z": (0, 1)}
 
 
@@ -91,6 +95,7 @@ class Model:
             for x, y, z in cells:
                 self.room_floor.setdefault((x, z), []).append(lv)
         self.door_cols = {(x, z) for x, y, z in self.door_cell}
+        self.exit_cols = {(x, z) for d in self.doorways if d["kind"] == "exit" for x, y, z in d["cells"]}
         self.rooms = []
         self.walls = {}                 # (x, z) -> (level, reach above it, drawn top above it)
         for lv, cells in big:
@@ -180,6 +185,19 @@ class Model:
         drawn = [k for k in range(h) if g.brick[x, y + 1 + k, z]]
         return h, (max(drawn) + 1) if drawn else 0
 
+    def wall_run(self, x, y, z):
+        """run, through windows: gaps of at most WINDOW_GAP cells with the column solid again above them."""
+        g = self.g; k = y + 1; end = y
+        while k < 25:
+            if g.solid[x, k, z]:
+                end = k; k += 1
+                continue
+            if k == y + 1 or not any(k + j < 25 and g.solid[x, k + j, z] for j in range(1, WINDOW_GAP + 1)):
+                break
+            k += 1
+        drawn = [j for j in range(y + 1, end + 1) if g.brick[x, j, z]]
+        return end - y, (max(drawn) - y) if drawn else 0
+
     def reach(self, x, z, y):
         """Top of the wall surface rising from above height y in column (x, z): its solid run, continued by a
         neighbor column whose solid goes on from that top (the band of a camera-side wall over its stub)."""
@@ -194,10 +212,13 @@ class Model:
                 top = max(top, top + 1 + self.run(nx, top + 1, nz)[0])
         return top
 
-    def is_wall(self, x, z, lv):
+    def is_wall(self, x, z, lv, d=None):
         """A wall column (wall_like) that continues a wall: a wall column next to it, or nothing standing on the
-        floor behind it (the outside, a drop). A lone column inside a room is a pillar or furniture."""
+        floor behind it (the outside, a drop). A lone column inside a room is a pillar or furniture. Met from a room
+        going d, a column standing against the wall behind it is furniture (against)."""
         if not self.wall_like(x, z, lv):
+            return False
+        if d is not None and self.against(x, z, lv, d):
             return False
         for dx, dz in DIRS.values():
             nx, nz = x + dx, z + dz
@@ -207,20 +228,51 @@ class Model:
                 return True
         return False
 
+    def against(self, x, z, lv, d):
+        """Column (x, z), met from a room going d, stands against a wall (furniture: a bookcase, a lamp, a bed's post):
+        going on in d through at most AGAINST_DEPTH wall-like columns, the last one is the wall: it has art (not only
+        the invisible plug or blank band of a camera-side wall), it is part of a wall across d (a wall-like column next
+        to it across), and it reaches higher than the columns in front of it (a wall seen end-on is as tall). Only with learned wall bricks
+        (the height rules that learn them do without)."""
+        if not self.wall_bricks:
+            return False
+        dx, dz = DIRS[d]
+        chain = [(x, z)]
+        while True:
+            nx, nz = chain[-1][0] + dx, chain[-1][1] + dz
+            if not (0 <= nx < 64 and 0 <= nz < 64) or not self.wall_like(nx, nz, lv):
+                break
+            chain.append((nx, nz))
+            if len(chain) > AGAINST_DEPTH + 1:
+                return False
+        if len(chain) < 2:
+            return False
+        wx, wz = chain[-1]
+        g = self.g
+        if not any(g.brick[wx, y, wz] and not blank(int(g.brick[wx, y, wz])) for y in range(lv + 1, 25)):
+            return False
+        if not any(0 <= wx + sz < 64 and 0 <= wz + sx < 64 and self.wall_like(wx + sz, wz + sx, lv) for sx, sz in ((dx, dz), (-dx, -dz))):
+            return False
+        top = self.reach(wx, wz, lv)
+        return all(self.reach(cx, cz, lv) < top for cx, cz in chain[:-1])
+
     def wall_like(self, x, z, lv):
         """A wall rises from the floor level lv in column (x, z): at least WALL_H solid cells, reaching TALL_WALL
         (in itself or through the band over it), or with collision going on above what is drawn (cut down)."""
-        h, top = self.run(x, lv, z)
+        h, top = self.wall_run(x, lv, z) if self.wall_bricks else self.run(x, lv, z)
         if h < WALL_H:
             return False
         if h - top >= CUT_COLLISION:
+            return True
+        # The jamb of an exit (rules beyond the height rules, which learn the wall bricks, only with them).
+        if self.wall_bricks and any((x + dx, z + dz) in self.exit_cols for dx, dz in DIRS.values()):
             return True
         if self.wall_bricks:
             drawn = [int(self.g.brick[x, y, z]) for y in range(lv + 1, lv + 1 + h) if self.g.brick[x, y, z]]
             if not drawn or 2 * sum(b in self.wall_bricks for b in drawn) >= len(drawn):
                 return True
         # A tall column with the outside behind it is a wall, whatever stands at its foot (a bathtub, curtains).
-        if self.reach(x, z, lv) - lv < TALL_WALL:
+        if max(self.reach(x, z, lv) - lv, h) < TALL_WALL:
             return False
         return not self.wall_bricks or any(self.outside(x + dx, z + dz, lv) for dx, dz in DIRS.values())
 
@@ -236,14 +288,20 @@ class Model:
             if (x, z) not in self.door_cols:
                 floor_y[(x, z)] = y
 
-        def passable(c):
+        def passable(c, d):
             if not (0 <= c[0] < 64 and 0 <= c[1] < 64) or c in self.door_cols:
                 return False
             if c in floor_y:
                 return True
+            # A pocket of floor at the room's level (behind furniture, too small to be a space of its own): drawn as a
+            # floor (art, not a wall brick: not the top of a wall), not another room's floor.
+            top = int(g.brick[c[0], lv, c[1]])
+            if (self.wall_bricks and c not in self.room_floor and g.solid[c[0], lv, c[1]] and not g.solid[c[0], lv + 1:lv + 1 + HEADROOM, c[1]].any()
+                    and top and not blank(top) and top not in self.wall_bricks):
+                return True
             if any(l != lv for l in self.room_floor.get(c, ())):
                 return False
-            if self.is_wall(c[0], c[1], lv):
+            if self.is_wall(c[0], c[1], lv, d):
                 self.walls.setdefault(c, lv)
                 return False
             return bool(g.solid[c[0], lv + 1, c[1]])
@@ -255,11 +313,13 @@ class Model:
             foot = {start}; todo = [start]
             while todo:
                 x, z = todo.pop()
-                for dx, dz in DIRS.values():
+                for d, (dx, dz) in DIRS.items():
                     n = (x + dx, z + dz)
-                    if n not in foot and passable(n):
+                    if n not in foot and passable(n, d):
                         foot.add(n); todo.append(n)
             seen |= foot
+            for c in foot if self.wall_bricks else ():
+                self.walls.pop(c, None)     # met as a wall from one side, furniture against a wall from another
             fl = {c: floor_y[c] for c in foot if c in floor_y}
             if len(fl) < 4:
                 continue
@@ -277,7 +337,7 @@ class Model:
                     edges.append(((x, z), d, "edge", 0))
                 elif n in self.door_cols:
                     edges.append(((x, z), d, "door", 0))
-                elif self.is_wall(n[0], n[1], lv):
+                elif self.is_wall(n[0], n[1], lv, d):
                     h, top = self.run(n[0], lv, n[1])
                     reach = self.reach(n[0], n[1], lv) - lv
                     edges.append(((x, z), d, "invis" if top == 0 else ("stub" if top < TALL_H else "wall"), reach))

@@ -18,7 +18,9 @@ if (-not $NoBuild -and -not $NoImport) {
 }
 if (-not $NoImport) {
 	& "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "$Root\LBAThingy.uproject" "-run=LBA2Import" "-Layers=Interiors" "-Grids=$Grids" -unattended -nosplash > "$o\import.log"
-	Select-String -Path "$o\import.log" -Pattern "LogLBA2: (Warning|Error)|error\(s\)" | ForEach-Object { $_.Line -replace '^.*LogLBA2: ', '' }
+	Select-String -Path "$o\import.log" -Pattern "LogLBA2: (Warning|Error)|error\(s\)|Critical error|Assertion failed" | ForEach-Object { $_.Line -replace '^.*LogLBA2: ', '' }
+	# A crash stops the import at the grid it hit, leaving the others as they were.
+	if (-not (Select-String -Path "$o\import.log" -Pattern "Success - 0 error" -Quiet)) { "IMPORT FAILED"; exit 1 }
 }
 $Levels = "$Root\Content\LBA2\Interiors\Grids\Levels"
 $sheetArgs = @()

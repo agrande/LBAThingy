@@ -251,13 +251,24 @@ namespace
 		}
 	}
 
-	/** A wall finish: a row of a wall layout repeated up the wall, another at its foot. */
+	/** A wall finish: the wall layout rows (layout, row) the original stacks from the floor up (a dado, a rail, a body, a
+	 * cornice), laid from the floor, the row under the top (the body) repeated where the wall is taller, the top row right
+	 * under the ceiling. */
 	struct FWallpaper
 	{
-		int32 Layout = INDEX_NONE;
-		int32 Row = 0;
-		int32 FootLayout = INDEX_NONE;
-		int32 FootRow = 0;
+		TArray<FIntPoint> Rows;
+
+		/** The layout row at Above cells over the floor of a wall Height cells tall (INDEX_NONE layout: none). */
+		FIntPoint GetRow(int32 Above, int32 Height) const
+		{
+			if (Rows.Num() == 0)
+			{
+				return FIntPoint(INDEX_NONE, 0);
+			}
+			const int32 Top = Rows.Num() - 1;
+			const int32 Body = FMath::Max(Top - 1, 0);
+			return Above == Height - 1 && Top > Body ? Rows[Top] : Rows[FMath::Clamp(Above, 0, Body)];
+		}
 	};
 
 	/** What dresses an enclosure besides the grid's own art: each room's wallpaper and the ceilings. */
@@ -274,6 +285,13 @@ namespace
 		bool bCeiling = true;
 		int32 DoorHeight = 7;
 	};
+
+	/** A brick with art (some libraries stack bricks without any to block the camera-side walls). */
+	bool HasBrickArt(const FLBAIsoImporter::FAtlas* Atlas, int32 Brick)
+	{
+		const TStaticArray<float, 3>* Coverage = Atlas ? Atlas->FaceCoverage.Find(Brick) : nullptr;
+		return !Coverage || FMath::Max3((*Coverage)[0], (*Coverage)[1], (*Coverage)[2]) > 0.f;
+	}
 
 	/** Highest drawn cell of a column in [From, Below), or INDEX_NONE. */
 	int32 TopDrawn(TFunctionRef<bool(int32, int32, int32)> IsDrawn, const FIntPoint& Column, int32 From, int32 Below)
@@ -307,8 +325,8 @@ namespace
 	 * OutCovered: the grid cells the walls stand on (the frames there come off).
 	 */
 	void EmitEnclosure(const FLBARoomModel& Model, TConstArrayView<FLBADoorway> Doorways, TFunctionRef<bool(int32, int32, int32)> IsDrawn,
-		const FLBAIsoImporter::FAtlas& Atlas, const FEnclosureArt& Art, FLBAMeshBuilder& Builder, FLBAMeshBuilder& CeilingBuilder, float Scale,
-		TSet<FIntVector>& OutCovered)
+		TFunctionRef<FIntPoint(int32, int32, int32)> LayoutRowAt, const FLBAIsoImporter::FAtlas& Atlas, const FEnclosureArt& Art,
+		FLBAMeshBuilder& Builder, FLBAMeshBuilder& CeilingBuilder, float Scale, TSet<FIntVector>& OutCovered)
 	{
 		const FBrickFace* Faces = GetBrickFaces();
 		const int32 BrickSection = Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material);
@@ -419,8 +437,8 @@ namespace
 		};
 
 		// The faces of a wall standing on Wall, cells [From, To), looking into the room at Wall - Sides[Side], in Room's
-		// wallpaper (its foot row right above Floor).
-		auto EmitWall = [&](const FIntPoint& Wall, int32 Side, int32 From, int32 To, int32 Room, int32 Floor, EPart Part)
+		// wallpaper laid from Floor up to the room's Ceiling there.
+		auto EmitWall = [&](const FIntPoint& Wall, int32 Side, int32 From, int32 To, int32 Room, int32 Floor, int32 Ceiling, EPart Part)
 		{
 			const int32 FaceIndex = FaceOfSide[Side];
 			const FWallpaper& Wallpaper = Art.Wallpapers[Room][Side / 2];
@@ -434,11 +452,11 @@ namespace
 					EmitQuad(Cell, FaceIndex, nullptr, FaceIndex, LBABodyConverter::ToVertexColor(PartColors[int32(Part)], 0.5f), Inset, false);
 					continue;
 				}
-				const bool bFoot = Y == Floor + 1 && Wallpaper.FootLayout != INDEX_NONE;
-				const int32 Layout = bFoot ? Wallpaper.FootLayout : Wallpaper.Layout;
+				const int32 Above = Y - (Floor + 1);
+				const FIntPoint Row = Wallpaper.GetRow(Above, Ceiling - (Floor + 1));
+				const bool bFoot = Above == 0;
 				int32 ArtFace = FrontFaceOf(FaceIndex);
-				const FIntPoint* Source = Layout != INDEX_NONE
-					? WallArt(LayoutBrick(Layout, bFoot ? Wallpaper.FootRow : Wallpaper.Row, Wall), FaceIndex, FacingSlotOf(Layout), ArtFace) : nullptr;
+				const FIntPoint* Source = Row.X != INDEX_NONE ? WallArt(LayoutBrick(Row.X, Row.Y, Wall), FaceIndex, FacingSlotOf(Row.X), ArtFace) : nullptr;
 				const int32 Kind = Source ? (bFoot ? 1 : 0) : 2;
 				++Stats[Kind];
 				if (bDebugArt)
@@ -472,8 +490,26 @@ namespace
 				{
 				case ELBARoomEdge::Wall:
 				{
-					const int32 From = bDrawnSide ? FMath::Max(Floor + 1, TopDrawn(IsDrawn, Next, Floor + 1, Ceiling) + 1) : Floor + 1;
-					EmitWall(Next, Edge.Side, From, Ceiling, RoomIndex, Floor, bDrawnSide ? EPart::Wall : EPart::CameraSide);
+					int32 From = Floor + 1;
+					if (bDrawnSide)
+					{
+						// Above what the original drew; over its top row too where that is the top of the room's wallpaper
+						// (its cornice) under a taller room: the wallpaper's own top goes under the ceiling.
+						const int32 Drawn = TopDrawn(IsDrawn, Next, Floor + 1, Ceiling);
+						const FWallpaper& Wallpaper = Art.Wallpapers[RoomIndex][Edge.Side / 2];
+						const bool bCornice = Drawn != INDEX_NONE && Drawn + 1 < Ceiling && Wallpaper.Rows.Num() >= 2
+							&& LayoutRowAt(Next.X, Drawn, Next.Y) == Wallpaper.Rows.Last();
+						From = FMath::Max(Floor + 1, bCornice ? Drawn : Drawn + 1);
+						// Below it, the cells the original left undrawn (hidden behind furniture: invisible collision).
+						for (int32 Y = Floor + 1; Y < From; ++Y)
+						{
+							if (!IsDrawn(Next.X, Y, Next.Y))
+							{
+								EmitWall(Next, Edge.Side, Y, Y + 1, RoomIndex, Floor, Ceiling, EPart::Wall);
+							}
+						}
+					}
+					EmitWall(Next, Edge.Side, From, Ceiling, RoomIndex, Floor, Ceiling, bDrawnSide ? EPart::Wall : EPart::CameraSide);
 					break;
 				}
 				case ELBARoomEdge::Door:
@@ -482,18 +518,18 @@ namespace
 					const TPair<int32, int32>* Door = Model.FindDoorColumn(Next);
 					const int32 Top = DoorTopOf(Doorways[Edge.Other], Door->Value, Art.DoorHeight);
 					const int32 From = bDrawnSide ? FMath::Max(Top, TopDrawn(IsDrawn, Next, Top, Ceiling) + 1) : Top;
-					EmitWall(Next, Edge.Side, From, Ceiling, RoomIndex, Floor, EPart::Header);
+					EmitWall(Next, Edge.Side, From, Ceiling, RoomIndex, Floor, Ceiling, EPart::Header);
 					break;
 				}
 				case ELBARoomEdge::Rise:
-					EmitWall(Next, Edge.Side, Floor + 1 + Model.GetRun(Next.X, Floor, Next.Y), Ceiling, RoomIndex, Floor, EPart::Step);
+					EmitWall(Next, Edge.Side, Floor + 1 + Model.GetRun(Next.X, Floor, Next.Y), Ceiling, RoomIndex, Floor, Ceiling, EPart::Step);
 					break;
 				case ELBARoomEdge::Room:
 				{
 					const int32 Other = Rooms[Edge.Other].GetCeiling(Next);
 					if (Other < Ceiling)
 					{
-						EmitWall(Next, Edge.Side, Other, Ceiling, RoomIndex, Floor, EPart::Step);
+						EmitWall(Next, Edge.Side, Other, Ceiling, RoomIndex, Floor, Ceiling, EPart::Step);
 					}
 					break;
 				}
@@ -536,9 +572,14 @@ namespace
 			{
 				const FIntPoint Column(Cell.X, Cell.Z);
 				const int32 Top = DoorTopOf(Doorways[DoorwayIndex], Cell.Y, Art.DoorHeight);
-				if (Top < LBA::GridSizeY && !IsDrawn(Column.X, Top, Column.Y) && Art.bCeiling)
+				// Under its lintel too: the grid only has the faces the iso camera saw, not the lintel's underside.
+				const bool bLintel = Top < LBA::GridSizeY && IsDrawn(Column.X, Top, Column.Y);
+				if (Top < LBA::GridSizeY && (Art.bCeiling || bLintel))
 				{
-					OutCovered.Add(FIntVector(Column.X, Top, Column.Y));
+					if (!bLintel)
+					{
+						OutCovered.Add(FIntVector(Column.X, Top, Column.Y));
+					}
 					EmitCeilingFace(FIntVector(Column.X, Top, Column.Y), 1, EPart::Passage);
 				}
 				for (int32 Side = 0; Side < 4; ++Side)
@@ -567,7 +608,7 @@ namespace
 					}
 					const bool bDrawnSide = Side == 0 || Side == 2;
 					const int32 From = bDrawnSide ? FMath::Max(Cell.Y + 1, TopDrawn(IsDrawn, Flank, Cell.Y + 1, Top) + 1) : Cell.Y + 1;
-					EmitWall(Flank, Side, From, Top, *Room, Cell.Y, EPart::Passage);
+					EmitWall(Flank, Side, From, Top, *Room, Cell.Y, Rooms[*Room].Ceiling, EPart::Passage);
 				}
 			}
 		}
@@ -1157,6 +1198,8 @@ const TSet<int32>& FLBAIsoImporter::GetWallBricks(int32 LibraryIndex)
 	// Rooms found with the height rules in every grid of the library tell its walls' bricks.
 	FLBAWallBrickCounts Counts;
 	const FLBALibrary* Library = GetLibrary(LibraryIndex);
+	const FAtlas* Atlas = GetAtlas(LibraryIndex);
+	auto HasArt = [Atlas](int32 Brick) { return HasBrickArt(Atlas, Brick); };
 	for (int32 GridIndex = 0; GridIndex < Header.GetNumGrids() && Library; ++GridIndex)
 	{
 		FLBAGrid Grid;
@@ -1169,7 +1212,7 @@ const TSet<int32>& FLBAIsoImporter::GetWallBricks(int32 LibraryIndex)
 		auto Brick = [&Query](int32 X, int32 Y, int32 Z) { return Query.BrickAt(X, Y, Z); };
 		const FLBARoomAnalysis Rooms(Shape, Brick, [&Grid](int32 X, int32 Y, int32 Z) { return int32(Grid.Get(X, Y, Z).Layout); });
 		const TArray<FLBADoorway> Doorways = FindDoorways(GridIndex, LibraryIndex, Rooms);
-		const FLBARoomModel Model(Shape, Brick, Doorways, Context.GetProjectSettings().GetEnclosure(LibraryIndex, GridIndex).RoomHeight, TSet<int32>());
+		const FLBARoomModel Model(Shape, Brick, HasArt, Doorways, Context.GetProjectSettings().GetEnclosure(LibraryIndex, GridIndex).RoomHeight, TSet<int32>());
 		Model.CountBricks(Counts);
 	}
 	TSet<int32>& Result = WallBricks.Add(LibraryIndex, Counts.GetWallBricks());
@@ -1297,12 +1340,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		auto IsDrawn = [&Query, &Atlas, &IsFrame](int32 X, int32 Y, int32 Z)
 		{
 			const int32 Brick = Query.BrickAt(X, Y, Z);
-			if (Brick == 0 || IsFrame(X, Y, Z))
-			{
-				return false;
-			}
-			const TStaticArray<float, 3>* Coverage = Atlas->FaceCoverage.Find(Brick);
-			return !Coverage || FMath::Max3((*Coverage)[0], (*Coverage)[1], (*Coverage)[2]) > 0.f;
+			return Brick != 0 && !IsFrame(X, Y, Z) && HasBrickArt(Atlas, Brick);
 		};
 		// The library's wall styles (DA_LibNN_WallStyles: the vocabulary of a future wall builder).
 		GetWallStyles(Grid.LibraryIndex);
@@ -1313,6 +1351,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			const FLBARoomModel Model(
 				[&Query](int32 X, int32 Y, int32 Z) { return Query.ShapeAt(X, Y, Z); },
 				[&Query](int32 X, int32 Y, int32 Z) { return Query.BrickAt(X, Y, Z); },
+				[Atlas](int32 Brick) { return HasBrickArt(Atlas, Brick); },
 				Doorways, Settings.RoomHeight, GetWallBricks(Grid.LibraryIndex));
 			UE_LOG(LogLBA2, Display, TEXT("Grid %d rooms:\n%s"), GridIndex, *Model.Describe());
 			const TArray<FLBARoom>& ModelRooms = Model.GetRooms();
@@ -1328,14 +1367,14 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				Art.CeilingMaterial = LibraryEnclosure->CeilingMaterial.LoadSynchronous();
 			}
 
-			// Each room's wallpaper, per orientation of its walls: the wall layout row drawn most on its back walls (the
-			// sides the original drew) a few cells over its floor, and the one right over the floor (its foot); else the
-			// room's other orientation's, else the grid's. Wall panels only (one cell thin, opaque on the side they face).
+			// Each room's wallpaper, per orientation of its walls: at each height over the floor, the wall layout row drawn
+			// most there on its back walls (the sides the original drew; wall panels only: one cell thin, opaque on the
+			// side they face), up to the highest drawn; else the room's other orientation's, else the grid's.
 			using FVotes = TMap<FIntPoint, int32>;
-			TArray<TStaticArray<FVotes, 2>> BodyVotes, FootVotes;
-			BodyVotes.SetNum(ModelRooms.Num());
-			FootVotes.SetNum(ModelRooms.Num());
-			TStaticArray<FVotes, 2> GridBody, GridFoot;
+			using FProfileVotes = TArray<FVotes>;
+			TArray<TStaticArray<FProfileVotes, 2>> Votes;
+			Votes.SetNum(ModelRooms.Num());
+			TStaticArray<FProfileVotes, 2> GridVotes;
 			for (int32 RoomIndex = 0; RoomIndex < ModelRooms.Num(); ++RoomIndex)
 			{
 				const FLBARoom& Room = ModelRooms[RoomIndex];
@@ -1348,7 +1387,8 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 					const int32 Axis = Edge.Side / 2;
 					const int32 Slot = Axis == 0 ? 1 : 2;
 					const FIntPoint Wall = Edge.Column + FLBARoomModel::Sides[Edge.Side];
-					for (int32 Y = Room.Level + 1; Y <= Room.Level + 6 && Y < LBA::GridSizeY; ++Y)
+					const int32 Floor = Room.GetFloor(Edge.Column);
+					for (int32 Y = Floor + 1; Y < Room.GetCeiling(Edge.Column) && Y < LBA::GridSizeY; ++Y)
 					{
 						if (!IsDrawn(Wall.X, Y, Wall.Y))
 						{
@@ -1363,17 +1403,23 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 							continue;
 						}
 						const FIntPoint Key(Cell.Layout, Layout.GetBlockCoords(Cell.Block).Y);
-						const bool bFoot = Y == Room.Level + 1;
-						++(bFoot ? FootVotes : BodyVotes)[RoomIndex][Axis].FindOrAdd(Key);
-						++(bFoot ? GridFoot : GridBody)[Axis].FindOrAdd(Key);
+						const int32 Above = Y - (Floor + 1);
+						for (FProfileVotes* Profile : { &Votes[RoomIndex][Axis], &GridVotes[Axis] })
+						{
+							if (Profile->Num() <= Above)
+							{
+								Profile->SetNum(Above + 1);
+							}
+							++(*Profile)[Above].FindOrAdd(Key);
+						}
 					}
 				}
 			}
-			auto MostVoted = [](const FVotes& Votes)
+			auto MostVoted = [](const FVotes& Candidates)
 			{
 				FIntPoint Best(INDEX_NONE, 0);
 				int32 BestCount = 0;
-				for (const TPair<FIntPoint, int32>& Pair : Votes)
+				for (const TPair<FIntPoint, int32>& Pair : Candidates)
 				{
 					if (Pair.Value > BestCount || (Pair.Value == BestCount && (Pair.Key.X < Best.X || (Pair.Key.X == Best.X && Pair.Key.Y < Best.Y))))
 					{
@@ -1383,16 +1429,54 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				}
 				return Best;
 			};
-			auto Choose = [&MostVoted](const TStaticArray<FVotes, 2>& Room, const TStaticArray<FVotes, 2>& Whole, int32 Axis)
+			// The rows of a profile: at each height, the most drawn row of the layout drawn most over all heights (the wall,
+			// not a window whose foot shows where the wall's is hidden behind furniture), else the most drawn row; heights
+			// nobody voted for (hidden) take the row under them, else above.
+			auto MakeWallpaper = [&MostVoted](const FProfileVotes& Profile)
 			{
-				for (const FVotes* Votes : { &Room[Axis], &Room[1 - Axis], &Whole[Axis], &Whole[1 - Axis] })
+				TMap<int32, int32> LayoutVotes;
+				for (const FVotes& AtHeight : Profile)
 				{
-					if (Votes->Num() > 0)
+					for (const TPair<FIntPoint, int32>& Pair : AtHeight)
 					{
-						return MostVoted(*Votes);
+						LayoutVotes.FindOrAdd(Pair.Key.X) += Pair.Value;
 					}
 				}
-				return FIntPoint(INDEX_NONE, 0);
+				int32 Main = INDEX_NONE;
+				for (const TPair<int32, int32>& Pair : LayoutVotes)
+				{
+					if (Main == INDEX_NONE || Pair.Value > LayoutVotes[Main] || (Pair.Value == LayoutVotes[Main] && Pair.Key < Main))
+					{
+						Main = Pair.Key;
+					}
+				}
+				FWallpaper Wallpaper;
+				for (const FVotes& AtHeight : Profile)
+				{
+					const FVotes OfMain = AtHeight.FilterByPredicate([Main](const TPair<FIntPoint, int32>& Pair) { return Pair.Key.X == Main; });
+					const FIntPoint Best = MostVoted(OfMain.Num() > 0 ? OfMain : AtHeight);
+					const FIntPoint Row = Best.X != INDEX_NONE || Wallpaper.Rows.Num() == 0 ? Best : Wallpaper.Rows.Last();
+					Wallpaper.Rows.Add(Row);
+				}
+				for (int32 Index = Wallpaper.Rows.Num() - 2; Index >= 0; --Index)
+				{
+					if (Wallpaper.Rows[Index].X == INDEX_NONE)
+					{
+						Wallpaper.Rows[Index] = Wallpaper.Rows[Index + 1];
+					}
+				}
+				return Wallpaper;
+			};
+			auto Choose = [&MakeWallpaper](const TStaticArray<FProfileVotes, 2>& Room, const TStaticArray<FProfileVotes, 2>& Whole, int32 Axis)
+			{
+				for (const FProfileVotes* Profile : { &Room[Axis], &Room[1 - Axis], &Whole[Axis], &Whole[1 - Axis] })
+				{
+					if (Profile->Num() > 0)
+					{
+						return MakeWallpaper(*Profile);
+					}
+				}
+				return FWallpaper();
 			};
 			const int32 Override = LibraryEnclosure && Library->Layouts.IsValidIndex(LibraryEnclosure->WallpaperLayout) ? LibraryEnclosure->WallpaperLayout : INDEX_NONE;
 			for (int32 RoomIndex = 0; RoomIndex < ModelRooms.Num(); ++RoomIndex)
@@ -1404,20 +1488,20 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 					FWallpaper& Wallpaper = Wallpapers[Axis];
 					if (Override != INDEX_NONE)
 					{
-						Wallpaper.Layout = Override;
-						Wallpaper.Row = Library->Layouts[Override].SizeY / 2;
+						for (int32 Row = 0; Row < Library->Layouts[Override].SizeY; ++Row)
+						{
+							Wallpaper.Rows.Add(FIntPoint(Override, Row));
+						}
 					}
 					else
 					{
-						const FIntPoint Body = Choose(BodyVotes[RoomIndex], GridBody, Axis);
-						const FIntPoint Foot = Choose(FootVotes[RoomIndex], GridFoot, Axis);
-						Wallpaper.Layout = Body.X;
-						Wallpaper.Row = Body.Y;
-						Wallpaper.FootLayout = Foot.X;
-						Wallpaper.FootRow = Foot.Y;
+						Wallpaper = Choose(Votes[RoomIndex], GridVotes, Axis);
 					}
-					Chosen += FString::Printf(TEXT(" %s L%d/%d foot L%d/%d"), Axis == 0 ? TEXT("X") : TEXT("Z"), Wallpaper.Layout, Wallpaper.Row,
-						Wallpaper.FootLayout, Wallpaper.FootRow);
+					Chosen += Axis == 0 ? TEXT(" X") : TEXT(" Z");
+					for (const FIntPoint& Row : Wallpaper.Rows)
+					{
+						Chosen += FString::Printf(TEXT(" L%d/%d"), Row.X, Row.Y);
+					}
 				}
 				UE_LOG(LogLBA2, Log, TEXT("WALLPAPER grid %d room %d:%s"), GridIndex, RoomIndex, *Chosen);
 			}
@@ -1448,7 +1532,12 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 
 			FLBAMeshBuilder EnclosureBuilder, CeilingBuilder;
 			TSet<FIntVector> Covered;
-			EmitEnclosure(Model, Doorways, IsDrawn, *Atlas, Art, EnclosureBuilder, CeilingBuilder, Scale, Covered);
+			auto LayoutRowAt = [&Grid, Library](int32 X, int32 Y, int32 Z)
+			{
+				const FLBAGridCell& Cell = Grid.Get(X, Y, Z);
+				return Library->Layouts.IsValidIndex(Cell.Layout) ? FIntPoint(Cell.Layout, Library->Layouts[Cell.Layout].GetBlockCoords(Cell.Block).Y) : FIntPoint(INDEX_NONE, 0);
+			};
+			EmitEnclosure(Model, Doorways, IsDrawn, LayoutRowAt, *Atlas, Art, EnclosureBuilder, CeilingBuilder, Scale, Covered);
 
 			// Frames come off whole: an instance any cell of which the enclosure covers (no half curves left).
 			TSet<FIntVector4> RemovedInstances;

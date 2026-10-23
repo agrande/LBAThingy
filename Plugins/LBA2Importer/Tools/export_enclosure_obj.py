@@ -1,8 +1,10 @@
-﻿import unreal
+import unreal
 
 # Exports interior enclosure meshes (and the grid meshes) as OBJ, to check their faces outside the engine.
 out = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()) + "LookDev/enclosure/obj"
-GRIDS = [0, 9, 7, 35, 22, 113, 82, 48, 38, 23]
+import os
+# Grids from LBA2_GRIDS (comma separated), else the regression set.
+GRIDS = [int(g) for g in os.environ.get("LBA2_GRIDS", "0,9,7,35,22,113,82,48,38,23").split(",")]
 paths = []
 for grid in GRIDS:
     paths += ["/Game/LBA2/Interiors/Grids/Enclosure/SM_Grid_%03d_Enclosure" % grid, "/Game/LBA2/Interiors/Grids/Enclosure/SM_Grid_%03d_Ceiling" % grid,

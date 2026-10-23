@@ -11,5 +11,7 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 $A = @("`"$Project`"", $Map, "-game", "-windowed", "-ResX=1280", "-ResY=720", "-LBA2Shots=$Poses", "-LBA2ShotDir=`"$OutDir`"", "-nosplash", "-unattended")
 if ($Exec -ne "") { $A += "-ExecCmds=`"$Exec`"" }
 $A += $Extra
-$p = Start-Process -FilePath $Editor -ArgumentList $A -PassThru -Wait
+# Wait for the editor only: -Wait also waits for its children, and the adb server it may start never exits.
+$p = Start-Process -FilePath $Editor -ArgumentList $A -PassThru
+$p.WaitForExit()
 Get-ChildItem $OutDir | Select-Object Name, Length
