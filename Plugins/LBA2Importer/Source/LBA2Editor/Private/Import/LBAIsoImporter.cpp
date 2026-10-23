@@ -36,6 +36,15 @@ namespace
 	constexpr int32 CellPad = 2;
 	constexpr int32 CellW = SpriteW + CellPad * 2;
 	constexpr int32 CellH = SpriteH + CellPad * 2;
+	/** Where each face of a brick sprite (top, +X, +Z) goes in its atlas cell: apart, with room to grow by a pixel. */
+	const FIntPoint FaceOffsets[3] = { FIntPoint(2, 1), FIntPoint(3, 3), FIntPoint(1, 3) };
+
+	/** The face (top, +X, +Z) a pixel of a brick sprite belongs to: above the lower edges of the top diamond, else its half. */
+	int32 SpriteSlotOf(int32 X, int32 Y)
+	{
+		const float U = X + 0.5f, V = Y + 0.5f;
+		return V <= 24.f - FMath::Abs(U - 24.f) * 0.5f ? 0 : U >= 24.f ? 1 : 2;
+	}
 	/** Opaque fraction from which a brick face counts as solid (not a see-through decoration or trim). */
 	constexpr float SolidCoverage = 0.85f;
 	/** Opaque fraction from which a brick face can be repeated up a raised wall without its holes showing (a full face
@@ -139,8 +148,9 @@ namespace
 		return FrontFace == 0 ? 0 : FrontFace == 2 ? 1 : 2;
 	}
 
+	/** KeepFace: whether a face (cell, face index) goes into this mesh; the others are left out. */
 	void EmitVisual(const FCellQuery& Query, const FLBAIsoImporter::FAtlas& Atlas, FLBAMeshBuilder& Builder, int32 Section, float Scale,
-		ELBABackFaceMode BackFaces)
+		ELBABackFaceMode BackFaces, TFunctionRef<bool(const FIntVector&, int32)> KeepFace = [](const FIntVector&, int32) { return true; })
 	{
 		const FBrickFace* Faces = GetBrickFaces();
 		int32 FillSection = INDEX_NONE;
@@ -160,7 +170,7 @@ namespace
 					for (int32 FaceIndex = 0; FaceIndex < 6; ++FaceIndex)
 					{
 						const FBrickFace& Face = Faces[FaceIndex];
-						if (Query.BrickAt(X + Face.Dir.X, Y + Face.Dir.Y, Z + Face.Dir.Z) != 0)
+						if (Query.BrickAt(X + Face.Dir.X, Y + Face.Dir.Y, Z + Face.Dir.Z) != 0 || !KeepFace(FIntVector(X, Y, Z), FaceIndex))
 						{
 							continue;
 						}
@@ -240,7 +250,8 @@ namespace
 							V[K].Position = CornerPos(X + Face.Corners[K].X, Y + Face.Corners[K].Y, Z + Face.Corners[K].Z, Scale);
 							V[K].Normal = Normal;
 							V[K].Color = FillColor;
-							V[K].UV = FVector2f((SourceCell->X + CellPad + ArtFace.Sprite[K].X) / Atlas.Width, (SourceCell->Y + CellPad + ArtFace.Sprite[K].Y) / Atlas.Height);
+							const FIntPoint& Offset = FaceOffsets[ColorSlotOf(FrontFaceOf(FaceIndex))];
+							V[K].UV = FVector2f((SourceCell->X + Offset.X + ArtFace.Sprite[K].X) / Atlas.Width, (SourceCell->Y + Offset.Y + ArtFace.Sprite[K].Y) / Atlas.Height);
 						}
 						const int32 Target = bFill ? FillSection : Section;
 						Builder.AddTriangleFacing(Target, V[0], V[1], V[2], Normal);
@@ -322,20 +333,25 @@ namespace
 	 *   another room's wall that rises from a step (a lower floor's view of it), from the top of the step.
 	 * - A ceiling over each footprint column, with risers where it steps (stairs).
 	 * Walls take their room's wallpaper (a layout row of its back walls, repeated, the foot row at the floor).
+	 * Wall faces all lie a little in front of the walls' planes (WallInset, over the remake's models set in the walls), at
+	 * one depth, so no step between faces opens a crack; the grid's own faces they cover go to OutCoveredFaces (cell,
+	 * face index), off the grid's mesh (into the Original look's frames mesh). Art that is not opaque is backed by the
+	 * wallpaper and drawn again in front of it.
 	 * OutCovered: the grid cells the walls stand on (the frames there come off).
 	 */
 	void EmitEnclosure(const FLBARoomModel& Model, TConstArrayView<FLBADoorway> Doorways, TFunctionRef<bool(int32, int32, int32)> IsDrawn,
 		TFunctionRef<FIntPoint(int32, int32, int32)> LayoutRowAt, const FLBAIsoImporter::FAtlas& Atlas, const FEnclosureArt& Art,
-		FLBAMeshBuilder& Builder, FLBAMeshBuilder& CeilingBuilder, float Scale, TSet<FIntVector>& OutCovered)
+		FLBAMeshBuilder& Builder, FLBAMeshBuilder& CeilingBuilder, float Scale, TSet<FIntVector>& OutCovered, TSet<FIntVector4>& OutCoveredFaces)
 	{
 		const FBrickFace* Faces = GetBrickFaces();
 		const int32 BrickSection = Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material);
 		int32 FillSection = INDEX_NONE;
 		const int32 CeilingSection = CeilingBuilder.GetSection(TEXT("Ceiling"), Art.CeilingMaterial ? Art.CeilingMaterial : Atlas.FillMaterial);
-		// Faces on cells with bricks sit a little in front of the grid's own faces there.
-		constexpr float CoverInset = -0.5f;
-		// Fraction of the way to its center each corner of a face's art is sampled from (about 2 pixels).
-		constexpr float ArtInset = 0.1f;
+		// Wall faces sit a little in front of the walls' planes; art drawn again over the wallpaper behind it, in front of them.
+		constexpr float WallInset = -0.5f;
+		constexpr float DecalInset = -1.f;
+		// Fraction of the way to its center each corner of a wallpaper face's art is sampled from (EmitQuad's SampleInset,
+		// about 2 pixels).
 		// Faces toward -Sides[Side] (a wall at the room's -X shows its +X face, and so on).
 		static const int32 FaceOfSide[4] = { 2, 3, 4, 5 };
 		// -LBA2EnclosureDebug: flat colors by part (walls red, inner sides of the camera-side walls orange, over doorways
@@ -401,7 +417,7 @@ namespace
 		};
 
 		auto EmitQuad = [&](const FIntVector& Cell, int32 FaceIndex, const FIntPoint* SourceCell, int32 ArtFaceIndex, const FVector4f& Color,
-			float Inset, bool bCeilingMesh)
+			float Inset, bool bCeilingMesh, float SampleInset = 0.1f)
 		{
 			const FBrickFace& Face = Faces[FaceIndex];
 			const FBrickFace& ArtFace = Faces[ArtFaceIndex];
@@ -416,9 +432,10 @@ namespace
 				V[K].Color = SourceCell ? FVector4f(0.5f, 0.5f, 0.5f, 0.5f) : Color;
 				if (SourceCell)
 				{
-					// Sampled a little inside the face: edge pixels are often transparent and show as seams up a wall.
-					const FVector2f Sprite = FMath::Lerp(ArtFace.Sprite[K], ArtCenter, ArtInset);
-					V[K].UV = FVector2f((SourceCell->X + CellPad + Sprite.X) / Atlas.Width, (SourceCell->Y + CellPad + Sprite.Y) / Atlas.Height);
+					// Sampled a little inside the face: its edge pixels repeated up a wall show as seams.
+					const FVector2f Sprite = FMath::Lerp(ArtFace.Sprite[K], ArtCenter, SampleInset);
+					const FIntPoint& Offset = FaceOffsets[ColorSlotOf(FrontFaceOf(ArtFaceIndex))];
+					V[K].UV = FVector2f((SourceCell->X + Offset.X + Sprite.X) / Atlas.Width, (SourceCell->Y + Offset.Y + Sprite.Y) / Atlas.Height);
 				}
 				else
 				{
@@ -437,16 +454,30 @@ namespace
 		};
 
 		// The faces of a wall standing on Wall, cells [From, To), looking into the room at Wall - Sides[Side], in Room's
-		// wallpaper laid from Floor up to the room's Ceiling there.
-		auto EmitWall = [&](const FIntPoint& Wall, int32 Side, int32 From, int32 To, int32 Room, int32 Floor, int32 Ceiling, EPart Part)
+		// wallpaper laid from Floor up to the room's Ceiling there; bBehind: behind the grid's art of the cells.
+		auto EmitWall = [&](const FIntPoint& Wall, int32 Side, int32 From, int32 To, int32 Room, int32 Floor, int32 Ceiling, EPart Part,
+			bool bBehind = false)
 		{
 			const int32 FaceIndex = FaceOfSide[Side];
 			const FWallpaper& Wallpaper = Art.Wallpapers[Room][Side / 2];
 			for (int32 Y = FMath::Max(From, 0); Y < To; ++Y)
 			{
 				const FIntVector Cell(Wall.X, Y, Wall.Y);
-				OutCovered.Add(Cell);
-				const float Inset = Model.GetBrick(Wall.X, Y, Wall.Y) != 0 ? CoverInset : 0.f;
+				OutCoveredFaces.Add(FIntVector4(Cell.X, Cell.Y, Cell.Z, FaceIndex));
+				const float Inset = WallInset;
+				if (bBehind)
+				{
+					// The cell's own art, again, over the wallpaper.
+					const int32 Brick = Model.GetBrick(Wall.X, Y, Wall.Y);
+					if (const FIntPoint* Decal = Brick && !bDebugParts && !bDebugArt ? Atlas.Cells.Find(Brick) : nullptr)
+					{
+						EmitQuad(Cell, FaceIndex, Decal, FrontFaceOf(FaceIndex), FVector4f(0.5f, 0.5f, 0.5f, 0.5f), DecalInset, false, 0.f);
+					}
+				}
+				else
+				{
+					OutCovered.Add(Cell);
+				}
 				if (bDebugParts)
 				{
 					EmitQuad(Cell, FaceIndex, nullptr, FaceIndex, LBABodyConverter::ToVertexColor(PartColors[int32(Part)], 0.5f), Inset, false);
@@ -500,12 +531,19 @@ namespace
 						const bool bCornice = Drawn != INDEX_NONE && Drawn + 1 < Ceiling && Wallpaper.Rows.Num() >= 2
 							&& LayoutRowAt(Next.X, Drawn, Next.Y) == Wallpaper.Rows.Last();
 						From = FMath::Max(Floor + 1, bCornice ? Drawn : Drawn + 1);
-						// Below it, the cells the original left undrawn (hidden behind furniture: invisible collision).
+						// Below it, the cells the original left undrawn (hidden behind furniture: invisible collision), and
+						// behind the art that is not opaque (frames, curves, sconces: the next room shows through them).
+						const int32 Slot = ColorSlotOf(FrontFaceOf(FaceOfSide[Edge.Side]));
 						for (int32 Y = Floor + 1; Y < From; ++Y)
 						{
+							const TStaticArray<float, 3>* Coverage = Atlas.FaceCoverage.Find(Model.GetBrick(Next.X, Y, Next.Y));
 							if (!IsDrawn(Next.X, Y, Next.Y))
 							{
 								EmitWall(Next, Edge.Side, Y, Y + 1, RoomIndex, Floor, Ceiling, EPart::Wall);
+							}
+							else if (Coverage && (*Coverage)[Slot] < OpaqueCoverage)
+							{
+								EmitWall(Next, Edge.Side, Y, Y + 1, RoomIndex, Floor, Ceiling, EPart::Wall, true);
 							}
 						}
 					}
@@ -597,8 +635,8 @@ namespace
 						for (int32 Y = Cell.Y + 1; Y < Top; ++Y)
 						{
 							const FColor Color = bDebugParts ? PartColors[int32(EPart::Passage)] : FColor(6, 6, 8);
-							EmitQuad(FIntVector(Flank.X, Y, Flank.Y), FaceOfSide[Side], nullptr, FaceOfSide[Side], LBABodyConverter::ToVertexColor(Color, 0.5f),
-								Model.GetBrick(Flank.X, Y, Flank.Y) != 0 ? CoverInset : 0.f, false);
+							OutCoveredFaces.Add(FIntVector4(Flank.X, Y, Flank.Y, FaceOfSide[Side]));
+							EmitQuad(FIntVector(Flank.X, Y, Flank.Y), FaceOfSide[Side], nullptr, FaceOfSide[Side], LBABodyConverter::ToVertexColor(Color, 0.5f), WallInset, false);
 						}
 						continue;
 					}
@@ -954,15 +992,54 @@ const FLBAIsoImporter::FAtlas* FLBAIsoImporter::GetAtlas(int32 LibraryIndex)
 			Atlas.FaceCoverage.Add(Bricks[Index], Coverage);
 		}
 
-		// Copy the sprite and repeat its border pixels into the padding to limit filtering bleed.
-		for (int32 Y = -CellPad; Y < SpriteH + CellPad; ++Y)
+		// The sprite's faces apart (FaceOffsets), each grown by its own pixels so that filtering and mip levels at its
+		// edges see the face, not the transparent pixels around it nor the next face (as lba2remake does): first the
+		// transparent pixels along the edges of solid faces (the original's neighbors covered them), then one pixel out.
+		const TStaticArray<float, 3>& Coverage = Atlas.FaceCoverage[Bricks[Index]];
+		TArray<int8> Owner;
+		Owner.Init(INDEX_NONE, CellW * CellH);
+		auto At = [&](int32 X, int32 Y) -> FColor& { return Pixels[(Cell.Y + Y) * Atlas.Width + Cell.X + X]; };
+		for (int32 Y = 0; Y < SpriteH; ++Y)
 		{
-			for (int32 X = -CellPad; X < SpriteW + CellPad; ++X)
+			for (int32 X = 0; X < SpriteW; ++X)
 			{
-				const uint8 ColorIndex = Sprite.Pixels[FMath::Clamp(Y, 0, SpriteH - 1) * SpriteW + FMath::Clamp(X, 0, SpriteW - 1)];
+				const int32 Slot = SpriteSlotOf(X, Y);
+				const uint8 ColorIndex = Sprite.Pixels[Y * SpriteW + X];
+				const FIntPoint To = FIntPoint(X, Y) + FaceOffsets[Slot];
 				FColor Color = Palette[ColorIndex];
 				Color.A = ColorIndex == 0 ? 0 : 255;
-				Pixels[(Cell.Y + CellPad + Y) * Atlas.Width + Cell.X + CellPad + X] = Color;
+				At(To.X, To.Y) = Color;
+				Owner[To.Y * CellW + To.X] = int8(Slot);
+			}
+		}
+		static const FIntPoint Around[4] = { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) };
+		for (const bool bOutward : { false, true })
+		{
+			TArray<TPair<FIntPoint, FColor>> Fills;
+			for (int32 Y = 0; Y < CellH; ++Y)
+			{
+				for (int32 X = 0; X < CellW; ++X)
+				{
+					const int32 Slot = Owner[Y * CellW + X];
+					if (bOutward ? Slot != INDEX_NONE : Slot == INDEX_NONE || At(X, Y).A != 0 || Coverage[Slot] < SolidCoverage)
+					{
+						continue;
+					}
+					for (const FIntPoint& Step : Around)
+					{
+						const FIntPoint From(X + Step.X, Y + Step.Y);
+						if (From.X >= 0 && From.Y >= 0 && From.X < CellW && From.Y < CellH && At(From.X, From.Y).A != 0
+							&& (bOutward || Owner[From.Y * CellW + From.X] == Slot))
+						{
+							Fills.Emplace(FIntPoint(X, Y), At(From.X, From.Y));
+							break;
+						}
+					}
+				}
+			}
+			for (const TPair<FIntPoint, FColor>& Fill : Fills)
+			{
+				At(Fill.Key.X, Fill.Key.Y) = Fill.Value;
 			}
 		}
 	}
@@ -1278,6 +1355,8 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	TArray<FRoomBox> RoomBoxes;
 	// The frames of the cut walls that the enclosure replaces: off the grid's mesh, in a mesh of their own.
 	TSet<FIntVector> RemovedFrames;
+	// The grid's faces the enclosure covers (cell, face index): off its mesh, with the frames for the Original look.
+	TSet<FIntVector4> CoveredFaces;
 	{
 		const FLBARoomAnalysis Rooms(
 			[&Query](int32 X, int32 Y, int32 Z) { return Query.ShapeAt(X, Y, Z); },
@@ -1537,7 +1616,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				const FLBAGridCell& Cell = Grid.Get(X, Y, Z);
 				return Library->Layouts.IsValidIndex(Cell.Layout) ? FIntPoint(Cell.Layout, Library->Layouts[Cell.Layout].GetBlockCoords(Cell.Block).Y) : FIntPoint(INDEX_NONE, 0);
 			};
-			EmitEnclosure(Model, Doorways, IsDrawn, LayoutRowAt, *Atlas, Art, EnclosureBuilder, CeilingBuilder, Scale, Covered);
+			EmitEnclosure(Model, Doorways, IsDrawn, LayoutRowAt, *Atlas, Art, EnclosureBuilder, CeilingBuilder, Scale, Covered, CoveredFaces);
 
 			// Frames come off whole: an instance any cell of which the enclosure covers (no half curves left).
 			TSet<FIntVector4> RemovedInstances;
@@ -1625,19 +1704,16 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		};
 	}
 
-	// The removed frames, for the Original look (its open rooms keep them).
+	// The removed frames and the faces the enclosure covers, for the Original look (its open rooms keep them).
 	UStaticMesh* FramesMesh = nullptr;
-	if (RemovedFrames.Num() > 0)
+	if (RemovedFrames.Num() > 0 || CoveredFaces.Num() > 0)
 	{
-		FCellQuery FramesQuery = Query;
-		const TSet<FIntVector>* Frames = &RemovedFrames;
-		FramesQuery.Brick = [BaseBrick = Query.Brick, Frames](int32 X, int32 Y, int32 Z)
-		{
-			return Frames->Contains(FIntVector(X, Y, Z)) ? BaseBrick(X, Y, Z) : 0;
-		};
 		FLBAMeshBuilder FramesBuilder;
-		EmitVisual(FramesQuery, *Atlas, FramesBuilder, FramesBuilder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale,
-			Context.GetProjectSettings().BackFaces);
+		EmitVisual(Query, *Atlas, FramesBuilder, FramesBuilder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale,
+			Context.GetProjectSettings().BackFaces, [&RemovedFrames, &CoveredFaces](const FIntVector& Cell, int32 FaceIndex)
+			{
+				return RemovedFrames.Contains(Cell) || CoveredFaces.Contains(FIntVector4(Cell.X, Cell.Y, Cell.Z, FaceIndex));
+			});
 		if (!FramesBuilder.IsEmpty())
 		{
 			FMeshDescription Description;
@@ -1650,7 +1726,11 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	}
 
 	FLBAMeshBuilder Builder;
-	EmitVisual(VisualQuery, *Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale, Context.GetProjectSettings().BackFaces);
+	EmitVisual(VisualQuery, *Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale,
+		Context.GetProjectSettings().BackFaces, [&CoveredFaces](const FIntVector& Cell, int32 FaceIndex)
+		{
+			return !CoveredFaces.Contains(FIntVector4(Cell.X, Cell.Y, Cell.Z, FaceIndex));
+		});
 	if (Builder.IsEmpty())
 	{
 		return false;

@@ -101,7 +101,7 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 		Entry.DoorwayThresholds = MoveTemp(Thresholds);
 		Entry.CutFrames = MoveTemp(Frames);
 	};
-	Library(0, TEXT("Twinsen's house, Paul's house, museum, school"), 9, 8, { 33, 34, 35, 37, 41, 43, 126, 171 }, { 5, 45, 99 }, { 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 36, 39 });
+	Library(0, TEXT("Twinsen's house, Paul's house, museum, school"), 9, 8, { 33, 34, 35, 37, 41, 43, 126, 171 }, { 5, 45, 99 }, { 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 36, 38, 39, 40 });
 	Library(1, TEXT("Caves, sewers, School of Magic"), 6, 6, { 66, 67, 68, 113, 191 }, {}, {}, false);
 	Library(2, TEXT("Chez Luc, baggage claim, tickets office, pharmacy"), 9, 7, { 20 }, { 21, 23 }, { 3, 4, 6, 7, 8, 17, 18, 35, 39, 40, 41, 42 });
 	Library(3, TEXT("Temple of Bu, protection spell caves"), 6, 7, {}, { 135 }, {});

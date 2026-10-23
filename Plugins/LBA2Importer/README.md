@@ -76,7 +76,10 @@ lost it), under that top and on the passage's sides; the far end of exits closed
 past its doors; toward a room with a lower ceiling, and on the side of a step up to a raised room. Ceilings and
 their risers over stairs are `SM_Grid_NNN_Ceiling` (`EnclosureCeiling`, no shadow, so the overhead light enters;
 each room gets a soft bounce light from its floor, **RoomBounceLight**), in the library's **CeilingColor** or
-**CeilingMaterial**. A camera outside a room sees through it, while walls still cast shadows (two-sided shadows and
+**CeilingMaterial**. Wall faces all sit half a centimeter in front of the walls (one depth, so no cracks between
+them; flush remake models stay behind), the grid's own faces they cover move to the frames mesh, and art the
+original drew that is not opaque (frames, sconces) is backed by the wallpaper and drawn again in front of it, so
+nothing shows through to the next room. A camera outside a room sees through it, while walls still cast shadows (two-sided shadows and
 distance fields); the camera ignores the enclosure's collision, Twinsen doesn't. For now it shows in both looks.
 
 Each room has one **wallpaper** per wall orientation: at each height over its floor, the wall layout row drawn most
@@ -115,7 +118,7 @@ libraries, then Twinsen's house.
 | Layer | Source | Unreal result |
 |---|---|---|
 | Islands | `*.ILE`, `*.OBL` | Per island: ground texture, decor static meshes (kit pieces), one terrain static mesh per section, level `L_<ISLAND>` with all decor placed, sea, sky/fog preset, player start |
-| Interiors | `LBA_BKG.HQR` | Brick atlas per library, one static mesh per library layout (kit pieces with convex collision), one mesh per grid with exact slope collision, level `L_Grid_NNN_<Scene>` |
+| Interiors | `LBA_BKG.HQR` | Brick atlas per library (each brick's three faces apart, grown by a pixel of their own colors, and solid faces' transparent edge pixels filled, so filtering and mips show no seams between rows, as lba2remake does), one static mesh per library layout (kit pieces with convex collision), one mesh per grid with exact slope collision, level `L_Grid_NNN_<Scene>` |
 | Remake models | lba2remake checkout | GLB replacement models as static meshes under `Remake/`, placed in interiors instead of the matching bricks |
 | Characters | `RESS.HQR` (entities), `BODY.HQR`, `ANIM.HQR` | One skeleton per character family, skeletal meshes per body, animation sequences with root motion and notifies (footsteps, hits, sounds, throws), `ULBAEntityAsset` per entity, `L_CharacterGallery` |
 | Scenes | `SCENE.HQR`, `SPRITES.HQR`, `SPRIRAW.HQR`, `ANIM3DS.HQR` | Per scene: a scene asset and a level with its objects, sprites, zones, track points and hero start, streamed into its island or interior level (see [Scenes](#scenes)) |
