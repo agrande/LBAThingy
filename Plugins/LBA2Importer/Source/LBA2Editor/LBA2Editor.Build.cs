@@ -20,6 +20,7 @@ public class LBA2Editor : ModuleRules
 			"Slate",
 			"SlateCore",
 			"ToolMenus",
+			"UMG",
 			"InputCore",
 			"PropertyEditor",
 			"DesktopPlatform",

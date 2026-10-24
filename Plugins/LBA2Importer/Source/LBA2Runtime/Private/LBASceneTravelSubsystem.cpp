@@ -3,6 +3,7 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/LevelStreaming.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
@@ -10,6 +11,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
+#include "LBAIslandTravelSubsystem.h"
 #include "LBASceneAsset.h"
 #include "LBATypes.h"
 #include "LBAZoneVolume.h"
@@ -43,6 +45,36 @@ namespace
 	{
 		return World ? UWorld::RemovePIEPrefix(World->GetOutermost()->GetName()) : FString();
 	}
+
+	bool GetIntTag(const FAssetData& Asset, FName Tag, int32& OutValue)
+	{
+		FString Value;
+		if (!Asset.GetTagValue(Tag, Value) || Value.IsEmpty())
+		{
+			return false;
+		}
+		OutValue = FCString::Atoi(*Value);
+		return true;
+	}
+
+	bool GetBoolTag(const FAssetData& Asset, FName Tag)
+	{
+		FString Value;
+		return Asset.GetTagValue(Tag, Value) && Value.ToBool();
+	}
+
+	/** Island number of the scenes an island level holds (Citadel's storm and sunny levels: 0), -1 for other levels. */
+	int32 GetLevelSceneIsland(const FString& LevelPackage)
+	{
+		for (const FLBAIslandInfo& Island : ULBAIslandTravelSubsystem::FindIslands())
+		{
+			if (Island.Level.ToSoftObjectPath().GetLongPackageName() == LevelPackage)
+			{
+				return Island.SceneIsland;
+			}
+		}
+		return INDEX_NONE;
+	}
 }
 
 TArray<FAssetData> ULBASceneTravelSubsystem::FindSceneAssets()
@@ -67,6 +99,93 @@ TArray<FAssetData> ULBASceneTravelSubsystem::FindSceneAssets()
 	Filter.ClassPaths.Add(ULBASceneAsset::StaticClass()->GetClassPathName());
 	Registry->GetAssets(Filter, Assets);
 	return Assets;
+}
+
+TArray<FLBASceneMenuEntry> ULBASceneTravelSubsystem::FindMenuScenes()
+{
+	TArray<FLBASceneMenuEntry> Entries;
+	for (const FAssetData& Asset : FindSceneAssets())
+	{
+		FLBASceneMenuEntry Entry;
+		if (!GetIntTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, SceneIndex), Entry.SceneIndex)
+			|| !GetIntTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, MenuOrder), Entry.Order) || Entry.Order < 0
+			|| GetBoolTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, bDemo)))
+		{
+			continue;
+		}
+		GetIntTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, Island), Entry.Island);
+		GetIntTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, MenuParent), Entry.Parent);
+		Asset.GetTagValue(GET_MEMBER_NAME_CHECKED(ULBASceneAsset, MenuName), Entry.Name);
+		if (Entry.Name.IsEmpty())
+		{
+			Entry.Name = FString::Printf(TEXT("Scene %d"), Entry.SceneIndex);
+		}
+		Entry.bExterior = GetBoolTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, bExterior));
+		Entries.Add(MoveTemp(Entry));
+	}
+	Entries.Sort([](const FLBASceneMenuEntry& A, const FLBASceneMenuEntry& B)
+	{
+		return A.Order != B.Order ? A.Order < B.Order : A.SceneIndex < B.SceneIndex;
+	});
+	return Entries;
+}
+
+int32 ULBASceneTravelSubsystem::GetCurrentScene() const
+{
+	const UWorld* World = GetGameInstance()->GetWorld();
+	if (!World)
+	{
+		return INDEX_NONE;
+	}
+	TSet<FString> VisibleLevels;
+	for (const ULevelStreaming* Streaming : World->GetStreamingLevels())
+	{
+		if (Streaming && Streaming->IsLevelVisible())
+		{
+			VisibleLevels.Add(UWorld::RemovePIEPrefix(Streaming->GetWorldAssetPackageName()));
+		}
+	}
+	const APlayerController* Player = GetGameInstance()->GetFirstLocalPlayerController(World);
+	const APawn* Pawn = Player ? Player->GetPawn() : nullptr;
+
+	// An island streams all its cubes: the one under the player. An interior level may hold several scenes (one
+	// grid, several moments of the story): the one travelled to, else the first.
+	int32 Interior = INDEX_NONE;
+	for (const FAssetData& Asset : FindSceneAssets())
+	{
+		FString Level;
+		int32 SceneIndex = INDEX_NONE;
+		if (!Asset.GetTagValue(GET_MEMBER_NAME_CHECKED(ULBASceneAsset, Level), Level)
+			|| !VisibleLevels.Contains(FSoftObjectPath(Level).GetLongPackageName())
+			|| !GetIntTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, SceneIndex), SceneIndex))
+		{
+			continue;
+		}
+		if (GetBoolTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, bExterior)))
+		{
+			const ULBASceneAsset* Scene = Pawn ? Cast<ULBASceneAsset>(Asset.GetAsset()) : nullptr;
+			const FIntVector Local = Scene ? Scene->ToScene(Pawn->GetActorLocation()) : FIntVector(-1);
+			if (Local.X >= 0 && Local.X < LBA::IslandCubeSize && Local.Z >= 0 && Local.Z < LBA::IslandCubeSize)
+			{
+				return SceneIndex;
+			}
+		}
+		else if (SceneIndex == LastScene)
+		{
+			return SceneIndex;
+		}
+		else if (Interior == INDEX_NONE || SceneIndex < Interior)
+		{
+			Interior = SceneIndex;
+		}
+	}
+	return Interior;
+}
+
+FString ULBASceneTravelSubsystem::GetLastIslandLevel(int32 Island) const
+{
+	const FString* Level = LastIslandLevels.Find(Island);
+	return Level ? *Level : FString();
 }
 
 ULBASceneAsset* ULBASceneTravelSubsystem::FindScene(int32 SceneIndex)
@@ -95,8 +214,30 @@ bool ULBASceneTravelSubsystem::TravelToScene(int32 SceneIndex)
 	return TravelToSceneAt(SceneIndex, Hero.Position, Hero.Beta, true);
 }
 
-FString ULBASceneTravelSubsystem::ChooseSceneryLevel(const ULBASceneAsset* Scene, const UWorld* World) const
+bool ULBASceneTravelSubsystem::TravelToSceneOnIsland(int32 SceneIndex, const TSoftObjectPtr<UWorld>& IslandLevel)
 {
+	const ULBASceneAsset* Scene = FindScene(SceneIndex);
+	if (!Scene || Scene->Objects.IsEmpty())
+	{
+		UE_LOG(LogLBA2, Warning, TEXT("No scene %d (import the Scenes layer)."), SceneIndex);
+		return false;
+	}
+	const FLBASceneObjectData& Hero = Scene->Objects[0];
+	return TravelToSceneAt(SceneIndex, Hero.Position, Hero.Beta, true, IslandLevel.ToSoftObjectPath().GetLongPackageName());
+}
+
+FString ULBASceneTravelSubsystem::ChooseSceneryLevel(const ULBASceneAsset* Scene, const UWorld* World, const FString& PreferredLevel) const
+{
+	if (!PreferredLevel.IsEmpty())
+	{
+		for (const TSoftObjectPtr<UWorld>& Level : Scene->SceneryLevels)
+		{
+			if (Level.ToSoftObjectPath().GetLongPackageName() == PreferredLevel)
+			{
+				return PreferredLevel;
+			}
+		}
+	}
 	const FString Current = GetWorldPackage(World);
 	for (const TSoftObjectPtr<UWorld>& Level : Scene->SceneryLevels)
 	{
@@ -118,7 +259,7 @@ FString ULBASceneTravelSubsystem::ChooseSceneryLevel(const ULBASceneAsset* Scene
 	return Scene->SceneryLevels.IsEmpty() ? FString() : Scene->SceneryLevels[0].ToSoftObjectPath().GetLongPackageName();
 }
 
-bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround)
+bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround, const FString& PreferredLevel)
 {
 	const ULBASceneAsset* Scene = FindScene(SceneIndex);
 	UWorld* World = GetGameInstance()->GetWorld();
@@ -127,7 +268,19 @@ bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVecto
 		UE_LOG(LogLBA2, Warning, TEXT("No scene %d (import the Scenes layer)."), SceneIndex);
 		return false;
 	}
-	const FString Level = ChooseSceneryLevel(Scene, World);
+	// The island variant being left, then the one asked for, are remembered like a door taken from them: leaving an
+	// interior comes back to the same variant.
+	const FString CurrentLevel = GetWorldPackage(World);
+	const int32 CurrentIsland = GetLevelSceneIsland(CurrentLevel);
+	if (CurrentIsland != INDEX_NONE)
+	{
+		LastIslandLevels.Add(CurrentIsland, CurrentLevel);
+	}
+	if (!PreferredLevel.IsEmpty() && GetLevelSceneIsland(PreferredLevel) == Scene->Island)
+	{
+		LastIslandLevels.Add(Scene->Island, PreferredLevel);
+	}
+	const FString Level = ChooseSceneryLevel(Scene, World, PreferredLevel);
 	if (Level.IsEmpty())
 	{
 		UE_LOG(LogLBA2, Warning, TEXT("Scene %d has no scenery level."), SceneIndex);
@@ -152,12 +305,14 @@ bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVecto
 		Pawn->TeleportTo(FeetAt + FVector(0.0, 0.0, HalfHeight + 2.0), Rotation);
 		Player->SetControlRotation(Rotation);
 		ArrivalTime = World->GetTimeSeconds();
+		LastScene = SceneIndex;
 		UE_LOG(LogLBA2, Log, TEXT("Scene %d: teleported to %s"), SceneIndex, *FeetAt.ToString());
 		return true;
 	}
 
 	UE_LOG(LogLBA2, Log, TEXT("Scene %d: opening %s"), SceneIndex, *Level);
 	PendingArrival = Arrival;
+	LastScene = SceneIndex;
 	UGameplayStatics::OpenLevel(World, FName(*Level));
 	return true;
 }
@@ -173,11 +328,6 @@ void ULBASceneTravelSubsystem::OnCubeChangeZone(ALBACubeChangeVolume* Zone, APaw
 	{
 		return;
 	}
-	if (Source->bExterior)
-	{
-		LastIslandLevels.Add(Source->Island, GetWorldPackage(World));
-	}
-
 	// GereZoneChangeCube: the hero keeps his offset from the zone's corner, turned by the zone's quarter turns,
 	// added to the arrival point (its height relative to the zone's floor).
 	const UCapsuleComponent* Capsule = Pawn->FindComponentByClass<UCapsuleComponent>();

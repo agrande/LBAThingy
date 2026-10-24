@@ -13,6 +13,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformMisc.h"
 #include "LBA2Runtime.h"
 #include "Animation/AnimSequence.h"
@@ -21,6 +22,8 @@
 #include "LBACharacter.h"
 #include "LBADinofly.h"
 #include "LBAHitPointsComponent.h"
+#include "LBAIslandMenu.h"
+#include "LBAPlayerController.h"
 #include "LBAFlightMovementComponent.h"
 #include "LBASceneAsset.h"
 #include "LBASceneTravelSubsystem.h"
@@ -83,6 +86,21 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 			{
 				LadderScene = FCString::Atoi(*Scene);
 				LadderZone = FCString::Atoi(*Zone);
+			}
+		}
+	}
+	else if (Spec.Equals(TEXT("menu"), ESearchCase::IgnoreCase))
+	{
+		bMenu = true;
+		bPosesReady = true;
+		FString Scenes;
+		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2MenuScenes="), Scenes, false))
+		{
+			TArray<FString> Parts;
+			Scenes.ParseIntoArray(Parts, TEXT(","));
+			for (const FString& Part : Parts)
+			{
+				MenuScenes.Add(FCString::Atoi(*Part));
 			}
 		}
 	}
@@ -672,6 +690,68 @@ bool ULBA2SnapshotSubsystem::TickWind(UWorld* World, float DeltaTime)
 	return true;
 }
 
+bool ULBA2SnapshotSubsystem::TickMenu(UWorld* World, float DeltaTime)
+{
+	ALBAPlayerController* PC = Cast<ALBAPlayerController>(World->GetFirstPlayerController());
+	if (!PC || !PC->GetPawn())
+	{
+		return true;
+	}
+	if (World != SceneWorld.Get())
+	{
+		SceneWorld = World;
+		SceneStepStart = Elapsed;
+		MenuPhase = 0;
+		return true;
+	}
+	// One phase a second once the level has settled: open, shot, next planet, shot, pick the next scene.
+	const double Time = Elapsed - SceneStepStart;
+	if (Time < 3.0 + MenuPhase)
+	{
+		return true;
+	}
+	const FString Prefix = ShotDirectory / FString::Printf(TEXT("menu_%02d_%s"), SceneStep, *World->GetMapName());
+	switch (MenuPhase++)
+	{
+	case 0:
+		PC->OpenIslandMenu();
+		break;
+	case 1:
+		FScreenshotRequest::RequestScreenshot(Prefix + TEXT("_a.png"), true, false);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots menu: %s, scene %d"), *Prefix, GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>()->GetCurrentScene());
+		break;
+	case 2:
+	{
+		// E, as the player would press it: the next planet.
+		if (PC->GetIslandMenu())
+		{
+			FSlateApplication::Get().ProcessKeyDownEvent(FKeyEvent(EKeys::E, FModifierKeysState(), 0, false, 0, 0));
+		}
+		break;
+	}
+	case 3:
+		FScreenshotRequest::RequestScreenshot(Prefix + TEXT("_b.png"), true, false);
+		break;
+	default:
+		if (!MenuScenes.IsValidIndex(SceneStep))
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots menu: done"));
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		if (ULBAIslandMenu* Menu = PC->GetIslandMenu())
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots menu: picking scene %d"), MenuScenes[SceneStep]);
+			Menu->OnButtonClicked(ELBAMenuAction::Scene, MenuScenes[SceneStep]);
+		}
+		// Start over in the level it opens (or in this one, teleported).
+		++SceneStep;
+		SceneWorld.Reset();
+		break;
+	}
+	return true;
+}
+
 bool ULBA2SnapshotSubsystem::TickScenes(UWorld* World, float DeltaTime)
 {
 	APlayerController* PC = World->GetFirstPlayerController();
@@ -922,6 +1002,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bLadder)
 	{
 		return TickLadder(World, DeltaTime);
+	}
+	if (bMenu)
+	{
+		return TickMenu(World, DeltaTime);
 	}
 	if (!bPosesReady)
 	{

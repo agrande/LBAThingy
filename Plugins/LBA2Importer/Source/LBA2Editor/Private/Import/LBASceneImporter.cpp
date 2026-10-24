@@ -12,6 +12,7 @@
 #include "Formats/LBAHqr.h"
 #include "Formats/LBAXpl.h"
 #include "GameFramework/PlayerStart.h"
+#include "Interfaces/IPluginManager.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
@@ -22,8 +23,11 @@
 #include "LBASceneAsset.h"
 #include "LBATypes.h"
 #include "LBAZoneVolume.h"
+#include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
 #include "PhysicsEngine/AggregateGeom.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 
 #define LOCTEXT_NAMESPACE "LBASceneImporter"
 
@@ -87,6 +91,92 @@ namespace
 FLBASceneImporter::FLBASceneImporter(FLBAImportContext& InContext)
 	: Context(InContext)
 {
+}
+
+void FLBASceneImporter::PlaceInMenu()
+{
+	MenuPlaces.Reset();
+	int32 NextOrder = 0;
+
+	// Resources/CommunityMetadata/lba2_locations.json (Tools/export_locations.py): planets > islands > scenes, each
+	// scene with the scenes it leads to. The planets and islands are the runtime's (ULBAIslandTravelSubsystem);
+	// a scene's island is its own header's.
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("LBA2Importer"));
+	FString Json;
+	TSharedPtr<FJsonObject> Root;
+	if (Plugin && FFileHelper::LoadFileToString(Json, *FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources/CommunityMetadata/lba2_locations.json"))))
+	{
+		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root);
+	}
+	TFunction<void(const TArray<TSharedPtr<FJsonValue>>&, int32)> AddNodes = [&](const TArray<TSharedPtr<FJsonValue>>& Nodes, int32 Parent)
+	{
+		for (const TSharedPtr<FJsonValue>& Value : Nodes)
+		{
+			const TSharedPtr<FJsonObject> Node = Value->AsObject();
+			int32 Scene = INDEX_NONE;
+			if (!Node || !Node->TryGetNumberField(TEXT("scene"), Scene))
+			{
+				continue;
+			}
+			FMenuPlace& Place = MenuPlaces.Add(Scene);
+			Place.Parent = Parent;
+			Place.Order = NextOrder++;
+			Place.Name = Node->GetStringField(TEXT("name"));
+			const TArray<TSharedPtr<FJsonValue>>* Children = nullptr;
+			if (Node->TryGetArrayField(TEXT("children"), Children))
+			{
+				AddNodes(*Children, Scene);
+			}
+		}
+	};
+	const TArray<TSharedPtr<FJsonValue>>* Planets = nullptr;
+	if (Root && Root->TryGetArrayField(TEXT("planets"), Planets))
+	{
+		for (const TSharedPtr<FJsonValue>& Planet : *Planets)
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Islands = nullptr;
+			if (Planet->AsObject() && Planet->AsObject()->TryGetArrayField(TEXT("islands"), Islands))
+			{
+				for (const TSharedPtr<FJsonValue>& Island : *Islands)
+				{
+					const TArray<TSharedPtr<FJsonValue>>* Children = nullptr;
+					if (Island->AsObject() && Island->AsObject()->TryGetArrayField(TEXT("children"), Children))
+					{
+						AddNodes(*Children, INDEX_NONE);
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		Context.Warn(TEXT("Resources/CommunityMetadata/lba2_locations.json is missing: the travel menu lists only the scenes doors lead to."));
+	}
+
+	// Story scenes the tree misses go under the first listed scene with a door to them, after its other scenes.
+	// Scenes no door leads to (the sea-travel cube) stay out of the menu.
+	TArray<int32> Listed;
+	MenuPlaces.GetKeys(Listed);
+	Listed.Sort([this](int32 A, int32 B) { return MenuPlaces[A].Order < MenuPlaces[B].Order; });
+	for (int32 Index = 0; Index < Listed.Num(); ++Index)
+	{
+		const FLBAScene* Source = Scenes.Find(Listed[Index]);
+		if (!Source)
+		{
+			continue;
+		}
+		for (const FLBASceneZoneData& Zone : Source->Zones)
+		{
+			if (Zone.Type == ELBAZoneType::CubeChange && Zone.Num < LBAScenes::FirstDemoScene && Scenes.Contains(Zone.Num) && !MenuPlaces.Contains(Zone.Num))
+			{
+				FMenuPlace& Place = MenuPlaces.Add(Zone.Num);
+				Place.Parent = Listed[Index];
+				Place.Order = 100000 + Zone.Num;
+				Place.Name = FString::Printf(TEXT("Scene %d"), Zone.Num);
+				Listed.Add(Zone.Num);
+			}
+		}
+	}
 }
 
 FString FLBASceneImporter::GetSceneName(int32 SceneIndex) const
@@ -416,6 +506,7 @@ int32 FLBASceneImporter::ImportAll()
 	}
 
 	LoadEntities();
+	PlaceInMenu();
 
 	TSet<int32> SpriteKeys;
 	for (int32 Index : Selected)
@@ -496,6 +587,10 @@ ULBASceneAsset* FLBASceneImporter::ImportScene(const FLBAScene& Scene, const TAr
 	Asset->Cube = FIntPoint(Scene.CubeX, Scene.CubeY);
 	Asset->Grid = !Scene.IsExterior() && SceneMap.IsValidIndex(Scene.Index) ? SceneMap[Scene.Index].SceneryIndex : INDEX_NONE;
 	Asset->bDemo = Scene.Index >= LBAScenes::FirstDemoScene;
+	const FMenuPlace* MenuPlace = Asset->bDemo ? nullptr : MenuPlaces.Find(Scene.Index);
+	Asset->MenuParent = MenuPlace ? MenuPlace->Parent : INDEX_NONE;
+	Asset->MenuOrder = MenuPlace ? MenuPlace->Order : INDEX_NONE;
+	Asset->MenuName = MenuPlace ? MenuPlace->Name : FString();
 	Asset->WorldScale = Scale;
 	Asset->Origin = Scene.IsExterior() ? LBA::ToUnreal(Scene.CubeX * LBA::IslandCubeSize, 0, Scene.CubeY * LBA::IslandCubeSize, Scale) : FVector::ZeroVector;
 	Asset->Ambience = Scene.Ambience;

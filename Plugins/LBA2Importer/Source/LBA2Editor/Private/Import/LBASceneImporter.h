@@ -48,6 +48,8 @@ private:
 	UStaticMesh* BuildSpriteMesh(int32 Key, const FLBASprite& Sprite, const FLBASpriteBox& Box, FIntPoint Cell, FIntPoint AtlasSize, class UMaterialInterface* Material);
 
 	void LoadEntities();
+	/** Fills MenuPlaces: lba2remake's location tree, then doors for the scenes it misses. */
+	void PlaceInMenu();
 	FString GetSceneName(int32 SceneIndex) const;
 	FString GetGridLevelPackage(int32 Grid) const;
 	TArray<FString> GetSceneryLevels(const FLBAScene& Scene) const;
@@ -61,6 +63,15 @@ private:
 	FLBAImportContext& Context;
 	TArray<FLBASceneMapEntry> SceneMap;
 	TMap<int32, FLBAScene> Scenes;
+
+	/** Where the travel menu lists a scene (ULBASceneAsset::MenuParent, MenuOrder, MenuName). */
+	struct FMenuPlace
+	{
+		int32 Parent = INDEX_NONE;
+		int32 Order = INDEX_NONE;
+		FString Name;
+	};
+	TMap<int32, FMenuPlace> MenuPlaces;
 	TMap<int32, ULBAEntityAsset*> Entities;
 	/** ANIM3DS.HQR animations: first and last frame. */
 	TArray<FIntPoint> SpriteAnims;

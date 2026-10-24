@@ -18,26 +18,32 @@ namespace
 	{
 		const TCHAR* Id;
 		FText Name;
+		ELBAPlanet Planet;
+		/** IleLst index the scenes of this island carry (LBAScenes::GetIslandFiles), -1 for none. */
+		int32 SceneIsland;
 	};
 
-	/** Names from lba2-classic-community/docs/GLOSSARY.md, in the order the game visits them. */
+	/**
+	 * Names from lba2-classic-community/docs/GLOSSARY.md, grouped by planet and ordered like lba2remake's teleport
+	 * menu (locator/locations), each variant after the island it changes.
+	 */
 	const TArray<FIslandName>& KnownIslands()
 	{
 		static const TArray<FIslandName> Islands = {
-			{ TEXT("CITABAU"), LOCTEXT("CITABAU", "Citadel Island") },
-			{ TEXT("CITADEL"), LOCTEXT("CITADEL", "Citadel Island (storm)") },
-			{ TEXT("DESERT"), LOCTEXT("DESERT", "Desert Island") },
-			{ TEXT("CELEBRAT"), LOCTEXT("CELEBRAT", "Celebration Island") },
-			{ TEXT("CELEBRA2"), LOCTEXT("CELEBRA2", "Celebration Island (statue)") },
-			{ TEXT("SOUSCELB"), LOCTEXT("SOUSCELB", "Volcano Island") },
-			{ TEXT("EMERAUDE"), LOCTEXT("EMERAUDE", "Emerald Moon") },
-			{ TEXT("MOON"), LOCTEXT("MOON", "Emerald Moon (second visit)") },
-			{ TEXT("OTRINGAL"), LOCTEXT("OTRINGAL", "Otringal") },
-			{ TEXT("PLATFORM"), LOCTEXT("PLATFORM", "Island of the Wannies") },
-			{ TEXT("MOSQUIBE"), LOCTEXT("MOSQUIBE", "Island of the Mosquibees") },
-			{ TEXT("KNARTAS"), LOCTEXT("KNARTAS", "Francos Island") },
-			{ TEXT("ILOTCX"), LOCTEXT("ILOTCX", "Island CX") },
-			{ TEXT("ASCENCE"), LOCTEXT("ASCENCE", "Elevator to the Undergas") },
+			{ TEXT("CITABAU"), LOCTEXT("CITABAU", "Citadel Island"), ELBAPlanet::Twinsun, 0 },
+			{ TEXT("CITADEL"), LOCTEXT("CITADEL", "Citadel Island (storm)"), ELBAPlanet::Twinsun, 0 },
+			{ TEXT("DESERT"), LOCTEXT("DESERT", "Desert Island"), ELBAPlanet::Twinsun, 2 },
+			{ TEXT("EMERAUDE"), LOCTEXT("EMERAUDE", "Emerald Moon"), ELBAPlanet::EmeraldMoon, 3 },
+			{ TEXT("MOON"), LOCTEXT("MOON", "Emerald Moon (second visit)"), ELBAPlanet::EmeraldMoon, INDEX_NONE },
+			{ TEXT("OTRINGAL"), LOCTEXT("OTRINGAL", "Otringal"), ELBAPlanet::ZeelishSurface, 4 },
+			{ TEXT("CELEBRAT"), LOCTEXT("CELEBRAT", "Celebration Island"), ELBAPlanet::ZeelishSurface, 5 },
+			{ TEXT("CELEBRA2"), LOCTEXT("CELEBRA2", "Celebration Island (statue)"), ELBAPlanet::ZeelishSurface, 5 },
+			{ TEXT("KNARTAS"), LOCTEXT("KNARTAS", "Francos Island"), ELBAPlanet::ZeelishSurface, 8 },
+			{ TEXT("ASCENCE"), LOCTEXT("ASCENCE", "Elevator to the Undergas"), ELBAPlanet::ZeelishSurface, 10 },
+			{ TEXT("ILOTCX"), LOCTEXT("ILOTCX", "Island CX"), ELBAPlanet::ZeelishSurface, 9 },
+			{ TEXT("PLATFORM"), LOCTEXT("PLATFORM", "Island of the Wannies"), ELBAPlanet::ZeelishUndergas, 6 },
+			{ TEXT("MOSQUIBE"), LOCTEXT("MOSQUIBE", "Island of the Mosquibees"), ELBAPlanet::ZeelishUndergas, 7 },
+			{ TEXT("SOUSCELB"), LOCTEXT("SOUSCELB", "Volcano Island"), ELBAPlanet::ZeelishUndergas, 11 },
 		};
 		return Islands;
 	}
@@ -110,9 +116,11 @@ TArray<FLBAIslandInfo> ULBAIslandTravelSubsystem::FindIslands()
 		Island.Level = TSoftObjectPtr<UWorld>(Asset.GetSoftObjectPath());
 		const FIslandName* Known = KnownIslands().FindByPredicate([&Id](const FIslandName& Name) { return Id == Name.Id; });
 		Island.DisplayName = Known ? Known->Name : FText::FromString(Id.Left(1) + Id.Mid(1).ToLower());
+		Island.Planet = Known ? Known->Planet : ELBAPlanet::Other;
+		Island.SceneIsland = Known ? Known->SceneIsland : INDEX_NONE;
 	}
 
-	// Known islands in story order, then any others alphabetically.
+	// Known islands planet by planet, then any others alphabetically.
 	auto Order = [](FName Id)
 	{
 		const int32 Index = KnownIslands().IndexOfByPredicate([Id](const FIslandName& Name) { return Id == Name.Id; });
@@ -124,6 +132,18 @@ TArray<FLBAIslandInfo> ULBAIslandTravelSubsystem::FindIslands()
 		return OrderA != OrderB ? OrderA < OrderB : A.Id.LexicalLess(B.Id);
 	});
 	return Islands;
+}
+
+FText ULBAIslandTravelSubsystem::GetPlanetName(ELBAPlanet Planet)
+{
+	switch (Planet)
+	{
+	case ELBAPlanet::Twinsun: return LOCTEXT("Twinsun", "Twinsun");
+	case ELBAPlanet::EmeraldMoon: return LOCTEXT("EmeraldMoon", "Emerald Moon");
+	case ELBAPlanet::ZeelishSurface: return LOCTEXT("ZeelishSurface", "Zeelish Surface");
+	case ELBAPlanet::ZeelishUndergas: return LOCTEXT("ZeelishUndergas", "Undergas");
+	default: return LOCTEXT("OtherPlanet", "Elsewhere");
+	}
 }
 
 FName ULBAIslandTravelSubsystem::GetCurrentIslandId() const

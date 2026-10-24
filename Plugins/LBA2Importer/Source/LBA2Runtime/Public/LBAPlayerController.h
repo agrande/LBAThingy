@@ -33,6 +33,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "LBA")
 	bool IsIslandMenuOpen() const { return IslandMenu != nullptr; }
 
+	/** The menu when it is open. */
+	ULBAIslandMenu* GetIslandMenu() const { return IslandMenu; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;

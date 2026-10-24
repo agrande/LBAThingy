@@ -237,11 +237,11 @@ public:
 	FString DisplayName;
 
 	/** Exterior scenes are a cube of an island; interior ones an isometric grid. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LBA")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, AssetRegistrySearchable, Category = "LBA")
 	bool bExterior = false;
 
-	/** Island number of the original (0 Citadel, 2 desert...). */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LBA")
+	/** Island number of the original (0 Citadel, 2 desert...); interiors carry the island they belong to. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, AssetRegistrySearchable, Category = "LBA")
 	int32 Island = 0;
 
 	/** Exterior: cube of the island's 16x16 map. */
@@ -253,11 +253,27 @@ public:
 	int32 Grid = INDEX_NONE;
 
 	/** Demo (attract mode) copy of a game scene. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LBA")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, AssetRegistrySearchable, Category = "LBA")
 	bool bDemo = false;
 
+	/**
+	 * Where the travel menu lists the scene (ULBAIslandMenu): under this scene (an interior under the area it opens
+	 * on), or directly under its island when -1. From lba2remake's location tree, else the first scene whose door
+	 * leads here.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, AssetRegistrySearchable, Category = "LBA|Menu")
+	int32 MenuParent = INDEX_NONE;
+
+	/** Rank among its island's scenes in the travel menu; -1 keeps the scene out of it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, AssetRegistrySearchable, Category = "LBA|Menu")
+	int32 MenuOrder = INDEX_NONE;
+
+	/** Name in the travel menu, short since it shows under its parent ("Cellar" under "Twinsen's House"). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, AssetRegistrySearchable, Category = "LBA|Menu")
+	FString MenuName;
+
 	/** The scene's own level (objects, zones, points, hero start). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, AssetRegistrySearchable, Category = "LBA")
 	TSoftObjectPtr<UWorld> Level;
 
 	/**

@@ -34,6 +34,7 @@ private:
 	bool TickWind(UWorld* World, float DeltaTime);
 	bool TickScenes(UWorld* World, float DeltaTime);
 	bool TickLadder(UWorld* World, float DeltaTime);
+	bool TickMenu(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
 
 	/** -LBA2Shots=hero: drives the player's ALBACharacter through a scripted test and screenshots each step. */
@@ -58,6 +59,13 @@ private:
 	bool bSceneShotTaken = false;
 	bool bWalkingIntoDoor = false;
 	TWeakObjectPtr<UWorld> SceneWorld;
+	/**
+	 * -LBA2Shots=menu -LBA2MenuScenes=0,138: in each level, opens the travel menu, screenshots it, shows the next
+	 * planet, screenshots again, then picks the next scene in the menu.
+	 */
+	bool bMenu = false;
+	TArray<int32> MenuScenes;
+	int32 MenuPhase = 0;
 	/** -LBA2Shots=ladder -LBA2Ladder=scene:zone: climbs that ladder up, then back down. */
 	bool bLadder = false;
 	int32 LadderScene = INDEX_NONE;

@@ -9,6 +9,18 @@ class ULBASceneAsset;
 class UWorld;
 struct FAssetData;
 
+/** A scene as the travel menu lists it, read from the asset registry without loading the scene asset. */
+struct FLBASceneMenuEntry
+{
+	int32 SceneIndex = INDEX_NONE;
+	/** ULBASceneAsset::Island, MenuParent, MenuOrder, MenuName. */
+	int32 Island = INDEX_NONE;
+	int32 Parent = INDEX_NONE;
+	int32 Order = INDEX_NONE;
+	FString Name;
+	bool bExterior = false;
+};
+
 /**
  * Moves the player between scenes: doors and exits (ALBACubeChangeVolume), and lba.Scene. Scenes are found in the
  * asset registry by number (ULBASceneAsset::SceneIndex). A scene already loaded in the current level (another cube
@@ -28,15 +40,32 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	static ULBASceneAsset* FindScene(int32 SceneIndex);
 
+	/** Imported story scenes the travel menu lists (MenuOrder >= 0), in menu order. */
+	static TArray<FLBASceneMenuEntry> FindMenuScenes();
+
 	/** Goes to a scene's hero start. */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	bool TravelToScene(int32 SceneIndex);
 
 	/**
+	 * Goes to a scene's hero start on one variant of its island (Citadel's storm or sunny level...): an exterior
+	 * scene opens in that level, an interior returns to it through its doors.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	bool TravelToSceneOnIsland(int32 SceneIndex, const TSoftObjectPtr<UWorld>& IslandLevel);
+
+	/** The scene the player is in: the cube under them on an island, the scene travelled to in an interior. -1 if unknown. */
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	int32 GetCurrentScene() const;
+
+	/** Package of the island level last played for an island number (its variant), empty if none yet. */
+	FString GetLastIslandLevel(int32 Island) const;
+
+	/**
 	 * Goes to a scene, the player's feet at a position of that scene (LBA units, scene-local), facing an LBA angle.
 	 * bSnapToGround puts the feet on the floor below, like the original's ReajustPos.
 	 */
-	bool TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround);
+	bool TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround, const FString& PreferredLevel = FString());
 
 	/** A player pawn entered a cube change zone. */
 	void OnCubeChangeZone(ALBACubeChangeVolume* Zone, APawn* Pawn);
@@ -56,8 +85,11 @@ private:
 		bool bSnapToGround = true;
 	};
 
-	/** Picks the level to open for a scene: the current one if the scene is in it, else the island variant last visited. */
-	FString ChooseSceneryLevel(const ULBASceneAsset* Scene, const UWorld* World) const;
+	/**
+	 * Picks the level to open for a scene: the preferred one if the scene is in it, else the current one if it is,
+	 * else the island variant last visited.
+	 */
+	FString ChooseSceneryLevel(const ULBASceneAsset* Scene, const UWorld* World, const FString& PreferredLevel) const;
 	static FVector SnapFeet(UWorld* World, const FVector& Feet, const AActor* Ignore);
 
 	TOptional<FArrival> PendingArrival;
@@ -65,4 +97,6 @@ private:
 	TMap<int32, FString> LastIslandLevels;
 	/** No cube change right after arriving (the hero may land in a zone). */
 	double ArrivalTime = -1.0;
+	/** Scene last travelled to, to tell apart the scenes sharing an interior level. */
+	int32 LastScene = INDEX_NONE;
 };

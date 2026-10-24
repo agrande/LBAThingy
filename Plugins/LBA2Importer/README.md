@@ -146,7 +146,7 @@ the normal walk.
 | F5-F8 or 1-4 | Normal, Athletic, Aggressive, Discreet (idle and actions; the run stays) | Normal, Athletic, Aggressive, Discreet |
 | Tab | Switch to authentic mode | Switch to modern mode |
 | F / gamepad Y | Ride the Dinofly (see below) | Ride the Dinofly |
-| M / gamepad Start | Island menu (see below) | Island menu |
+| M / gamepad Start | Travel menu (see below) | Travel menu |
 | Walk into a ladder | Climb it (see [Scenes](#scenes)) | Climb it |
 
 In modern mode the LBA animations play in place and are kept in step with the movement:
@@ -355,17 +355,40 @@ Settings > Plugins > LBA2 > Airflow Trail). `lba.Airflow 0` hides them,
 `lba.Airflow.Opacity` and `lba.Airflow.Density` scale them, `lba.Airflow.Debug 1` logs air speeds, the hotspots and
 their stroke rates (2 also draws them).
 
-### Island menu
+### Travel menu
 
-M or gamepad Start (on foot or riding) pauses the game and lists every island level found under
-**Project Settings > Plugins > LBA2 > Island Menu > Islands Path** (`/Game/LBA2/Islands`), in story order;
-picking one opens its level at its start (its first scene's hero start, see [Scenes](#scenes)). Mouse, keyboard (arrows, Enter) and gamepad (d-pad, A) all
-work; Esc, B, M or Start close it. Packaged and standalone games open it at startup (*Island Menu At
-Startup*; Play In Editor and `-LBA2Shots` runs do not). Nothing references the island levels, so the
-LBA2Editor module adds every level the menu lists to each cook (`ModifyCook` delegate). It lives in `ALBAPlayerController` (the controller
-of `LBAGameMode`), `ULBAIslandMenu` (a UMG widget built in C++, `IslandMenuClass` takes a Blueprint
-subclass) and `ULBAIslandTravelSubsystem` (`GetIslands`, `TravelToIsland`). Console: `lba.Travel DESERT`,
-`lba.Travel` (lists the islands), `lba.IslandMenu`.
+M or gamepad Start (on foot or riding) pauses the game and opens the travel menu, laid out like lba2remake's
+teleport menu: planets along the top (Twinsun, Emerald Moon, Zeelish Surface, Undergas), the selected planet's
+islands on the left, and the selected island's scenes on the right: its areas (exterior scenes), each with the
+interiors it opens on, nested (Twinsen's House Area > Twinsen's House > Cellar). The first row of an island is the
+island level itself. Picking an island row opens its level at its start (its first scene's hero start, see
+[Scenes](#scenes)); picking a scene goes to that scene's hero start. Where the player is shows in gold (planet,
+island, scene) and starts selected. Mouse, keyboard (arrows, Enter, Q / E for planets) and gamepad (d-pad, A,
+LB / RB) all work; Esc, B, M or Start close it. Packaged and standalone games open it at startup (*Island Menu At
+Startup*; Play In Editor and `-LBA2Shots` runs do not).
+
+- Islands are the levels found under **Project Settings > Plugins > LBA2 > Island Menu > Islands Path**
+  (`/Game/LBA2/Islands`); their names, planets and order are a table in `LBAIslandTravelSubsystem.cpp`. Island
+  variants (Citadel's storm and sunny levels, Celebration before and after the statue) are rows of their own with
+  the same scenes: a scene picked under one opens in that variant, and an interior picked there leads back out to it.
+- Scenes are the imported scene assets; the menu reads where each one goes from asset registry tags, without
+  loading them: `ULBASceneAsset::Island` (the scene header's island, also for interiors), `MenuParent`, `MenuOrder`
+  and `MenuName`. The Scenes layer sets those from lba2remake's location tree, exported to
+  `Resources/CommunityMetadata/lba2_locations.json` by `Tools/export_locations.py` (demo copies left out, like the
+  remake; scene 94, which the remake lists as Otringal's landing zone, is a Citadel cube in SCENE.HQR and 138 is
+  Otringal's). Story scenes the tree misses go under the first listed scene with a door to them; the others (94, the
+  sea travel) stay out. Reimport the Scenes layer after changing the tree.
+- Icons are lba2remake's location icons (MIT), rendered from its SVGs by `Tools/export_locations.py` and imported
+  into the plugin's `Content/UI` by `Tools/import_location_icons.py`; `ULBAIslandMenu`'s *Style* properties take
+  others.
+
+Nothing references the island levels, scenes or icons, so the LBA2Editor module adds them to each cook
+(`ModifyCook` delegate). It lives in `ALBAPlayerController` (the controller of `LBAGameMode`), `ULBAIslandMenu` (a
+UMG widget built in C++, `IslandMenuClass` takes a Blueprint subclass), `ULBAIslandTravelSubsystem` (`GetIslands`,
+`TravelToIsland`) and `ULBASceneTravelSubsystem` (`FindMenuScenes`, `TravelToSceneOnIsland`, `GetCurrentScene`).
+Console: `lba.Travel DESERT`, `lba.Travel` (lists the islands), `lba.Scene 0`, `lba.IslandMenu`.
+`-LBA2Shots=menu -LBA2MenuScenes=7,43,138` opens the menu in each level, screenshots it, shows the next planet,
+screenshots again and picks the next scene.
 
 ## Scenes
 
@@ -583,8 +606,9 @@ color, shade row / light, surfaces without fog).
   (Citabau) palette, like the original.
 - Generated master materials carry a version stamp (a comment node): a newer importer rebuilds
   them in place, otherwise your edits are kept.
-- Community names (scene, entity, actor and zone names) come from lba2remake's metadata, bundled in
-  `Resources/CommunityMetadata` with its MIT license.
+- Community names (scene, entity, actor and zone names) and the travel menu's location tree come from
+  lba2remake's metadata, bundled in `Resources/CommunityMetadata` with its MIT license; the menu's location icons
+  (`Content/UI`) are lba2remake's too.
 
 ## Roadmap
 
@@ -615,6 +639,7 @@ color, shade row / light, surfaces without fog).
 - [x] Dinofly riding prototype: mount on the ground, walk, take off, hover (default) and glide flight, land, float, get off
 - [x] Dinofly flight choices: pump A (climb rate), hold X (dive), Morse on B (brake, tires), stalls when not pumping, lift from speed in thick air, attitude from the flight's forces, procedural wings, pain (hit stars, flinch), death and retry
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
+- [x] Travel menu by planet, island and scene (interiors included), after lba2remake's teleport menu
 - [x] L4 Scenes: per-scene levels streamed into islands and interiors, objects, sprites, typed zone volumes,
   track points, hero starts; doors and ladders work in game
 - [ ] Scenes, next: ambient sounds, givers and messages, escalators, camera zones (as hints for the modern camera)
