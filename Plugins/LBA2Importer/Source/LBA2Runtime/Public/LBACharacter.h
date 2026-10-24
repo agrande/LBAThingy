@@ -93,6 +93,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
 	float InteractReach = 90.f;
 
+	/** How far in front of the character melee blows reach (cm; the original pushes its box 25 cm forward). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Melee")
+	float MeleeReach = 60.f;
+
+	/** Damage of a blow (enemies die from any hit). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Melee")
+	float MeleeDamage = 25.f;
+
+	/** Modern mode: an attack turns to the closest enemy this close (cm) and this far off the aim (degrees). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Melee")
+	float MeleeAssistRange = 220.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Melee")
+	float MeleeAssistAngle = 60.f;
+
 	/** Upward speed of jumps in modern mode (the original jumps about 85 cm high). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
 	float ModernJumpSpeed = 450.f;
@@ -196,6 +211,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void DoBehaviourAction();
 
+	/**
+	 * Punches or kicks (the aggressive behaviour's action) in any behaviour: gamepad B, left mouse button. Each blow hits
+	 * whatever accepts hits (ULBAHitPointsComponent) in reach in front, at the animation's hit frame. Pressing again
+	 * once the blow landed chains the next one.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	bool Attack();
+
 	/** Uses the closest interactable (ILBAInteractable) in reach in front of the character. False if there is none. */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	bool TryInteract();
@@ -252,6 +275,20 @@ private:
 	void UpdateProceduralPose(float DeltaSeconds);
 	void ModernLanded();
 	void PlaySlot(int32 AnimType, bool bLoop, float BlendTime = 0.15f, float PlayRate = 1.f);
+	bool PlayActionSequence(UAnimSequence* Sequence, int32 AnimType);
+
+	// Melee
+	void UpdateAttack(float DeltaSeconds);
+	/** Turns towards the closest enemy near the aim (modern mode), else towards where the player pushes. */
+	void AimAttack();
+	void DeliverMeleeHit();
+	/** The actor accepts hits and is still alive (the Dinofly is not hit by its rider). */
+	bool IsMeleeTarget(const AActor* Actor) const;
+	/** Seconds since the running attack started, and when its blow lands (-1 once it did, or without attack). */
+	float AttackTime = 0.f;
+	float AttackHitTime = -1.f;
+	float AttackLength = 0.f;
+	bool bAttackQueued = false;
 	UAnimSequence* FindAnim(int32 AnimType, float* OutLoopStart = nullptr) const;
 	/** The slot of a given behaviour's entity (falls back to the current one). */
 	UAnimSequence* FindBehaviourAnim(ELBABehaviour InBehaviour, int32 AnimType, float* OutLoopStart = nullptr) const;
@@ -278,6 +315,7 @@ private:
 	void OnLook(const FInputActionValue& Value);
 	void OnAction(const FInputActionValue& Value);
 	void OnUse(const FInputActionValue& Value);
+	void OnAttack(const FInputActionValue& Value) { Attack(); }
 	void OnBehaviour(ELBABehaviour NewBehaviour) { SetBehaviour(NewBehaviour); }
 	void OnToggleControlMode(const FInputActionValue& Value);
 	void OnSummonDinofly(const FInputActionValue& Value) { SummonDinofly(); }
@@ -302,6 +340,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> UseAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> AttackAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ToggleModeAction;

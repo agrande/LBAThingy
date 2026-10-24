@@ -12,7 +12,17 @@
 #include "LBA2Settings.h"
 #include "LBAAnimInstance.h"
 #include "LBAEntityAsset.h"
+#include "LBAHitPointsComponent.h"
+#include "LBASceneAsset.h"
 #include "LBATypes.h"
+#include "Sound/SoundBase.h"
+#include "TimerManager.h"
+
+namespace
+{
+	/** Longest hit reaction played before a dead enemy vanishes (s). */
+	constexpr float MaxDeathAnimTime = 1.5f;
+}
 
 ALBASceneActor::ALBASceneActor()
 {
@@ -63,11 +73,76 @@ void ALBASceneActor::BeginPlay()
 	// Without collision a falling object would drop through the floor.
 	const bool bSolid = GetActorEnableCollision() && GetCapsuleComponent()->IsCollisionEnabled();
 	GetCharacterMovement()->SetMovementMode(bFallable && bSolid ? MOVE_Walking : MOVE_None);
+
+	if (IsEnemy())
+	{
+		// One hit kills, whatever the original's life points.
+		ULBAHitPointsComponent* HitPoints = NewObject<ULBAHitPointsComponent>(this, TEXT("HitPoints"));
+		HitPoints->MaxLife = 1.f;
+		HitPoints->OnDeath.AddDynamic(this, &ALBASceneActor::HandleDeath);
+		HitPoints->RegisterComponent();
+	}
 }
 
 bool ALBASceneActor::IsGameplayStandIn() const
 {
 	return Entity && GetDefault<ULBA2Settings>()->HiddenSceneEntities.Contains(TSoftObjectPtr<ULBAEntityAsset>(Entity.Get()));
+}
+
+bool ALBASceneActor::IsEnemy() const
+{
+	if (!Scene || !Scene->Objects.IsValidIndex(ObjectIndex) || !Entity || IsGameplayStandIn())
+	{
+		return false;
+	}
+	// HitObj (OBJECT.CPP): armour 51 and above is invulnerable, objects without life points can't be hit.
+	const FLBASceneObjectData& Object = Scene->Objects[ObjectIndex];
+	if (Object.Armour >= 51 || Object.LifePoints <= 0 || Object.HasFlag(LBASceneFlags::NoChoc))
+	{
+		return false;
+	}
+	return !GetDefault<ULBA2Settings>()->NonEnemySceneEntities.Contains(TSoftObjectPtr<ULBAEntityAsset>(Entity.Get()));
+}
+
+void ALBASceneActor::HandleDeath()
+{
+	if (bDead)
+	{
+		return;
+	}
+	bDead = true;
+	// Out of the way at once; it stays where it is while it reacts.
+	SetActorEnableCollision(false);
+	GetCharacterMovement()->SetMovementMode(MOVE_None);
+
+	// The original's objects have no death animation: their hit reaction (CHOC or CHOC2, at random) plays, then they vanish.
+	float Duration = 0.f;
+	const int32 First = FMath::RandBool() ? int32(ELBAAnimType::Hit) : 22;
+	for (const int32 Slot : { First, First == 22 ? int32(ELBAAnimType::Hit) : 22 })
+	{
+		UAnimSequence* Sequence = Entity ? Entity->GetAnimByIndex(Slot) : nullptr;
+		ULBAAnimInstance* Instance = GetLBAAnimInstance();
+		if (Sequence && Instance)
+		{
+			AnimType = Slot;
+			Instance->PlayLBAAnimation(Sequence, false, 0.f, 0.05f, 1.f, true);
+			Duration = FMath::Min(Sequence->GetPlayLength(), MaxDeathAnimTime);
+			break;
+		}
+	}
+	GetWorldTimerManager().SetTimer(VanishTimer, this, &ALBASceneActor::Vanish, FMath::Max(Duration, 0.2f));
+}
+
+void ALBASceneActor::Vanish()
+{
+	if (USoundBase* Sound = GetDefault<ULBA2Settings>()->EnemyDeathSound.LoadSynchronous())
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, GetActorLocation());
+	}
+	GetMesh()->SetVisibility(false, true);
+	// Hiding the actor would hide the hit stars too: it goes once they are gone.
+	const ULBAHitPointsComponent* HitPoints = FindComponentByClass<ULBAHitPointsComponent>();
+	SetLifeSpan(HitPoints ? HitPoints->StarLife + 0.1f : 0.1f);
 }
 
 ULBAAnimInstance* ALBASceneActor::GetLBAAnimInstance() const

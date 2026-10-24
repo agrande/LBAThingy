@@ -22,4 +22,8 @@ ULBA2Settings::ULBA2Settings()
 	{
 		HiddenSceneEntities.Add(Entity(Name));
 	}
+	for (const TCHAR* Name : { TEXT("DA_FrancoAlly"), TEXT("DA_JoeTheElf"), TEXT("DA_SociableQuetch"), TEXT("DA_LoveTwinsunSupClerk") })
+	{
+		NonEnemySceneEntities.Add(Entity(Name));
+	}
 }

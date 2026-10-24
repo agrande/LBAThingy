@@ -47,6 +47,8 @@ namespace LBASceneFlags
 	inline constexpr int32 Background = 1 << 13;
 	inline constexpr int32 Carrier = 1 << 14;
 	inline constexpr int32 MiniZV = 1 << 15;
+	/** Hits don't affect it. */
+	inline constexpr int32 NoChoc = 1 << 17;
 	inline constexpr int32 AnimatedSprite = 1 << 18;
 }
 

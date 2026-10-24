@@ -3,6 +3,8 @@
 #include "Engine/DeveloperSettings.h"
 #include "LBA2Settings.generated.h"
 
+class USoundBase;
+
 /**
  * Project-wide LBA2 settings shared by the importer and the gameplay classes.
  * Lives in Project Settings > Plugins > LBA2.
@@ -70,4 +72,15 @@ public:
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
 	TArray<TSoftObjectPtr<class ULBAEntityAsset>> HiddenSceneEntities;
+
+	/**
+	 * Scene objects the original lets Twinsen hurt are enemies (ALBASceneActor::IsEnemy), except those with these entities:
+	 * allies and friendly characters that can be hit in the original.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
+	TArray<TSoftObjectPtr<class ULBAEntityAsset>> NonEnemySceneEntities;
+
+	/** Played where an enemy vanishes (the original's SAMPLE_DEAD, sample 14). */
+	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
+	TSoftObjectPtr<class USoundBase> EnemyDeathSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/LBA2/Audio/Samples/SFX_014.SFX_014")));
 };

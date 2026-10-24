@@ -160,6 +160,7 @@ the normal walk.
 | Mouse, right stick | Free camera (vertical inverted on the stick) | Orbit the camera (it recenters behind Twinsen when he walks) |
 | Space, gamepad A | Jump (a running jump when moving) | Behaviour action |
 | E, gamepad X | Use what is in front (a door); otherwise the behaviour action: Normal search, Athletic jump, Aggressive punch/kick, Discreet crouch | The same |
+| Left mouse button, gamepad B | Punch/kick (the aggressive action) in any behaviour, turning to the closest enemy near where you aim; press again to chain | Punch/kick in any behaviour |
 | F5-F8 or 1-4 | Normal, Athletic, Aggressive, Discreet (idle and actions; the run stays) | Normal, Athletic, Aggressive, Discreet |
 | Tab | Switch to authentic mode | Switch to modern mode |
 | F / gamepad Y | Ride the Dinofly (see below) | Ride the Dinofly |
@@ -449,6 +450,13 @@ What works in game:
   itself once Twinsen is away (2500 units, like the museum's script), never onto someone in the doorway. Every door
   opens: the story's conditions (keys, chapters) wait for scripts. Anything implementing `ILBAInteractable` can be
   used the same way (`ALBACharacter::TryInteract`).
+- **Enemies**: objects the original lets Twinsen hurt (armour below 51, life points, no `NO_CHOC` flag: guards,
+  soldiers, Esmers, robots, snakes, bats, crabs, mussels, fish-bulls... 486 objects in 138 scenes) are enemies
+  (`ALBASceneActor::IsEnemy`), except allies and friendly characters (*Non Enemy Scene Entities*: the rebel Francos,
+  Joe the Elf, a friendly Quetch, a Sup clerk). They get a `ULBAHitPointsComponent` and die from any blow
+  (`ALBACharacter::Attack`, hit at the animation's original hit frame): stars fly, they stop blocking at once,
+  play their hit reaction (the original has no death animation for them), then vanish with the original's death
+  sound (*Enemy Death Sound*, sample 14). They don't fight back. Reloading the level brings them back.
 - **Starting**: a level starts at the hero start of its lowest-numbered scene (islands: Citadel at the Lupin-Burg
   landing zone, scene 42), or at its plain `PlayerStart` without scenes.
 - `lba.Scene <number>` goes to a scene's hero start; `lba.Scene` lists the imported scenes.
@@ -461,7 +469,8 @@ module cooks every scene asset and its levels.
 `-LBA2Shots=scenes -LBA2Doors=49,0 -LBA2SceneEnd=43` takes the doors to those scenes in turn (walking into the
 ones that need it), then `lba.Scene 43`, with a shot in each level; `-LBA2Shots=ladder -LBA2Ladder=44:7` climbs a
 ladder zone (scene:zone) up and back down; `-LBA2Shots=door -LBA2Door=15:5` opens a door (scene:object), walks
-through it and checks it closes once Twinsen has left. `Tools/dump_scripts.py <scene> [object...]` disassembles
+through it and checks it closes once Twinsen has left; `-LBA2Shots=attack -LBA2Attack=15:15` stands next to an enemy
+(scene:object), punches it and chains a kick, and checks it dies and vanishes. `Tools/dump_scripts.py <scene> [object...]` disassembles
 objects' track and life scripts (opcode tables from the lba2remake checkout).
 
 ## Look

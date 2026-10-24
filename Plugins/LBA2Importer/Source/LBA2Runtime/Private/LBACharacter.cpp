@@ -24,6 +24,7 @@
 #include "LBAAnimInstance.h"
 #include "LBAAnimNotifies.h"
 #include "LBADinofly.h"
+#include "LBAHitPointsComponent.h"
 #include "LBAInteractable.h"
 #include "LBAPlayerController.h"
 #include "LBASceneTravelSubsystem.h"
@@ -33,6 +34,21 @@ namespace
 {
 	constexpr float AxisThreshold = 0.3f;
 	constexpr float AnimSampleStep = 1.f / 30.f;
+
+	/** Punch and kicks of the aggressive behaviour, in the order the original alternates them. */
+	constexpr int32 AttackSlots[] = { int32(ELBAAnimType::Punch), 18, 19 };
+
+	bool IsAttackSlot(int32 Slot)
+	{
+		for (const int32 Attack : AttackSlots)
+		{
+			if (Slot == Attack)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
 	TAutoConsoleVariable<bool> CVarSmoothKeys(TEXT("lba.Modern.SmoothKeys"), true,
 		TEXT("Modern mode: interpolate LBA keyframes with smooth curves (0 = the original's straight in-betweens)."));
@@ -386,7 +402,11 @@ void ALBACharacter::PlaySlot(int32 AnimType, bool bLoop, float BlendTime, float 
 
 bool ALBACharacter::PlayAction(int32 AnimType)
 {
-	UAnimSequence* Sequence = FindAnim(AnimType);
+	return PlayActionSequence(FindAnim(AnimType), AnimType);
+}
+
+bool ALBACharacter::PlayActionSequence(UAnimSequence* Sequence, int32 AnimType)
+{
 	ULBAAnimInstance* Anim = GetLBAAnimInstance();
 	if (!Sequence || !Anim)
 	{
@@ -409,6 +429,7 @@ void ALBACharacter::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+	UpdateAttack(DeltaSeconds);
 	if (IsClimbing() || TryStartClimb())
 	{
 		UpdateClimb(DeltaSeconds);
@@ -924,6 +945,12 @@ void ALBACharacter::CreateInput()
 	InputContext->MapKey(UseAction, EKeys::E);
 	InputContext->MapKey(UseAction, EKeys::Gamepad_FaceButton_Left);
 
+	// Gamepad B, left mouse button: punch/kick in any behaviour.
+	AttackAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Attack"));
+	AttackAction->ValueType = EInputActionValueType::Boolean;
+	InputContext->MapKey(AttackAction, EKeys::LeftMouseButton);
+	InputContext->MapKey(AttackAction, EKeys::Gamepad_FaceButton_Right);
+
 	ToggleModeAction = NewObject<UInputAction>(this, TEXT("IA_LBA_ToggleMode"));
 	ToggleModeAction->ValueType = EInputActionValueType::Boolean;
 	InputContext->MapKey(ToggleModeAction, EKeys::Tab);
@@ -963,6 +990,7 @@ void ALBACharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALBACharacter::OnLook);
 	Input->BindAction(ActionAction, ETriggerEvent::Started, this, &ALBACharacter::OnAction);
 	Input->BindAction(UseAction, ETriggerEvent::Started, this, &ALBACharacter::OnUse);
+	Input->BindAction(AttackAction, ETriggerEvent::Started, this, &ALBACharacter::OnAttack);
 	Input->BindAction(ToggleModeAction, ETriggerEvent::Started, this, &ALBACharacter::OnToggleControlMode);
 	Input->BindAction(SummonDinoflyAction, ETriggerEvent::Started, this, &ALBACharacter::OnSummonDinofly);
 	for (int32 Index = 0; Index < BehaviourActions.Num(); ++Index)
@@ -1096,24 +1124,158 @@ void ALBACharacter::DoBehaviourAction()
 		break;
 	}
 	case ELBABehaviour::Aggressive:
-	{
-		// The original alternates punches and kicks.
-		static const int32 Attacks[] = { 17, 18, 19 };
-		for (int32 Try = 0; Try < 3; ++Try)
-		{
-			const int32 Slot = Attacks[(AttackCycle + Try) % 3];
-			if (PlayAction(Slot))
-			{
-				AttackCycle = (AttackCycle + Try + 1) % 3;
-				break;
-			}
-		}
+		Attack();
 		break;
-	}
 	case ELBABehaviour::Discreet:
 		PlayAction(int32(ELBAAnimType::Crouch));
 		break;
 	}
+}
+
+// Melee ---------------------------------------------------------------------------------------------------
+
+bool ALBACharacter::Attack()
+{
+	if (IsClimbing() || GetCharacterMovement()->IsFalling())
+	{
+		return false;
+	}
+	if (ActionSlot != INDEX_NONE)
+	{
+		// Pressed again once the blow landed: the next one follows.
+		if (IsAttackSlot(ActionSlot) && AttackHitTime < 0.f)
+		{
+			bAttackQueued = true;
+		}
+		return false;
+	}
+	// The aggressive behaviour's blows, whatever the current behaviour; the original alternates punches and kicks.
+	for (int32 Try = 0; Try < UE_ARRAY_COUNT(AttackSlots); ++Try)
+	{
+		const int32 Index = (AttackCycle + Try) % UE_ARRAY_COUNT(AttackSlots);
+		UAnimSequence* Sequence = FindBehaviourAnim(ELBABehaviour::Aggressive, AttackSlots[Index]);
+		if (!Sequence)
+		{
+			continue;
+		}
+		AimAttack();
+		if (!PlayActionSequence(Sequence, AttackSlots[Index]))
+		{
+			return false;
+		}
+		AttackCycle = (Index + 1) % UE_ARRAY_COUNT(AttackSlots);
+		AttackTime = 0.f;
+		AttackLength = Sequence->GetPlayLength();
+		// The blow lands at the original's hit frame (HIT_TWINSEN).
+		AttackHitTime = AttackLength * 0.4f;
+		for (const FAnimNotifyEvent& Event : Sequence->Notifies)
+		{
+			if (Cast<ULBAAnimNotify_Hit>(Event.Notify))
+			{
+				AttackHitTime = Event.GetTriggerTime();
+				break;
+			}
+		}
+		bAttackQueued = false;
+		return true;
+	}
+	return false;
+}
+
+void ALBACharacter::UpdateAttack(float DeltaSeconds)
+{
+	if (!IsAttackSlot(ActionSlot))
+	{
+		AttackHitTime = -1.f;
+		bAttackQueued = false;
+		return;
+	}
+	// Timed here: ULBAAnimInstance doesn't dispatch notifies.
+	AttackTime += DeltaSeconds;
+	if (AttackHitTime >= 0.f && AttackTime >= AttackHitTime)
+	{
+		AttackHitTime = -1.f;
+		DeliverMeleeHit();
+	}
+	if (bAttackQueued && AttackTime >= AttackLength - 0.1f)
+	{
+		ActionSlot = INDEX_NONE;
+		Attack();
+	}
+}
+
+void ALBACharacter::AimAttack()
+{
+	if (ControlMode != ELBAControlMode::Modern)
+	{
+		return;
+	}
+	const FVector Intent = GetMoveIntent();
+	const FVector Aim = Intent.IsNearlyZero() ? GetActorForwardVector().GetSafeNormal2D() : Intent.GetSafeNormal2D();
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LBAMeleeAim), false, this);
+	GetWorld()->OverlapMultiByObjectType(Overlaps, GetActorLocation(), FQuat::Identity, FCollisionObjectQueryParams(FCollisionObjectQueryParams::AllObjects),
+		FCollisionShape::MakeSphere(MeleeAssistRange), Params);
+
+	FVector Facing = Aim;
+	double BestDistance = TNumericLimits<double>::Max();
+	const double MinCos = FMath::Cos(FMath::DegreesToRadians(MeleeAssistAngle));
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		const AActor* Actor = Overlap.GetActor();
+		if (!IsMeleeTarget(Actor))
+		{
+			continue;
+		}
+		const FVector To = (Actor->GetActorLocation() - GetActorLocation()) * FVector(1.0, 1.0, 0.0);
+		const double Distance = To.Size();
+		if (Distance > 1.0 && Distance < BestDistance && FVector::DotProduct(To / Distance, Aim) >= MinCos)
+		{
+			Facing = To / Distance;
+			BestDistance = Distance;
+		}
+	}
+	SetActorRotation(FRotator(0.f, Facing.Rotation().Yaw, 0.f));
+	// A turn, not a spin to lean into.
+	LastYaw = GetActorRotation().Yaw;
+}
+
+void ALBACharacter::DeliverMeleeHit()
+{
+	// Like the original, the character's box pushed forward.
+	const float Radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector Center = GetActorLocation() + GetActorForwardVector() * (Radius + MeleeReach * 0.5f);
+	const FCollisionShape Box = FCollisionShape::MakeBox(FVector(Radius + MeleeReach * 0.5f, Radius + 20.f, HalfHeight));
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LBAMeleeHit), false, this);
+	GetWorld()->OverlapMultiByObjectType(Overlaps, Center, GetActorQuat(), FCollisionObjectQueryParams(FCollisionObjectQueryParams::AllObjects), Box, Params);
+
+	TSet<AActor*> Hit;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Actor = Overlap.GetActor();
+		if (!IsMeleeTarget(Actor) || Hit.Contains(Actor))
+		{
+			continue;
+		}
+		Hit.Add(Actor);
+		// The stars fly out of the top of the target, like the original's.
+		FVector Origin, Extent;
+		Actor->GetActorBounds(true, Origin, Extent);
+		Actor->FindComponentByClass<ULBAHitPointsComponent>()->TakeHit(MeleeDamage, Origin + FVector(0.0, 0.0, Extent.Z));
+		UE_LOG(LogLBA2, Log, TEXT("%s hits %s"), *GetName(), *Actor->GetName());
+	}
+}
+
+bool ALBACharacter::IsMeleeTarget(const AActor* Actor) const
+{
+	if (!Actor || Actor == this || Actor->IsA<ALBADinofly>())
+	{
+		return false;
+	}
+	const ULBAHitPointsComponent* HitPoints = Actor->FindComponentByClass<ULBAHitPointsComponent>();
+	return HitPoints && !HitPoints->IsDead();
 }
 
 void ALBACharacter::OnToggleControlMode(const FInputActionValue& Value)

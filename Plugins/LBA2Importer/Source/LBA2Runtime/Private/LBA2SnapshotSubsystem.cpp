@@ -102,6 +102,17 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 			DoorObject = FCString::Atoi(*Object);
 		}
 	}
+	else if (Spec.Equals(TEXT("attack"), ESearchCase::IgnoreCase))
+	{
+		bAttack = true;
+		bPosesReady = true;
+		FString Target, Scene, Object;
+		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2Attack="), Target, false) && Target.Split(TEXT(":"), &Scene, &Object))
+		{
+			AttackScene = FCString::Atoi(*Scene);
+			AttackObject = FCString::Atoi(*Object);
+		}
+	}
 	else if (Spec.Equals(TEXT("menu"), ESearchCase::IgnoreCase))
 	{
 		bMenu = true;
@@ -1144,6 +1155,135 @@ bool ULBA2SnapshotSubsystem::TickDoor(UWorld* World, float DeltaTime)
 	return true;
 }
 
+bool ULBA2SnapshotSubsystem::TickAttack(UWorld* World, float DeltaTime)
+{
+	APlayerController* PC = World->GetFirstPlayerController();
+	ALBACharacter* Hero = PC ? Cast<ALBACharacter>(PC->GetPawn()) : nullptr;
+	auto Shot = [&](const TCHAR* Name)
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("attack_%d_%d_%s.png"), AttackScene, AttackObject, Name), false, false);
+	};
+	const double T = Elapsed - AttackStart;
+	if (AttackPhase == 0)
+	{
+		int32 Enemies = 0, Actors = 0;
+		for (TActorIterator<ALBASceneActor> It(World); It; ++It)
+		{
+			++Actors;
+			Enemies += It->IsEnemy() ? 1 : 0;
+			if (It->Scene && It->Scene->SceneIndex == AttackScene && It->ObjectIndex == AttackObject)
+			{
+				AttackTarget = *It;
+			}
+		}
+		ALBASceneActor* Target = AttackTarget.Get();
+		if (!Hero || !Target)
+		{
+			if (Elapsed > 20.0)
+			{
+				for (TActorIterator<ALBASceneActor> It(World); It; ++It)
+				{
+					UE_LOG(LogLBA2, Display, TEXT("LBA2Shots attack: %s scene %d object %d enemy=%d hidden=%d"), *It->GetName(), It->Scene ? It->Scene->SceneIndex : -1,
+						It->ObjectIndex, It->IsEnemy() ? 1 : 0, It->IsHidden() ? 1 : 0);
+				}
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots attack: no hero (%s) or no object %d:%d in %s"), *GetNameSafe(PC ? PC->GetPawn() : nullptr), AttackScene, AttackObject, *World->GetMapName());
+				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+				return false;
+			}
+			return true;
+		}
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots attack: %d enemies of %d scene actors; target %s (%s) enemy=%d"), Enemies, Actors, *Target->GetName(),
+			Target->Entity ? *Target->Entity->GetName() : TEXT("none"), Target->IsEnemy() ? 1 : 0);
+
+		// Stand next to it on a free side, turned 40 degrees away (the attack turns to it).
+		const double Distance = Target->GetSimpleCollisionRadius() + Hero->GetSimpleCollisionRadius() + 30.0;
+		const FVector Base = Target->GetActorLocation() - FVector(0.0, 0.0, Target->GetSimpleCollisionHalfHeight() - Hero->GetSimpleCollisionHalfHeight() - 5.0);
+		FVector Spot = FVector::ZeroVector;
+		for (int32 Side = 0; Side < 8 && Spot.IsZero(); ++Side)
+		{
+			const FVector Candidate = Base + FRotator(0.0, Side * 45.0, 0.0).Vector() * Distance;
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(LBA2ShotsAttack), false, Hero);
+			if (!World->OverlapBlockingTestByChannel(Candidate, FQuat::Identity, ECC_Pawn,
+				FCollisionShape::MakeCapsule(Hero->GetSimpleCollisionRadius(), Hero->GetSimpleCollisionHalfHeight()), Params))
+			{
+				Spot = Candidate;
+			}
+		}
+		if (Spot.IsZero())
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots attack: no room around the target"));
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		const double ToTarget = (Target->GetActorLocation() - Spot).Rotation().Yaw;
+		Hero->SetControlMode(ELBAControlMode::Modern);
+		Hero->TeleportTo(Spot, FRotator(0.0, ToTarget + 40.0, 0.0), false, true);
+		PC->SetControlRotation(FRotator(-20.0, ToTarget + 70.0, 0.0));
+		Hero->SetMoveInput(FVector2D::ZeroVector);
+		AttackStart = Elapsed;
+		AttackPhase = 1;
+		return true;
+	}
+	if (!Hero)
+	{
+		return true;
+	}
+	ALBASceneActor* Target = AttackTarget.Get();
+	if (Elapsed >= NextReport)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots attack t=%.2f phase=%d hero yaw=%.0f %s | target %s dead=%d visible=%d collision=%d"), T, AttackPhase,
+			Hero->GetActorRotation().Yaw, *Hero->GetModernDebugString(), Target ? TEXT("alive") : TEXT("destroyed"), Target && Target->IsDead() ? 1 : 0,
+			Target && Target->GetMesh()->IsVisible() ? 1 : 0, Target && Target->GetActorEnableCollision() ? 1 : 0);
+		NextReport = Elapsed + 0.1;
+	}
+	switch (AttackPhase)
+	{
+	case 1: // Settle, then attack and press again once the first blow landed (it chains).
+		if (T > 1.5)
+		{
+			Shot(TEXT("1_before"));
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots attack: attack %d"), Hero->Attack() ? 1 : 0);
+			AttackPhase = 2;
+			AttackStart = Elapsed;
+		}
+		break;
+	case 2:
+		if (T > 0.25)
+		{
+			Shot(TEXT("2_hit"));
+			Hero->Attack();
+			AttackPhase = 3;
+			AttackStart = Elapsed;
+		}
+		break;
+	case 3:
+		if (T > 0.6)
+		{
+			Shot(TEXT("3_dying"));
+			AttackPhase = 4;
+			AttackStart = Elapsed;
+		}
+		break;
+	case 4:
+		if (T > 3.0)
+		{
+			Shot(TEXT("4_gone"));
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots attack: done, target %s"), Target ? TEXT("still there") : TEXT("gone"));
+			AttackPhase = 5;
+			AttackStart = Elapsed;
+		}
+		break;
+	default:
+		if (T > 1.0)
+		{
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		break;
+	}
+	return true;
+}
+
 bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
@@ -1183,6 +1323,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bLadder)
 	{
 		return TickLadder(World, DeltaTime);
+	}
+	if (bAttack)
+	{
+		return TickAttack(World, DeltaTime);
 	}
 	if (bMenu)
 	{

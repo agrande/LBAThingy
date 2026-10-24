@@ -69,6 +69,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "LBA")
 	bool IsGameplayStandIn() const;
 
+	/**
+	 * An enemy: the original lets Twinsen hurt it (armour below 51, life points, no NO_CHOC flag), and its entity is not in
+	 * ULBA2Settings::NonEnemySceneEntities. Enemies get a ULBAHitPointsComponent at BeginPlay and die from one hit: they
+	 * play their hit reaction, then vanish with the original's death sound. They don't fight back.
+	 */
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	bool IsEnemy() const;
+
+	/** Hit and dying or gone. */
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	bool IsDead() const { return bDead; }
+
 	/** Sets the mesh of the current body and fits the capsule and collision box to it. */
 	void ApplyBody();
 
@@ -87,8 +99,17 @@ protected:
 private:
 	void PlayStartAnimation();
 
+	UFUNCTION()
+	void HandleDeath();
+
+	/** The end of the death: the body disappears (the hit stars fly on until the actor goes). */
+	void Vanish();
+
 	UPROPERTY()
 	float OriginHeight = 0.f;
+
+	bool bDead = false;
+	FTimerHandle VanishTimer;
 };
 
 /**

@@ -4,6 +4,8 @@
 #include "Containers/Ticker.h"
 #include "LBA2SnapshotSubsystem.generated.h"
 
+class ALBASceneActor;
+
 /**
  * Development helper for automated visual checks. Inactive unless the game is started with
  *   -LBA2Shots=auto                       frame all imported meshes from a few angles
@@ -13,6 +15,7 @@
  *                                         takes the doors to those scenes in turn (then lba.Scene), a shot in each level
  *   -LBA2Shots=ladder -LBA2Ladder=44:7    climbs a ladder zone (scene:zone) up, then back down (log + a shot per second)
  *   -LBA2Shots=door -LBA2Door=15:3        opens a door (scene:object) by interacting, walks through, checks it closes behind
+ *   -LBA2Shots=attack -LBA2Attack=15:14   punches an enemy (scene:object) twice, checks it dies and vanishes
  *   -LBA2ShotDir=<folder>                 where to write PNGs (default Saved/LBA2Shots)
  *   -LBA2HeroAt=x,y,yaw[,z]               with camera poses, hero or modern: stands the player pawn on the ground there first
  *                                         (the first surface below z, default: the highest; indoors, below the ceiling)
@@ -37,6 +40,7 @@ private:
 	bool TickScenes(UWorld* World, float DeltaTime);
 	bool TickLadder(UWorld* World, float DeltaTime);
 	bool TickDoor(UWorld* World, float DeltaTime);
+	bool TickAttack(UWorld* World, float DeltaTime);
 	bool TickMenu(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
 	/** -LBA2HeroAt: stands the pawn on the first surface below the point, facing its yaw. */
@@ -85,6 +89,14 @@ private:
 	double DoorStart = 0.0;
 	/** Through the door, from the side the hero starts on. */
 	FVector DoorTravel = FVector::ForwardVector;
+
+	/** -LBA2Shots=attack -LBA2Attack=scene:object: stands next to that enemy, punches it twice (chained), checks it dies and vanishes. */
+	bool bAttack = false;
+	int32 AttackScene = INDEX_NONE;
+	int32 AttackObject = INDEX_NONE;
+	int32 AttackPhase = 0;
+	double AttackStart = 0.0;
+	TWeakObjectPtr<ALBASceneActor> AttackTarget;
 	double LadderStart = 0.0;
 	double NextReport = 0.0;
 	int32 HeroStep = -1;
