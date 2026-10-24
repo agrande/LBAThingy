@@ -21,6 +21,8 @@ namespace
 {
 	/** The remake authored its models at 0.75 brick units per unit. */
 	constexpr double ModelScale = 1.0 / 0.75;
+	/** Remake world units (WORLD_SCALE = 20 / 0x4000), in which its sprite replacements are authored. */
+	constexpr double WorldUnit = 16384.0 / 20.0;
 
 	/** Remake grid space: 1 unit = one brick (512 LBA units) on every axis, Z shifted by one brick. */
 	FVector RemakeToUnreal(double X, double Y, double Z, float Scale)
@@ -88,6 +90,22 @@ bool FLBARemakeAssets::Initialize()
 	LayoutsMetadata = LoadJson(FPaths::Combine(Root, TEXT("www/metadata/lba2/layouts.json")));
 	GridsMetadata = LoadJson(FPaths::Combine(Root, TEXT("www/metadata/lba2/grids.json")));
 	bAvailable = LayoutsMetadata.IsValid() && FPaths::DirectoryExists(ModelsDirectory);
+	const TSharedPtr<FJsonObject> Replacements = LoadJson(FPaths::Combine(Root, TEXT("www/metadata/lba2/model_replacements.json")));
+	const TSharedPtr<FJsonObject>* Sprites = nullptr;
+	if (Replacements.IsValid() && Replacements->TryGetObjectField(TEXT("sprites"), Sprites))
+	{
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*Sprites)->Values)
+		{
+			const TSharedPtr<FJsonObject> Value = Pair.Value->AsObject();
+			FSpriteReplacement Replacement;
+			Value->TryGetStringField(TEXT("file"), Replacement.File);
+			Value->TryGetBoolField(TEXT("hide"), Replacement.bHide);
+			if (Replacement.bHide || !Replacement.File.IsEmpty())
+			{
+				SpriteReplacements.Add(FCString::Atoi(*Pair.Key), Replacement);
+			}
+		}
+	}
 	if (!bAvailable)
 	{
 		Context.Warn(FString::Printf(TEXT("lba2remake checkout not found or incomplete at %s; interiors keep the original bricks."), *Root));
@@ -112,7 +130,7 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 		return nullptr;
 	}
 
-	const float Factor = float(ModelScale * LBA::BrickSizeXZ * Context.GetScale());
+	const float Factor = float((SubFolder == TEXT("sprites") ? WorldUnit : ModelScale * LBA::BrickSizeXZ) * Context.GetScale());
 	const FString Folder = Context.GetContentPath(TEXT("Remake") / SubFolder);
 	const FString TextureFolder = Context.GetContentPath(TEXT("Remake/Textures"));
 	FLBAMaterialLibrary& Materials = Context.GetMaterials();

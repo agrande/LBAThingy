@@ -2,9 +2,11 @@
 
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
+#include "LBAInteractable.h"
 #include "LBASceneActor.generated.h"
 
 class UBoxComponent;
+class USoundBase;
 class UStaticMesh;
 class UStaticMeshComponent;
 class ULBAAnimInstance;
@@ -138,4 +140,66 @@ protected:
 private:
 	float FrameTime = 0.f;
 	int32 CurrentFrame = INDEX_NONE;
+};
+
+/**
+ * A sliding door: a sprite whose track opens it (OPEN_LEFT/RIGHT/UP/DOWN, SPRITE_CLIP sprites). The original's scripts
+ * open most of them when Twinsen comes near or meets a condition; here the player opens and closes them by interacting.
+ * It slides by its width at the original speed and closes by itself once the player is away, unless someone stands in
+ * its way.
+ */
+UCLASS(Blueprintable)
+class LBA2RUNTIME_API ALBASceneDoor : public ALBASceneSprite, public ILBAInteractable
+{
+	GENERATED_BODY()
+
+public:
+	ALBASceneDoor();
+
+	/** Where the door slides to when open, from its closed position. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Door")
+	FVector OpenOffset = FVector::ZeroVector;
+
+	/** Sliding speed (cm/s); the original's 1000 units/s. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Door", meta = (ClampMin = "1"))
+	float Speed = 125.f;
+
+	/** The door closes once the player is farther than this from it (cm); 0 keeps it open. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Door", meta = (ClampMin = "0"))
+	float AutoCloseDistance = 500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Door")
+	TObjectPtr<USoundBase> OpenSound;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Door")
+	TObjectPtr<USoundBase> CloseSound;
+
+	UFUNCTION(BlueprintCallable, Category = "LBA|Door")
+	void Open();
+
+	UFUNCTION(BlueprintCallable, Category = "LBA|Door")
+	void Close();
+
+	/** Opening or open. */
+	UFUNCTION(BlueprintPure, Category = "LBA|Door")
+	bool IsOpen() const { return bWantsOpen; }
+
+	virtual bool CanInteract_Implementation(APawn* User) const override;
+	virtual void Interact_Implementation(APawn* User) override;
+
+	virtual void Tick(float DeltaSeconds) override;
+
+protected:
+	virtual void BeginPlay() override;
+
+private:
+	/** A pawn stands where the closed door goes. */
+	bool IsDoorwayTaken() const;
+
+	FVector ClosedLocation = FVector::ZeroVector;
+	/** The closed door's bounds, relative to ClosedLocation. */
+	FBox ClosedBounds = FBox(ForceInit);
+	/** 0 closed, 1 open. */
+	float Opening = 0.f;
+	bool bWantsOpen = false;
 };

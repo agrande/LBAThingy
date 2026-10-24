@@ -12,6 +12,7 @@
  *   -LBA2Shots=scenes -LBA2Doors=49,0 -LBA2SceneEnd=43
  *                                         takes the doors to those scenes in turn (then lba.Scene), a shot in each level
  *   -LBA2Shots=ladder -LBA2Ladder=44:7    climbs a ladder zone (scene:zone) up, then back down (log + a shot per second)
+ *   -LBA2Shots=door -LBA2Door=15:3        opens a door (scene:object) by interacting, walks through, checks it closes behind
  *   -LBA2ShotDir=<folder>                 where to write PNGs (default Saved/LBA2Shots)
  *   -LBA2HeroAt=x,y,yaw                   with camera poses: stands the player pawn on the ground there first
  * It takes the screenshots once the level has settled, then quits.
@@ -34,6 +35,7 @@ private:
 	bool TickWind(UWorld* World, float DeltaTime);
 	bool TickScenes(UWorld* World, float DeltaTime);
 	bool TickLadder(UWorld* World, float DeltaTime);
+	bool TickDoor(UWorld* World, float DeltaTime);
 	bool TickMenu(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
 
@@ -71,6 +73,15 @@ private:
 	int32 LadderScene = INDEX_NONE;
 	int32 LadderZone = INDEX_NONE;
 	int32 LadderPhase = 0;
+
+	/** -LBA2Shots=door -LBA2Door=scene:object: opens that door, walks through it and away (it closes). */
+	bool bDoor = false;
+	int32 DoorScene = INDEX_NONE;
+	int32 DoorObject = INDEX_NONE;
+	int32 DoorPhase = 0;
+	double DoorStart = 0.0;
+	/** Through the door, from the side the hero starts on. */
+	FVector DoorTravel = FVector::ForwardVector;
 	double LadderStart = 0.0;
 	double NextReport = 0.0;
 	int32 HeroStep = -1;

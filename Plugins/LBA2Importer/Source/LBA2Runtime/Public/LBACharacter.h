@@ -89,6 +89,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Authentic")
 	float JumpSpeed = 520.f;
 
+	/** How far in front of the character interactables (ILBAInteractable) are within reach (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	float InteractReach = 90.f;
+
 	/** Upward speed of jumps in modern mode (the original jumps about 85 cm high). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
 	float ModernJumpSpeed = 450.f;
@@ -191,6 +195,10 @@ public:
 	/** Performs the current behaviour's action (Space in the original game). */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void DoBehaviourAction();
+
+	/** Uses the closest interactable (ILBAInteractable) in reach in front of the character. False if there is none. */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	bool TryInteract();
 
 	UFUNCTION(BlueprintPure, Category = "LBA")
 	ULBAEntityAsset* GetEntity() const;

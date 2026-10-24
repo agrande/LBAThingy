@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -25,6 +26,7 @@
 #include "LBAIslandMenu.h"
 #include "LBAPlayerController.h"
 #include "LBAFlightMovementComponent.h"
+#include "LBASceneActor.h"
 #include "LBASceneAsset.h"
 #include "LBASceneTravelSubsystem.h"
 #include "LBAWindSubsystem.h"
@@ -87,6 +89,17 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 				LadderScene = FCString::Atoi(*Scene);
 				LadderZone = FCString::Atoi(*Zone);
 			}
+		}
+	}
+	else if (Spec.Equals(TEXT("door"), ESearchCase::IgnoreCase))
+	{
+		bDoor = true;
+		bPosesReady = true;
+		FString Door, Scene, Object;
+		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2Door="), Door, false) && Door.Split(TEXT(":"), &Scene, &Object))
+		{
+			DoorScene = FCString::Atoi(*Scene);
+			DoorObject = FCString::Atoi(*Object);
 		}
 	}
 	else if (Spec.Equals(TEXT("menu"), ESearchCase::IgnoreCase))
@@ -967,6 +980,162 @@ bool ULBA2SnapshotSubsystem::TickLadder(UWorld* World, float DeltaTime)
 	return true;
 }
 
+bool ULBA2SnapshotSubsystem::TickDoor(UWorld* World, float DeltaTime)
+{
+	APlayerController* PC = World->GetFirstPlayerController();
+	ALBACharacter* Hero = PC ? Cast<ALBACharacter>(PC->GetPawn()) : nullptr;
+	ALBASceneDoor* Door = nullptr;
+	for (TActorIterator<ALBASceneDoor> It(World); It; ++It)
+	{
+		if (It->Scene && It->Scene->SceneIndex == DoorScene && It->ObjectIndex == DoorObject)
+		{
+			Door = *It;
+		}
+	}
+	if (!Hero || !Door)
+	{
+		if (Elapsed > 20.0)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots door: no hero or no door %d:%d in %s"), DoorScene, DoorObject, *World->GetMapName());
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+	auto Report = [&](const TCHAR* Label)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots door %s t=%.2f hero=(%.0f %.0f %.0f) door=(%.0f %.0f %.0f) open=%d"), Label, Elapsed - DoorStart,
+			Hero->GetActorLocation().X, Hero->GetActorLocation().Y, Hero->GetActorLocation().Z,
+			Door->GetActorLocation().X, Door->GetActorLocation().Y, Door->GetActorLocation().Z, Door->IsOpen() ? 1 : 0);
+	};
+	auto Shot = [&](const TCHAR* Name)
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("door_%d_%d_%s.png"), DoorScene, DoorObject, Name), false, false);
+	};
+
+	const double T = Elapsed - DoorStart;
+	if (DoorPhase == 0)
+	{
+		// Stand in front of the door, across its sliding direction, on a side with room for the hero.
+		const FBox Box = Door->GetComponentsBoundingBox();
+		const FVector Across = FVector(-Door->OpenOffset.Y, Door->OpenOffset.X, 0.0).GetSafeNormal();
+		const double Gap = Hero->GetSimpleCollisionRadius() + 25.0;
+		const double HalfDepth = FMath::Abs(Across.X) * Box.GetExtent().X + FMath::Abs(Across.Y) * Box.GetExtent().Y;
+		FVector Spot = FVector::ZeroVector;
+		for (const double Side : { 1.0, -1.0 })
+		{
+			const FVector Candidate = FVector(Box.GetCenter().X, Box.GetCenter().Y, Box.Min.Z + Hero->GetSimpleCollisionHalfHeight() + 5.0)
+				+ Across * Side * (HalfDepth + Gap);
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(LBA2ShotsDoor), false, Hero);
+			TArray<FOverlapResult> Overlaps;
+			World->OverlapMultiByChannel(Overlaps, Candidate, FQuat::Identity, ECC_Pawn,
+				FCollisionShape::MakeCapsule(Hero->GetSimpleCollisionRadius(), Hero->GetSimpleCollisionHalfHeight()), Params);
+			for (const FOverlapResult& Overlap : Overlaps)
+			{
+				UE_LOG(LogLBA2, Display, TEXT("LBA2Shots door: side %.0f at %s overlaps %s"), Side, *Candidate.ToString(), *GetNameSafe(Overlap.GetComponent()));
+			}
+			if (!Overlaps.ContainsByPredicate([](const FOverlapResult& Overlap) { return Overlap.bBlockingHit; }))
+			{
+				Spot = Candidate;
+				DoorTravel = -Across * Side;
+				break;
+			}
+		}
+		if (Spot.IsZero())
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots door: no room on either side of the door"));
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		const FRotator Facing(0.0, DoorTravel.Rotation().Yaw, 0.0);
+		Hero->SetControlMode(ELBAControlMode::Authentic);
+		Hero->TeleportTo(Spot, Facing, false, true);
+		PC->SetControlRotation(FRotator(-20.0, Facing.Yaw + 35.0, 0.0));
+		Hero->SetMoveInput(FVector2D::ZeroVector);
+		DoorStart = Elapsed;
+		DoorPhase = 1;
+		Report(TEXT("placed"));
+		return true;
+	}
+	if (Elapsed >= NextReport)
+	{
+		Report(TEXT("tick"));
+		NextReport = Elapsed + 0.5;
+	}
+	switch (DoorPhase)
+	{
+	case 1: // Settle, then use the door (the Normal behaviour's action, like Space in authentic mode).
+		if (T > 1.0)
+		{
+			Shot(TEXT("1_closed"));
+			Hero->DoBehaviourAction();
+			Report(TEXT("used"));
+			DoorPhase = 2;
+			DoorStart = Elapsed;
+		}
+		break;
+	case 2: // Open: walk through.
+		if (T > 2.0)
+		{
+			Shot(TEXT("2_open"));
+			Hero->SetMoveInput(FVector2D(0.0, 1.0));
+			DoorPhase = 3;
+			DoorStart = Elapsed;
+		}
+		break;
+	case 3: // Through and away: it closes behind.
+		if (T > 4.0)
+		{
+			Hero->SetMoveInput(FVector2D::ZeroVector);
+			Report(TEXT("away"));
+			DoorPhase = 4;
+			DoorStart = Elapsed;
+		}
+		break;
+	case 4: // Look back at the door.
+		if (T > 2.0)
+		{
+			Hero->SetActorRotation(FRotator(0.0, (-DoorTravel).Rotation().Yaw, 0.0));
+			PC->SetControlRotation(FRotator(-20.0, (-DoorTravel).Rotation().Yaw + 35.0, 0.0));
+			DoorPhase = 5;
+			DoorStart = Elapsed;
+		}
+		break;
+	case 5:
+		if (T > 1.5)
+		{
+			Shot(TEXT("3_after"));
+			// Leave: the door closes once the player is away.
+			for (TActorIterator<APlayerStart> It(World); It; ++It)
+			{
+				Hero->TeleportTo(It->GetActorLocation(), Hero->GetActorRotation(), false, true);
+				break;
+			}
+			Report(TEXT("left"));
+			DoorPhase = 6;
+			DoorStart = Elapsed;
+		}
+		break;
+	case 6:
+		if (T > 3.0)
+		{
+			Report(TEXT("done"));
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots door: done, %s at %s"), Door->IsOpen() ? TEXT("still open") : TEXT("closed"), *Door->GetActorLocation().ToString());
+			DoorPhase = 7;
+			DoorStart = Elapsed;
+		}
+		break;
+	default:
+		if (T > 1.0)
+		{
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		break;
+	}
+	return true;
+}
+
 bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
@@ -998,6 +1167,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bScenes)
 	{
 		return TickScenes(World, DeltaTime);
+	}
+	if (bDoor)
+	{
+		return TickDoor(World, DeltaTime);
 	}
 	if (bLadder)
 	{

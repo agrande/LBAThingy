@@ -7,6 +7,8 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Pawn.h"
+#include "Kismet/GameplayStatics.h"
 #include "LBA2Settings.h"
 #include "LBAAnimInstance.h"
 #include "LBAEntityAsset.h"
@@ -173,4 +175,85 @@ void ALBASceneSprite::Tick(float DeltaSeconds)
 		CurrentFrame = Frame;
 		SpriteComponent->SetStaticMesh(Frames[Frame]);
 	}
+}
+
+ALBASceneDoor::ALBASceneDoor()
+{
+	PrimaryActorTick.bCanEverTick = true;
+}
+
+void ALBASceneDoor::BeginPlay()
+{
+	Super::BeginPlay();
+	ClosedLocation = GetActorLocation();
+	ClosedBounds = GetSpriteComponent()->Bounds.GetBox().ShiftBy(-ClosedLocation);
+	SetActorTickEnabled(true);
+}
+
+void ALBASceneDoor::Open()
+{
+	if (!bWantsOpen && OpenSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, OpenSound, GetActorLocation());
+	}
+	bWantsOpen = true;
+}
+
+void ALBASceneDoor::Close()
+{
+	if (bWantsOpen && CloseSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, CloseSound, GetActorLocation());
+	}
+	bWantsOpen = false;
+}
+
+bool ALBASceneDoor::CanInteract_Implementation(APawn* User) const
+{
+	return !IsHidden() && GetActorEnableCollision() && !OpenOffset.IsNearlyZero();
+}
+
+void ALBASceneDoor::Interact_Implementation(APawn* User)
+{
+	if (bWantsOpen)
+	{
+		Close();
+	}
+	else
+	{
+		Open();
+	}
+}
+
+bool ALBASceneDoor::IsDoorwayTaken() const
+{
+	// Slightly smaller than the door, so a pawn merely touching its sides does not hold it open.
+	const FBox Doorway = ClosedBounds.ShiftBy(ClosedLocation).ExpandBy(-2.0);
+	return Doorway.IsValid && GetWorld()->OverlapAnyTestByObjectType(Doorway.GetCenter(), FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeBox(Doorway.GetExtent().ComponentMax(FVector(1.0))));
+}
+
+void ALBASceneDoor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (bWantsOpen && AutoCloseDistance > 0.f && Opening >= 1.f)
+	{
+		const APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+		if (!Player || ClosedBounds.ShiftBy(ClosedLocation).ComputeSquaredDistanceToPoint(Player->GetActorLocation()) > FMath::Square(AutoCloseDistance))
+		{
+			Close();
+		}
+	}
+
+	const float Target = bWantsOpen ? 1.f : 0.f;
+	if (Opening == Target || OpenOffset.IsNearlyZero())
+	{
+		return;
+	}
+	if (!bWantsOpen && IsDoorwayTaken())
+	{
+		return;
+	}
+	Opening = FMath::FInterpConstantTo(Opening, Target, DeltaSeconds, Speed / OpenOffset.Size());
+	SetActorLocation(ClosedLocation + OpenOffset * Opening);
 }

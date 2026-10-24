@@ -61,7 +61,21 @@ public:
 	 */
 	FGridResult ProcessGrid(FLBAGrid& Grid, const FLBALibrary& Library);
 
-	/** Static mesh for a model of www/models/lba2/<SubFolder>/<File>, imported on first use. */
+	/** A sprite's 3D replacement (model_replacements.json "sprites"): a model of www/models/lba2/sprites, or hidden. */
+	struct FSpriteReplacement
+	{
+		FString File;
+		/** The remake draws nothing for it (a layout model already shows it). */
+		bool bHide = false;
+	};
+
+	/** Replacement of a still sprite (SPRITES.HQR >= 100, SPRIRAW.HQR below), or null. */
+	const FSpriteReplacement* FindSpriteReplacement(int32 Sprite) const { return SpriteReplacements.Find(Sprite); }
+
+	/**
+	 * Static mesh for a model of www/models/lba2/<SubFolder>/<File>, imported on first use. Layout models are in remake
+	 * grid space (origin at their cell), sprite models in remake world units around the object's position.
+	 */
 	UStaticMesh* GetModelMesh(const FString& SubFolder, const FString& File);
 	/** Lamps of a model imported with GetModelMesh. */
 	TArray<FLamp> GetModelLamps(const FString& SubFolder, const FString& File) const { return LampCache.FindRef(SubFolder / File); }
@@ -72,6 +86,7 @@ private:
 	FString ModelsDirectory;
 	TSharedPtr<FJsonObject> LayoutsMetadata;
 	TSharedPtr<FJsonObject> GridsMetadata;
+	TMap<int32, FSpriteReplacement> SpriteReplacements;
 	TMap<FString, UStaticMesh*> MeshCache;
 	TMap<FString, TArray<FLamp>> LampCache;
 };

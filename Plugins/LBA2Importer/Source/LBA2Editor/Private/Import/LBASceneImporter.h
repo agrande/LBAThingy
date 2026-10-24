@@ -5,7 +5,9 @@
 #include "Formats/LBAScene.h"
 #include "Formats/LBASprite.h"
 
+class FLBAAudioImporter;
 class FLBAImportContext;
+class FLBARemakeAssets;
 class UStaticMesh;
 class ULBAEntityAsset;
 class ULBASceneAsset;
@@ -20,7 +22,8 @@ class UWorld;
  * so the whole island lives at once), an interior into its grid level.
  *
  * Sprites (SPRITES.HQR, SPRIRAW.HQR, ANIM3DS.HQR) become one atlas and a static mesh per sprite, the sprite projected
- * onto the visible faces of its box like the interior bricks.
+ * onto the visible faces of its box like the interior bricks, or replaced by its lba2remake model when there is one
+ * (model_replacements.json). Sprites whose track slides them open (OPEN_LEFT...) become doors (ALBASceneDoor).
  *
  * Output under <Root>/Scenes: DA_Scene_NNN_<Name>, L_Scene_NNN_<Name>; <Root>/Sprites: T_Sprites, SM_Sprite*_NNN.
  * Run after Islands, Interiors and Characters (it uses their levels and entities).
@@ -29,6 +32,7 @@ class FLBASceneImporter
 {
 public:
 	explicit FLBASceneImporter(FLBAImportContext& InContext);
+	~FLBASceneImporter();
 
 	int32 ImportAll();
 
@@ -76,6 +80,10 @@ private:
 	/** ANIM3DS.HQR animations: first and last frame. */
 	TArray<FIntPoint> SpriteAnims;
 	TMap<int32, UStaticMesh*> SpriteMeshes;
+	TUniquePtr<FLBARemakeAssets> Remake;
+	TUniquePtr<FLBAAudioImporter> Audio;
 	int32 NumObjects = 0;
+	int32 NumReplacedSprites = 0;
+	int32 NumDoors = 0;
 	int32 NumMissingBodies = 0;
 };

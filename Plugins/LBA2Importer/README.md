@@ -153,7 +153,7 @@ the normal walk.
 | W/A/S/D, arrows, left stick | Run where you push, relative to the camera | Up/down walk forward/backward; left/right turn in place or steer while walking |
 | Mouse, right stick | Free camera (vertical inverted on the stick) | Orbit the camera (it recenters behind Twinsen when he walks) |
 | Space, gamepad A | Jump (a running jump when moving) | Behaviour action |
-| E, gamepad X | Behaviour action: Normal search, Athletic jump, Aggressive punch/kick, Discreet crouch | Behaviour action |
+| E, gamepad X | Use what is in front (a door); otherwise the behaviour action: Normal search, Athletic jump, Aggressive punch/kick, Discreet crouch | The same |
 | F5-F8 or 1-4 | Normal, Athletic, Aggressive, Discreet (idle and actions; the run stays) | Normal, Athletic, Aggressive, Discreet |
 | Tab | Switch to authentic mode | Switch to modern mode |
 | F / gamepad Y | Ride the Dinofly (see below) | Ride the Dinofly |
@@ -421,7 +421,8 @@ In a scene level (outliner folders under *Scene*):
 | Original | Actor |
 |---|---|
 | Object with a 3D body | `ALBASceneActor` (an `ACharacter`): the entity's body and its start animation (in place: root motion waits for scripts), capsule fitted in the body's box and the exact box blocking pawns. Objects without a body never collide, like the original. Objects the original hides at start are hidden in game and, for now, don't block (the original's do). Stand-ins for gameplay handled differently here (Twinsen with Zoe or carried, the Dinofly, meca-penguins: Project Settings > Plugins > LBA2 > Hidden Scene Entities) are hidden in game, without collision. The meca-penguin slot (object 1) is skipped. |
-| Sprite object (interiors: doors, signs, pickups) | `ALBASceneSprite`: a static mesh per sprite (`Sprites/SM_Sprite_NNN`, `SM_SpriteRaw_NNN`, `SM_SpriteAnim_NNN`, one atlas `T_Sprites`) with the sprite projected onto the visible faces of its box like the interior bricks: pixel exact from the original angle, solid from the others, the box as collision. Animated sprites (ANIM3DS) flip through their frames. |
+| Sprite object (interiors: doors, signs, pickups) | `ALBASceneSprite`: a static mesh per sprite (`Sprites/SM_Sprite_NNN`, `SM_SpriteRaw_NNN`, `SM_SpriteAnim_NNN`, one atlas `T_Sprites`) with the sprite projected onto the visible faces of its box like the interior bricks: pixel exact from the original angle, solid from the others, the box as collision. Animated sprites (ANIM3DS) flip through their frames. Still sprites lba2remake made a 3D model for (its `model_replacements.json`: the museum's surveillance button and lever, chest lids, clover boxes, the casino entrance...) show that model instead (`Remake/sprites/SM_Remake_*`, its mesh as collision; *Use Remake Models*). |
+| Sliding door (a sprite whose track opens it: `OPEN_LEFT/RIGHT/UP/DOWN`) | `ALBASceneDoor`, a sprite the player opens and closes (`ILBAInteractable`, see below), with its slide (`OpenOffset`: direction and width from the track), the original speed and the samples its track plays. |
 | Zone | A volume per zone type, sized to its box, with the original settings as properties: `ALBACubeChangeVolume`, `ALBACameraZoneVolume`, `ALBAScenarioZoneVolume`, `ALBAGridZoneVolume`, `ALBAGiverZoneVolume`, `ALBAMessageZoneVolume`, `ALBALadderVolume`, `ALBAEscalatorVolume`, `ALBARailVolume`, and `ALBAHitVolume` (Unreal's `APainCausingVolume`). Cube changes between cubes of the same island are left out (the island is one level). |
 | Track point | `ATargetPoint` `Point_NN` (tag `LBAPoint_NN`) |
 | Hero start | `APlayerStart` tagged `LBAScene_NNN` |
@@ -437,6 +438,11 @@ What works in game:
 - **Ladders**: walking into the wall in a ladder zone climbs it with the original clips (grab, climb, climb out at
   the top of the zone onto the ledge); walking off the ledge over a ladder climbs down it backwards. Up and down
   with the stick on the way, otherwise he keeps going like the original. Both control modes.
+- **Sliding doors**: E (or Space in the Normal behaviour, like the original's action) in front of a door opens it, again
+  closes it. It slides into the wall like the original (by its width, 1000 units/s, with its sound) and closes by
+  itself once Twinsen is away (2500 units, like the museum's script), never onto someone in the doorway. Every door
+  opens: the story's conditions (keys, chapters) wait for scripts. Anything implementing `ILBAInteractable` can be
+  used the same way (`ALBACharacter::TryInteract`).
 - **Starting**: a level starts at the hero start of its lowest-numbered scene (islands: Citadel at the Lupin-Burg
   landing zone, scene 42), or at its plain `PlayerStart` without scenes.
 - `lba.Scene <number>` goes to a scene's hero start; `lba.Scene` lists the imported scenes.
@@ -448,7 +454,9 @@ module cooks every scene asset and its levels.
 
 `-LBA2Shots=scenes -LBA2Doors=49,0 -LBA2SceneEnd=43` takes the doors to those scenes in turn (walking into the
 ones that need it), then `lba.Scene 43`, with a shot in each level; `-LBA2Shots=ladder -LBA2Ladder=44:7` climbs a
-ladder zone (scene:zone) up and back down.
+ladder zone (scene:zone) up and back down; `-LBA2Shots=door -LBA2Door=15:5` opens a door (scene:object), walks
+through it and checks it closes once Twinsen has left. `Tools/dump_scripts.py <scene> [object...]` disassembles
+objects' track and life scripts (opcode tables from the lba2remake checkout).
 
 ## Look
 
@@ -654,6 +662,7 @@ color, shade row / light, surfaces without fog).
 - [x] Travel menu by planet, island and scene (interiors included), after lba2remake's teleport menu
 - [x] L4 Scenes: per-scene levels streamed into islands and interiors, objects, sprites, typed zone volumes,
   track points, hero starts; doors and ladders work in game
+- [x] Sliding doors used by interacting (E), sprites replaced by lba2remake models
 - [ ] Scenes, next: ambient sounds, givers and messages, escalators, camera zones (as hints for the modern camera)
 - [ ] L5 Scripts: life/move scripts (on hold; interpreter recommended over Blueprint generation)
 - [ ] L6 Text (String Tables), voices, music, sprites, inventory objects, holomap, screens

@@ -33,9 +33,9 @@ def parse(i):
         if flags & (1 << 18):
             g("I"); g("h")
         armour, life = g("bb")
-        ms = g("h"); o += ms; ls = g("h"); o += ls
+        ms = g("h"); track = d[o:o + ms]; o += ms; ls = g("h"); life = d[o:o + ls]; o += ls
         actors.append(dict(flags=flags, file3d=f3d, body=body, anim=anim, sprite=spr, pos=pos, beta=beta,
-                           move=move, info=info, move_size=ms, life_size=ls))
+                           move=move, info=info, move_size=ms, life_size=ls, track=track, life=life))
     g("I")
     zones = []
     nz = g("h")

@@ -137,3 +137,68 @@ TArray<FString> LBAScenes::GetIslandFiles(int32 Island)
 	default: return Island >= 0 && Island < UE_ARRAY_COUNT(IleLst) ? TArray<FString>{ IleLst[Island] } : TArray<FString>();
 	}
 }
+
+bool LBAScenes::FindDoorTrack(const TArray<uint8>& Track, FDoorTrack& OutDoor)
+{
+	// Track macros (TM_* in COMMON.H) and the size of their operands, as SearchOffsetTrack skips them.
+	enum : uint8
+	{
+		TM_END = 0, TM_LABEL = 9, TM_STOP = 11, TM_SAMPLE = 14, TM_OPEN_LEFT = 21, TM_OPEN_DOWN = 24, TM_CLOSE = 25,
+		TM_SAMPLE_RND = 27, TM_SAMPLE_ALWAYS = 28, TM_PLAY_ACF = 30, TM_SIMPLE_SAMPLE = 32,
+	};
+	static const uint8 OperandSize[] =
+	{
+		0, 0, 1, 2, 1, 0, 4, 2, 1, 1, 2, 0, 1, 2, 2, 1, 2, 1, 5, 0, 2, 2, 2, 2, 2, 0, 0, 2, 2, 2, 0, 2, 2,
+		2, 4, 0, 5, 0, 2, 5, 0, 1, 1, 1, 1, 1, 0, 0, 1, 5, 2, 2, 1,
+	};
+	// OPEN_LEFT, OPEN_RIGHT, OPEN_UP, OPEN_DOWN.
+	static const FIntVector Directions[] = { FIntVector(-1, 0, 0), FIntVector(1, 0, 0), FIntVector(0, 0, -1), FIntVector(0, 0, 1) };
+
+	FDoorTrack Door;
+	int32 LastSample = INDEX_NONE;
+	int32 At = 0;
+	while (At < Track.Num())
+	{
+		const uint8 Macro = Track[At++];
+		if (Macro == TM_END || Macro >= UE_ARRAY_COUNT(OperandSize))
+		{
+			break;
+		}
+		const int32 Operand = At + 1 < Track.Num() ? int32(int16(Track[At] | (Track[At + 1] << 8))) : 0;
+		if (Macro == TM_LABEL || Macro == TM_STOP)
+		{
+			LastSample = INDEX_NONE;
+		}
+		else if (Macro == TM_SAMPLE || Macro == TM_SAMPLE_RND || Macro == TM_SAMPLE_ALWAYS || Macro == TM_SIMPLE_SAMPLE)
+		{
+			LastSample = uint16(Operand);
+		}
+		else if (Macro >= TM_OPEN_LEFT && Macro <= TM_OPEN_DOWN && Door.Width <= 0)
+		{
+			Door.Direction = Directions[Macro - TM_OPEN_LEFT];
+			Door.Width = Operand;
+			Door.OpenSample = LastSample;
+		}
+		else if (Macro == TM_CLOSE && Door.CloseSample == INDEX_NONE)
+		{
+			Door.CloseSample = LastSample;
+		}
+
+		if (Macro == TM_PLAY_ACF)
+		{
+			while (At < Track.Num() && Track[At++] != 0)
+			{
+			}
+		}
+		else
+		{
+			At += OperandSize[Macro];
+		}
+	}
+	if (Door.Width <= 0)
+	{
+		return false;
+	}
+	OutDoor = Door;
+	return true;
+}

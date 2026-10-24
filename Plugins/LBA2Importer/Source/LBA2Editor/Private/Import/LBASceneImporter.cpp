@@ -13,9 +13,11 @@
 #include "Formats/LBAXpl.h"
 #include "GameFramework/PlayerStart.h"
 #include "Interfaces/IPluginManager.h"
+#include "Import/LBAAudioImporter.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBARemakeAssets.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBAEntityAsset.h"
@@ -90,8 +92,12 @@ namespace
 
 FLBASceneImporter::FLBASceneImporter(FLBAImportContext& InContext)
 	: Context(InContext)
+	, Remake(MakeUnique<FLBARemakeAssets>(InContext))
+	, Audio(MakeUnique<FLBAAudioImporter>(InContext))
 {
 }
+
+FLBASceneImporter::~FLBASceneImporter() = default;
 
 void FLBASceneImporter::PlaceInMenu()
 {
@@ -518,6 +524,7 @@ int32 FLBASceneImporter::ImportAll()
 	}
 	Context.ReportProgress(LOCTEXT("Sprites", "Building sprites"));
 	BuildSprites(SpriteKeys);
+	Remake->Initialize();
 
 	// Scenes, then their sub-level entries per scenery level. Two exterior scenes on the same cube (the sea-travel
 	// scene, demo copies): the first one is loaded with the island, the others wait unloaded.
@@ -565,8 +572,8 @@ int32 FLBASceneImporter::ImportAll()
 	{
 		AddStreamedScenes(Pair.Key, Pair.Value);
 	}
-	UE_LOG(LogLBA2, Display, TEXT("Scenes: %d objects with a 3D body placed (%d without a mesh for their body type), %d sprite meshes"),
-		NumObjects, NumMissingBodies, SpriteMeshes.Num());
+	UE_LOG(LogLBA2, Display, TEXT("Scenes: %d objects with a 3D body placed (%d without a mesh for their body type), %d sprite meshes, %d sprites replaced by remake models, %d doors"),
+		NumObjects, NumMissingBodies, SpriteMeshes.Num(), NumReplacedSprites, NumDoors);
 	return Count;
 }
 
@@ -658,10 +665,40 @@ void FLBASceneImporter::PopulateLevel(UWorld* World, const FLBAScene& Scene, ULB
 					Frames.Add(Mesh);
 				}
 			}
-			ALBASceneSprite* Actor = Context.SpawnGeneratedActor<ALBASceneSprite>(World, FTransform(Feet), Label, TEXT("Scene/Sprites"));
+			// The remake's model of the sprite, around the object's position (none for animated sprites).
+			const FLBARemakeAssets::FSpriteReplacement* Replacement = Remake->IsAvailable() && !Object.HasFlag(LBASceneFlags::AnimatedSprite)
+				? Remake->FindSpriteReplacement(Object.Sprite) : nullptr;
+			if (Replacement)
+			{
+				UStaticMesh* Model = Replacement->bHide ? nullptr : Remake->GetModelMesh(TEXT("sprites"), Replacement->File);
+				if (Model || Replacement->bHide)
+				{
+					Frames.Reset();
+					if (Model)
+					{
+						Frames.Add(Model);
+					}
+					++NumReplacedSprites;
+				}
+			}
+
+			LBAScenes::FDoorTrack Door;
+			const bool bDoor = Object.HasFlag(LBASceneFlags::SpriteClip) && LBAScenes::FindDoorTrack(Object.TrackScript, Door);
+			ALBASceneSprite* Actor = Cast<ALBASceneSprite>(Context.SpawnGeneratedActor(World,
+				bDoor ? ALBASceneDoor::StaticClass() : ALBASceneSprite::StaticClass(), FTransform(Feet), Label, TEXT("Scene/Sprites")));
 			if (!Actor)
 			{
 				continue;
+			}
+			if (ALBASceneDoor* DoorActor = Cast<ALBASceneDoor>(Actor))
+			{
+				const float Scale = Context.GetScale();
+				DoorActor->OpenOffset = Asset->ToWorld(Object.Position + Door.Direction * Door.Width) - Feet;
+				DoorActor->Speed = LBAScenes::DoorSpeed * Scale;
+				DoorActor->AutoCloseDistance = LBAScenes::DoorAutoCloseDistance * Scale;
+				DoorActor->OpenSound = Door.OpenSample != INDEX_NONE ? Audio->GetSample(Door.OpenSample) : nullptr;
+				DoorActor->CloseSound = Door.CloseSample != INDEX_NONE ? Audio->GetSample(Door.CloseSample) : nullptr;
+				++NumDoors;
 			}
 			Actor->Scene = Asset;
 			Actor->ObjectIndex = Index;

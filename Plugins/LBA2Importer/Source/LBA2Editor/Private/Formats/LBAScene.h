@@ -50,4 +50,26 @@ namespace LBAScenes
 	 * the storm ends (CITADEL, then CITABAU), Celebration gets its statue later (CELEBRAT, then CELEBRA2).
 	 */
 	TArray<FString> GetIslandFiles(int32 Island);
+
+	/**
+	 * A sliding door's track (SPRITE_CLIP sprites): OPEN_LEFT/RIGHT/UP/DOWN <width> slides it along -x/+x/-z/+z by the width
+	 * at 1000 units/s, CLOSE slides it back (GERETRAK.CPP, OBJECT.CPP AUTO_STOP_DOOR).
+	 */
+	struct FDoorTrack
+	{
+		/** LBA direction of the opening (unit, on x or z). */
+		FIntVector Direction = FIntVector::ZeroValue;
+		int32 Width = 0;
+		/** Samples the track plays before opening and closing (SAMPLE...), INDEX_NONE without. */
+		int32 OpenSample = INDEX_NONE;
+		int32 CloseSample = INDEX_NONE;
+	};
+
+	/** Door sliding speed (units/s, SRot = 1000 in GERETRAK.CPP). */
+	inline constexpr int32 DoorSpeed = 1000;
+	/** The scripts close a door once Twinsen is this far (the museum's: DISTANCE > 2500). */
+	inline constexpr int32 DoorAutoCloseDistance = 2500;
+
+	/** Finds the first OPEN_* of a track script. */
+	bool FindDoorTrack(const TArray<uint8>& Track, FDoorTrack& OutDoor);
 }

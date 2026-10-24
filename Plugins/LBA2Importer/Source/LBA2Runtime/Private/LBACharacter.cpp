@@ -6,6 +6,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -23,6 +24,7 @@
 #include "LBAAnimInstance.h"
 #include "LBAAnimNotifies.h"
 #include "LBADinofly.h"
+#include "LBAInteractable.h"
 #include "LBAPlayerController.h"
 #include "LBASceneTravelSubsystem.h"
 #include "LBATypes.h"
@@ -1023,7 +1025,48 @@ void ALBACharacter::OnAction(const FInputActionValue& Value)
 
 void ALBACharacter::OnUse(const FInputActionValue& Value)
 {
-	DoBehaviourAction();
+	// The Normal behaviour's action interacts too (with Twinsen's gesture); the others act only with nothing to use.
+	if (Behaviour == ELBABehaviour::Normal || !TryInteract())
+	{
+		DoBehaviourAction();
+	}
+}
+
+bool ALBACharacter::TryInteract()
+{
+	if (IsClimbing() || GetCharacterMovement()->IsFalling())
+	{
+		return false;
+	}
+	const float Radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const FVector Center = GetActorLocation() + GetActorForwardVector() * (Radius + InteractReach * 0.5f);
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LBAInteract), false, this);
+	GetWorld()->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, FCollisionObjectQueryParams(FCollisionObjectQueryParams::AllObjects),
+		FCollisionShape::MakeSphere(InteractReach * 0.5f + Radius), Params);
+
+	AActor* Best = nullptr;
+	double BestDistance = TNumericLimits<double>::Max();
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Actor = Overlap.GetActor();
+		if (!Actor || !Actor->Implements<ULBAInteractable>() || !ILBAInteractable::Execute_CanInteract(Actor, this))
+		{
+			continue;
+		}
+		const double Distance = Actor->GetComponentsBoundingBox().ComputeSquaredDistanceToPoint(Center);
+		if (Distance < BestDistance)
+		{
+			Best = Actor;
+			BestDistance = Distance;
+		}
+	}
+	if (!Best)
+	{
+		return false;
+	}
+	ILBAInteractable::Execute_Interact(Best, this);
+	return true;
 }
 
 void ALBACharacter::DoBehaviourAction()
@@ -1036,6 +1079,7 @@ void ALBACharacter::DoBehaviourAction()
 	{
 	case ELBABehaviour::Normal:
 		PlayAction(int32(ELBAAnimType::Action));
+		TryInteract();
 		break;
 	case ELBABehaviour::Athletic:
 	{
