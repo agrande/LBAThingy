@@ -25,3 +25,6 @@ Content/LBA2/
 # OS clutter
 Thumbs.db
 .DS_Store
+
+# Python bytecode from the importer tools
+__pycache__/
