@@ -188,7 +188,8 @@ struct FLBAWallBrickCounts
  *             floor of another: a flight of stairs.
  * Columns     at each level, each column is a Floor, a flight's Stairs, Furniture (standing on the level's floor: its
  *             first drawn layout starts at the floor or above, so a lower storey's wardrobe is no furniture of the
- *             storey above), a Wall (see below), or Other.
+ *             storey above; and not another storey's floor: a level that holds no room is no storey, so the plan is
+ *             made again without it), a Wall (see below), or Other.
  * Posts       a wall column in no straight run of MinWallRun wall columns is a post: furniture if it stands on the
  *             level's floor, else nothing of this level (the end of a lower storey's wall).
  * Wall lines  R2 GAP: the floor between two walls in line (a wall that stops and goes on) is an opening in that line:
@@ -196,9 +197,12 @@ struct FLBAWallBrickCounts
  *             R3 PARTITION: a wall with at least MinPartition columns of its own that ends inside the floor goes on as
  *             a line across it to the next wall: the opening beside its end is no room's either.
  * Rooms       R4 RECTANGLE: a room is the largest rectangle of floor and furniture off the wall lines, at least
- *             MinRoomWidth columns across, holding MinFloors floor cells, with a wall along its border (with none it
- *             is the top of something: a roof, wall tops); then the largest among the columns left, and so on. A floor
- *             that is no rectangle (an L) is several rooms sharing open sides.
+ *             MinRoomWidth columns across, holding MinFloors floor cells, with a wall along one of its sides (with none it
+ *             is the top of something: a roof, wall tops), not standing on walls (more than half of its floor on the
+ *             walls of a lower storey: a roof, a hull's top; an upper storey stands over the rooms below), enclosed
+ *             (more than half of its border open, nothing walkable and no wall there, is open ground); then the
+ *             largest among the columns left, and so on. A floor that is no rectangle (an L) is several rooms sharing
+ *             open sides.
  * Connectors  the columns no room took, per level by contact, joined through the flights they lead onto: Stairs
  *             (rooms of two levels), Passage (two rooms of one level), Exit (one room, a scene-change zone), Alcove
  *             (one room), Pocket (none).
@@ -287,6 +291,8 @@ private:
 	int32 RoomHeight = 0;
 	TArray<FLBACellBox> Zones;
 	TArray<int32> LevelHeights;
+	/** Levels that hold no room: no storeys (their floors keep no furniture off the storeys below). */
+	TSet<int32> Roomless;
 	TArray<FLBAPlanLevel> Levels;
 	TMap<FIntPoint, TArray<int32, TInlineAllocator<2>>> FloorLevels;
 	TArray<FLBAPlanFlight> Flights;

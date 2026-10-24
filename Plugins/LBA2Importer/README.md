@@ -39,7 +39,9 @@ Importer settings come in two parts, both shown in the panel:
   (**CutFrames**), ceiling color or material and wallpaper, with per-grid overrides. The library defaults come
   from a survey of every grid (`Tools/survey_grids.py`, `Tools/survey_frames.py`): the most common height of the
   back walls the original drew in full, the median height of its doorways, the caps and rims on its cut walls.
-  Caves and outdoor grids are left open. Options that used to be per-user are picked up from your old settings
+  Caves and outdoor grids are left open: libraries of caverns, the underworld and the Nest, and a reviewed list
+  of grids that are open air in the original (rooftops, the Dome's starfield, the control tower's grounds), each
+  with a note. Options that used to be per-user are picked up from your old settings
   until the project settings are saved.
 
 ### Enclosed interiors: the plan
@@ -52,7 +54,8 @@ architectural concepts, each found by one explicit rule, applied in this order:
    all around (one-cell strips are ledges and wall tops).
 2. **R1 Stairs**: floors at no level's height that climb one cell at a time between floors of two levels.
 3. **Columns** of each level: floor, stairs, furniture (standing on the level's floor: its first drawn layout
-   starts at the floor or above), wall, or nothing. **Walls** rise at least 3 cells over the floor (through
+   starts at the floor or above; not another storey's floor, a storey being a level that holds rooms, so the plan
+   is made again without the roomless ones, such as machine tops), wall, or nothing. **Walls** rise at least 3 cells over the floor (through
    window gaps) and are *cut* (collision above what is drawn, or topped by a cut-wall frame), *invisible*,
    *masonry* (drawn with the library's wall bricks, learned from all its grids), *exterior* (tall with the
    outside behind) or an exit's *jamb*, and go on (a wall next to them, or the outside). Furniture against a
@@ -61,8 +64,9 @@ architectural concepts, each found by one explicit rule, applied in this order:
    **R3 Partition**: a wall of at least 4 columns of its own that ends inside the floor goes on as a line across
    it to the next wall.
 5. **R4 Rectangle**: a room is the largest rectangle of floor and furniture off those lines, at least 2 columns
-   across, with 12 floor cells and a wall along its border; then the next largest, and so on. An L-shaped floor
-   is two rooms sharing an open side.
+   across, with 12 floor cells and a wall along one of its sides, not standing on walls (more than half of its
+   floor on the walls of a lower storey is a roof or a hull's top) and enclosed (more than half of its border
+   open is open ground); then the next largest, and so on. An L-shaped floor is two rooms sharing an open side.
 6. **Connectors**: the columns no room took, joined through the flights they lead onto, named by what they join:
    **stairs** (rooms of two levels), **passage** (two rooms: a door or an arch), **exit** (one room and a
    scene-change zone), **alcove** (one room), pocket (none).

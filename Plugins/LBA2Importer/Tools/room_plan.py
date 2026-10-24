@@ -15,7 +15,9 @@ explicit rule, applied in this order (grid axes: X, Z horizontal, Y up; the iso 
                 STAIRS     a flight's column,
                 FURNITURE  something standing on the level's floor that is not a wall (furniture, a step, a pillar):
                            its first drawn layout starts at the floor or above (a wardrobe on a lower storey is
-                           no furniture of the storey above, though it reaches that high),
+                           no furniture of the storey above, though it reaches that high), and not another
+                           storey's floor (a level that holds no room is no storey: the plan is made again
+                           without it, so a machine whose top is such a level is furniture),
                 WALL       see "What is a wall" below,
                 OTHER      nothing of this level: a drop, the void, another level's floor, the grid's edge.
   Posts       a WALL column in no straight run of MIN_WALL_RUN wall columns is a post or a pillar: FURNITURE if it
@@ -28,8 +30,12 @@ explicit rule, applied in this order (grid axes: X, Z horizontal, Y up; the iso 
               door reveals, pilasters and the sides of niches.
   Rooms       R4 RECTANGLE: a room is the largest rectangle of FLOOR and FURNITURE columns off the wall lines, at
               least MIN_ROOM_WIDTH columns wide, holding at least MIN_FLOORS floor cells, with a WALL column along
-              its border (with none, it is the top of something: a roof, wall tops, a big piece of furniture); then the largest among the columns left, and so on. A floor
-              that is no rectangle (an L) is several rooms sharing open sides: one space.
+              one of its sides (with none, it is the top of something: a roof, wall tops, a big piece of
+              furniture), and not standing on walls (more than half of its floor on the walls of a lower storey is a
+              roof, the top of a hull or of a wall; an upper storey stands over the rooms below), and enclosed (more
+              than half of its border open, nothing walkable and no wall there, is open ground); then the largest
+              among the columns left, and so on. A floor that is no rectangle (an L) is several rooms sharing open
+              sides: one space.
   Connectors  the columns no room took: FLOOR and FURNITURE columns of each level grouped by contact, joined by the
               flights of stairs they lead onto. Each is, by the rooms it touches:
                 STAIRS   rooms of two levels: stairs between storeys, with the landings and doorways at their ends,
@@ -158,7 +164,7 @@ def step_neighbors(c):
 class Columns:
     """The classification of a grid's columns at one level, and the wall rules (wall_bricks None: learning)."""
 
-    def __init__(self, g, level, floors, stairs, room_floor_levels, wall_bricks, exit_cols):
+    def __init__(self, g, level, floors, stairs, room_floor_levels, wall_bricks, exit_cols, roomless=()):
         self.g, self.level, self.wall_bricks, self.exit_cols = g, level, wall_bricks, exit_cols
         self.learning = wall_bricks is None
         self.frames = cut_frames().get(g.lib, set())
@@ -173,7 +179,7 @@ class Columns:
                     self.cls[c] = STAIRS
                 elif self.is_wall(x, z):
                     self.cls[c] = WALL
-                elif self.stands_on_floor(x, z) and not any(l != level for l in room_floor_levels.get(c, ())):
+                elif self.stands_on_floor(x, z) and not any(l != level and l not in roomless for l in room_floor_levels.get(c, ())):
                     self.cls[c] = FURNITURE
                 else:
                     self.cls[c] = OTHER
@@ -380,12 +386,20 @@ class Plan:
         exit_cols = set()
         for (x0, x1), (y0, y1), (z0, z1) in zones:
             exit_cols |= {(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1) if inside(x, z)}
-        self.columns = {}
-        self.rooms = []         # dict(level, box=(x0, x1, z0, z1), floors, furniture, sides, ceiling)
-        for level in self.levels:
-            cols = Columns(g, level, by_height[level], stair_cols, self.room_floor_levels, bricks, exit_cols)
-            self.columns[level] = cols
-            self._rooms(level, cols)
+        # Columns and rooms of each level; again without the levels that hold no room (no storeys: machine tops,
+        # ledges), which then keep no furniture off the storeys below them.
+        self.roomless = set()
+        while True:
+            self.columns = {}
+            self.rooms = []     # dict(level, box=(x0, x1, z0, z1), floors, furniture, sides, ceiling)
+            for level in self.levels:
+                cols = Columns(g, level, by_height[level], stair_cols, self.room_floor_levels, bricks, exit_cols, self.roomless)
+                self.columns[level] = cols
+                self._rooms(level, cols)
+            roomless = {l for l in self.levels if not any(r["level"] == l for r in self.rooms)}
+            if roomless <= self.roomless:
+                break
+            self.roomless |= roomless
         self.room_at = {}       # (level, (x, z)) -> room
         for ri, r in enumerate(self.rooms):
             x0, x1, z0, z1 = r["box"]
@@ -450,13 +464,24 @@ class Plan:
         for (x, z), k in cols.cls.items():
             wall[x + 1, z + 1] = k == WALL
 
+        lower = [self.columns[l] for l in self.levels if l < level]
+
+        def roof(x0, x1, z0, z1):
+            fl = [(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1) if floor[x, z]]
+            return 2 * sum(any(c.cls[f] == WALL for c in lower) for f in fl) > len(fl)
+
+        def open_ground(x0, x1, z0, z1):
+            border = [(x, z0 - 1) for x in range(x0, x1 + 1)] + [(x, z1 + 1) for x in range(x0, x1 + 1)]                 + [(x0 - 1, z) for z in range(z0, z1 + 1)] + [(x1 + 1, z) for z in range(z0, z1 + 1)]
+            open_ = sum(not inside(*n) or (cols.cls[n] == OTHER and not self.room_floor_levels.get(n)) for n in border)
+            return 2 * open_ > len(border)
+
         def walled(x0, x1, z0, z1):
-            return bool(wall[x0:x1 + 3, z0].any() or wall[x0:x1 + 3, z1 + 2].any() or wall[x0, z0:z1 + 3].any() or wall[x1 + 2, z0:z1 + 3].any())
+            return bool(wall[x0 + 1:x1 + 2, z0].any() or wall[x0 + 1:x1 + 2, z1 + 2].any() or wall[x0, z0 + 1:z1 + 2].any() or wall[x1 + 2, z0 + 1:z1 + 2].any())
         while True:
             best = None
             for x0, x1, z0, z1 in maximal_rectangles(free):
                 n = int(floor[x0:x1 + 1, z0:z1 + 1].sum())
-                if n < MIN_FLOORS or min(x1 - x0, z1 - z0) + 1 < MIN_ROOM_WIDTH or not walled(x0, x1, z0, z1):
+                if n < MIN_FLOORS or min(x1 - x0, z1 - z0) + 1 < MIN_ROOM_WIDTH or not walled(x0, x1, z0, z1) or roof(x0, x1, z0, z1)                         or open_ground(x0, x1, z0, z1):
                     continue
                 key = ((x1 - x0 + 1) * (z1 - z0 + 1), n, -x0, -z0)
                 if best is None or key > best[0]:

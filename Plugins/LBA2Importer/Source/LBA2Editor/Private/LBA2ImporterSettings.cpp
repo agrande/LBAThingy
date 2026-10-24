@@ -99,16 +99,19 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 	Library(0, TEXT("Twinsen's house, Paul's house, museum, school"), 9, 8, { 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 36, 38, 39, 40, 158 });
 	Library(1, TEXT("Caves, sewers, School of Magic"), 6, 6, {}, false);
 	Library(2, TEXT("Chez Luc, baggage claim, tickets office, pharmacy"), 9, 7, { 3, 4, 6, 7, 8, 17, 18, 35, 39, 40, 41, 42 });
-	Library(3, TEXT("Temple of Bu, protection spell caves"), 6, 7, {});
+	// Caverns: platforms, bridges and rock (one roofed building, grid 32).
+	Library(3, TEXT("Temple of Bu, protection spell caves"), 6, 7, {}, false);
 	Library(4, TEXT("Airlocks, radar room, jail"), 9, 8, { 14, 68, 71 });
 	Library(5, TEXT("Hacienda, Leone's and Baldino's houses, bar"), 6, 7, {});
 	Library(6, TEXT("Spacecrafts"), 8, 7, { 33, 35, 36, 37, 39, 40, 41 });
 	Library(7, TEXT("Fortress, bank, elevators"), 11, 7, { 25, 26, 27, 29, 108, 175 });
 	Library(8, TEXT("Hotel, secret passages"), 11, 8, { 46, 47 });
 	Library(9, TEXT("Palace, Twinsun Cafe"), 13, 7, { 36, 37, 38, 39, 41, 42, 43 });
-	Library(10, TEXT("Statue"), 7, 9, {});
+	// The underworld: platforms on stilts over the dark, lava, caves.
+	Library(10, TEXT("Statue"), 7, 9, {}, false);
 	Library(11, TEXT("Docks, mine, caves, end sequences"), 8, 7, {}, false);
-	Library(12, TEXT("Nest, tickets office, access to Island CX"), 8, 6, {});
+	// Wooden walkways over the void.
+	Library(12, TEXT("Nest, tickets office, access to Island CX"), 8, 6, {}, false);
 	Library(13, TEXT("Casino, bar, shop"), 6, 8, { 12, 13, 18, 46, 47, 50, 145, 146 });
 	Library(14, TEXT("Refinery"), 6, 8, {});
 	// The Francos' rock caves: flat walls and ceilings don't fit.
@@ -144,15 +147,21 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 		Entry.Overrides.bCeiling = bCeiling;
 	};
 	Grid(21, TEXT("Wizard's tent"), true, 8);
-	Grid(26, TEXT("In the Dome"), true, 12);
+	Grid(32, TEXT("A roofed building in the caves"), true);
 	Grid(27, TEXT("School of Magic classroom"), true);
 	Grid(28, TEXT("School of Magic"), true, 9);
-	Grid(33, TEXT("School of Magic blowgun test"), true, 9);
-	Grid(139, TEXT("In the Dome (demo)"), true, 12);
-	Grid(52, TEXT("Outside the fortress"), false);
-	Grid(55, TEXT("Outside the destroyed fortress"), false);
 	Grid(57, TEXT("Shop"), true);
 	Grid(69, TEXT("Church"), true);
+	// Open air or open space in the original (reviewed against captures of every grid): no enclosure.
+	Grid(16, TEXT("Walkways on the roofs"), false);
+	Grid(26, TEXT("In the Dome: a platform in a starfield, columns, no walls"), false);
+	Grid(33, TEXT("School of Magic blowgun test: an open platform with columns"), false);
+	Grid(51, TEXT("Top of a fortress tower, open air"), false);
+	Grid(52, TEXT("Outside the fortress"), false);
+	Grid(55, TEXT("Outside the destroyed fortress"), false);
+	Grid(124, TEXT("Control tower grounds, open air"), false);
+	Grid(125, TEXT("Control tower yard, open air"), false);
+	Grid(139, TEXT("In the Dome (demo): a platform in a starfield"), false);
 	// Open to the sky in the original (palms, a fountain): walls, no ceiling.
 	Grid(29, TEXT("Hacienda central area (a courtyard)"), true, 0, false);
 }

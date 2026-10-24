@@ -171,7 +171,7 @@ public:
 				{
 					Out.Columns[Index] = ELBAColumn::Wall;
 				}
-				else if (StandsOnFloor(Column) && !Plan.GetFloorLevels(Column).ContainsByPredicate([this](int32 Other) { return Other != Level; }))
+				else if (StandsOnFloor(Column) && !Plan.GetFloorLevels(Column).ContainsByPredicate([this](int32 Other) { return Other != Level && !Plan.Roomless.Contains(Other); }))
 				{
 					Out.Columns[Index] = ELBAColumn::Furniture;
 				}
@@ -609,13 +609,32 @@ FLBARoomPlan::FLBARoomPlan(const FLBAGridCells& Cells, const TSet<int32>* WallBr
 		}
 	}
 
-	// Columns, then rooms, level by level.
-	for (const int32 Height : LevelHeights)
+	// Columns, then rooms, level by level; again without the levels that hold no room (no storeys: machine tops,
+	// ledges), which then keep no furniture off the storeys below them.
+	while (true)
 	{
-		const FLevelRules Rules(*this, Cells, WallBricks, ExitColumns, Height);
-		FLBAPlanLevel& Level = Levels.AddDefaulted_GetRef();
-		Rules.Classify(Level, ByHeight[Height], StairColumns);
-		BuildRooms(Level, Rules);
+		Levels.Reset();
+		Rooms.Reset();
+		for (const int32 Height : LevelHeights)
+		{
+			const FLevelRules Rules(*this, Cells, WallBricks, ExitColumns, Height);
+			FLBAPlanLevel& Level = Levels.AddDefaulted_GetRef();
+			Rules.Classify(Level, ByHeight[Height], StairColumns);
+			BuildRooms(Level, Rules);
+		}
+		TSet<int32> NewRoomless;
+		for (const int32 Height : LevelHeights)
+		{
+			if (!Roomless.Contains(Height) && !Rooms.ContainsByPredicate([Height](const FLBAPlanRoom& Room) { return Room.Level == Height; }))
+			{
+				NewRoomless.Add(Height);
+			}
+		}
+		if (NewRoomless.Num() == 0)
+		{
+			break;
+		}
+		Roomless.Append(NewRoomless);
 	}
 	for (int32 Index = 0; Index < Rooms.Num(); ++Index)
 	{
@@ -731,14 +750,14 @@ void FLBARoomPlan::BuildRooms(FLBAPlanLevel& Level, const FLevelRules& Rules)
 	auto IsWallAt = [&Level](int32 X, int32 Z) { return Level.Get(FIntPoint(X, Z)) == ELBAColumn::Wall; };
 	auto IsWalled = [&IsWallAt](const FIntPoint& Min, const FIntPoint& Max)
 	{
-		for (int32 X = Min.X - 1; X <= Max.X + 1; ++X)
+		for (int32 X = Min.X; X <= Max.X; ++X)
 		{
 			if (IsWallAt(X, Min.Y - 1) || IsWallAt(X, Max.Y + 1))
 			{
 				return true;
 			}
 		}
-		for (int32 Z = Min.Y - 1; Z <= Max.Y + 1; ++Z)
+		for (int32 Z = Min.Y; Z <= Max.Y; ++Z)
 		{
 			if (IsWallAt(Min.X - 1, Z) || IsWallAt(Max.X + 1, Z))
 			{
@@ -746,6 +765,46 @@ void FLBARoomPlan::BuildRooms(FLBAPlanLevel& Level, const FLevelRules& Rules)
 			}
 		}
 		return false;
+	};
+	// More than half of its border open (nothing walkable, no wall: drops, the void, the grid's edge): open ground.
+	auto IsOpenGround = [this, &Level](const FIntPoint& Min, const FIntPoint& Max)
+	{
+		int32 Border = 0, Open = 0;
+		auto Count = [&](const FIntPoint& Column)
+		{
+			++Border;
+			Open += !IsInGrid(Column) || (Level.Get(Column) == ELBAColumn::Other && GetFloorLevels(Column).Num() == 0);
+		};
+		for (int32 X = Min.X; X <= Max.X; ++X)
+		{
+			Count(FIntPoint(X, Min.Y - 1));
+			Count(FIntPoint(X, Max.Y + 1));
+		}
+		for (int32 Z = Min.Y; Z <= Max.Y; ++Z)
+		{
+			Count(FIntPoint(Min.X - 1, Z));
+			Count(FIntPoint(Max.X + 1, Z));
+		}
+		return 2 * Open > Border;
+	};
+	// More than half of its floor on the walls of a lower storey: a roof.
+	auto IsRoof = [this, &Level, &Floor](const FIntPoint& Min, const FIntPoint& Max)
+	{
+		int32 Floors = 0, OnWalls = 0;
+		for (int32 X = Min.X; X <= Max.X; ++X)
+		{
+			for (int32 Z = Min.Y; Z <= Max.Y; ++Z)
+			{
+				const FIntPoint Column(X, Z);
+				if (!Floor[ToColumnIndex(Column)])
+				{
+					continue;
+				}
+				++Floors;
+				OnWalls += Levels.ContainsByPredicate([&](const FLBAPlanLevel& Lower) { return Lower.Height < Level.Height && Lower.Get(Column) == ELBAColumn::Wall; });
+			}
+		}
+		return 2 * OnWalls > Floors;
 	};
 	auto CountIn = [](const TBitArray<>& Bits, const FIntPoint& Min, const FIntPoint& Max)
 	{
@@ -769,7 +828,7 @@ void FLBARoomPlan::BuildRooms(FLBAPlanLevel& Level, const FLevelRules& Rules)
 			const FIntPoint& Min = Rect.Key;
 			const FIntPoint& Max = Rect.Value;
 			const int32 Floors = CountIn(Floor, Min, Max);
-			if (Floors < MinFloors || FMath::Min(Max.X - Min.X, Max.Y - Min.Y) + 1 < MinRoomWidth || !IsWalled(Min, Max))
+			if (Floors < MinFloors || FMath::Min(Max.X - Min.X, Max.Y - Min.Y) + 1 < MinRoomWidth || !IsWalled(Min, Max) || IsRoof(Min, Max) || IsOpenGround(Min, Max))
 			{
 				continue;
 			}
