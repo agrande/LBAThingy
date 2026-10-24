@@ -88,9 +88,12 @@ each room's, connector's and flight's column from its floor up to its space's ce
 storey's floor (a gallery), a lintel, or, in a gap of a wall's line, the door height. Each air cell closes on
 each of its sides on a wall of its level (raising the walls the original cut down), on air that stops lower (a
 doorway's header, a lower ceiling), on a solid cell or above what rises from its floor where no one's air is (a
-raised floor no room stands on, a frame, a nook), and in the dark past an exit; never on nothing from its floor
-up (drops and the void stay open). The tops of what it closes on are capped under the ceiling. On the sides the
-original drew (the air's -X and -Z) its opaque art stays, except its cornice where the wall now goes on above it;
+raised floor no room stands on, a frame, a nook), and in the dark past an exit (and right behind an exit's
+doorway, away from its room, where the original's invisible plug stands: no wallpaper there); never on nothing from its floor up (drops and
+the void stay open), nor on a slope (a flight's step is walked on: no face, no collision across it; over a slope, the
+walls beside it close from the step's own cell). The tops of what it closes on are capped under the ceiling. On the sides the
+original drew (the air's -X and -Z) its opaque art stays, except its cornice and the frieze under it (the top rows of
+the wallpaper, or of any wall panel as tall) where the wall now goes on above them;
 art that is not opaque is backed by the wallpaper and drawn again in front of it. Ceilings are
 `SM_Grid_NNN_Ceiling` (`EnclosureCeiling`, no shadow, so the overhead light enters; each space gets a soft bounce
 light from its floor, **RoomBounceLight**), in the library's **CeilingColor** or **CeilingMaterial**. Wall faces
@@ -100,10 +103,13 @@ shadows (two-sided shadows and distance fields); the camera ignores the enclosur
 For now it shows in both looks.
 
 **Wallpaper** (a first painting rule; more will come as explicit rules too): back walls take their space's, the
-camera-side walls (never drawn inside) the building's. A wallpaper is a height profile: at each height over the
-floor, the wall layout row drawn most there on back walls (wall panels only, no frames), so a stacked wall keeps
-its dado, rail, body and cornice; laid from the floor, the body repeated where the room is taller, the cornice
-under the ceiling (**WallpaperLayout** forces one layout per library). The frames the original put on its cut
+camera-side walls (never drawn inside) the building's, unless the space has a finish of its own (its back walls all
+one wallpaper the building's walls don't use, like Zoé's nursery being papered anew): then all its walls. A
+wallpaper is a height profile: at each height over the floor, the wall layout row drawn most there on back walls
+(wall panels only, no frames), so a stacked wall keeps its dado, rail, body, frieze and cornice; a profile shorter
+than its layout (back walls the original cut down to their dado) goes on with the layout's rows; laid from the
+floor, the cornice under the ceiling with the frieze under it, the body repeated where the room is taller
+(**WallpaperLayout** forces one layout per library). The frames the original put on its cut
 walls (**CutFrames**, and the topmost piece under a wall's invisible collision) come off as whole instances where
 the enclosure covers them, with the remake models replacing them, into `SM_Grid_NNN_Frames` (an
 `EnclosureFrames` actor, hidden until the look switch shows it with the Original look). The library's **wall

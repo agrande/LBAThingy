@@ -158,6 +158,7 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		if (Parts.Num() >= 3)
 		{
 			HeroAt = FVector(FCString::Atod(*Parts[0]), FCString::Atod(*Parts[1]), FCString::Atod(*Parts[2]));
+			HeroFromZ = Parts.Num() >= 4 ? FCString::Atod(*Parts[3]) : HeroFromZ;
 		}
 	}
 
@@ -168,6 +169,22 @@ void ULBA2SnapshotSubsystem::Deinitialize()
 {
 	FTSTicker::GetCoreTicker().RemoveTicker(TickHandle);
 	Super::Deinitialize();
+}
+
+void ULBA2SnapshotSubsystem::PlaceHero(UWorld* World, APawn* Pawn) const
+{
+	if (!HeroAt)
+	{
+		return;
+	}
+	FVector Location(HeroAt->X, HeroAt->Y, HeroFromZ);
+	FHitResult Hit;
+	FCollisionQueryParams Params(TEXT("LBA2HeroAt"), false, Pawn);
+	if (World->LineTraceSingleByChannel(Hit, Location, FVector(HeroAt->X, HeroAt->Y, -100000.0), ECC_Visibility, Params))
+	{
+		Location.Z = Hit.Location.Z + Pawn->GetSimpleCollisionHalfHeight() + 2.0;
+	}
+	Pawn->TeleportTo(Location, FRotator(0.0, HeroAt->Z, 0.0), false, true);
 }
 
 void ULBA2SnapshotSubsystem::BuildAutoPoses(UWorld* World)
@@ -278,6 +295,7 @@ bool ULBA2SnapshotSubsystem::TickHero(UWorld* World, float DeltaTime)
 			// Only the script drives the hero during the test.
 			Hero->DisableInput(PC);
 			Hero->SetControlMode(ELBAControlMode::Authentic);
+			PlaceHero(World, Hero);
 			Report(TEXT("start"));
 		}
 		++HeroStep;
@@ -351,17 +369,7 @@ bool ULBA2SnapshotSubsystem::TickModern(UWorld* World, float DeltaTime)
 	{
 		Hero->DisableInput(PC);
 		Hero->SetControlMode(ELBAControlMode::Modern);
-		if (HeroAt)
-		{
-			FVector Location(HeroAt->X, HeroAt->Y, 100000.0);
-			FHitResult Hit;
-			FCollisionQueryParams Params(TEXT("LBA2HeroAt"), false, Hero);
-			if (World->LineTraceSingleByChannel(Hit, Location, FVector(HeroAt->X, HeroAt->Y, -100000.0), ECC_Visibility, Params))
-			{
-				Location.Z = Hit.Location.Z + Hero->GetSimpleCollisionHalfHeight() + 2.0;
-			}
-			Hero->TeleportTo(Location, FRotator(0.0, HeroAt->Z, 0.0), false, true);
-		}
+		PlaceHero(World, Hero);
 		// Closer than in play, to see the legs.
 		Hero->GetCameraBoom()->TargetArmLength = 260.f;
 		Hero->GetCameraBoom()->bEnableCameraLag = false;
@@ -1202,16 +1210,8 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 		APawn* Pawn = PC->GetPawn();
 		if (HeroAt && Pawn)
 		{
-			// Stand the pawn on the highest surface below the point.
-			FVector Location(HeroAt->X, HeroAt->Y, 100000.0);
-			FHitResult Hit;
-			FCollisionQueryParams Params(TEXT("LBA2HeroAt"), false, Pawn);
-			if (World->LineTraceSingleByChannel(Hit, Location, FVector(HeroAt->X, HeroAt->Y, -100000.0), ECC_Visibility, Params))
-			{
-				Location.Z = Hit.Location.Z + Pawn->GetSimpleCollisionHalfHeight() + 2.0;
-			}
 			Pawn->DisableInput(PC);
-			Pawn->TeleportTo(Location, FRotator(0.0, HeroAt->Z, 0.0), false, true);
+			PlaceHero(World, Pawn);
 			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots: hero at %s"), *Pawn->GetActorLocation().ToString());
 		}
 	}

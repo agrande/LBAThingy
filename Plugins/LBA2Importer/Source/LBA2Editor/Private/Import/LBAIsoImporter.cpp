@@ -263,11 +263,14 @@ namespace
 	}
 
 	/** A wall finish: the wall layout rows (layout, row) the original stacks from the floor up (a dado, a rail, a body, a
-	 * cornice), laid from the floor, the row under the top (the body) repeated where the wall is taller, the top row right
-	 * under the ceiling. */
+	 * frieze, a cornice), laid from the floor, the top row right under the ceiling; where the wall is taller, the body is
+	 * repeated: the row under the top in short finishes, else the row under the frieze, which stays under the cornice. */
 	struct FWallpaper
 	{
 		TArray<FIntPoint> Rows;
+
+		/** Finishes this tall keep their row under the top (a frieze) right under it. */
+		static constexpr int32 MinFrieze = 5;
 
 		/** The layout row at Above cells over the floor of a wall Height cells tall (INDEX_NONE layout: none). */
 		FIntPoint GetRow(int32 Above, int32 Height) const
@@ -277,8 +280,15 @@ namespace
 				return FIntPoint(INDEX_NONE, 0);
 			}
 			const int32 Top = Rows.Num() - 1;
-			const int32 Body = FMath::Max(Top - 1, 0);
-			return Above == Height - 1 && Top > Body ? Rows[Top] : Rows[FMath::Clamp(Above, 0, Body)];
+			// Rows laid down from the ceiling: the top, and the frieze under it.
+			const int32 Crown = Rows.Num() >= MinFrieze ? 2 : 1;
+			const int32 FromTop = Height - 1 - Above;
+			if (Height > Rows.Num() && FromTop >= 0 && FromTop < Crown)
+			{
+				return Rows[Top - FromTop];
+			}
+			const int32 Body = FMath::Max(Top - Crown, 0);
+			return Above == Height - 1 && Top > Body ? Rows[Top] : Rows[FMath::Clamp(Above, 0, Height > Rows.Num() ? Body : Top)];
 		}
 	};
 
@@ -291,6 +301,8 @@ namespace
 		TArray<TStaticArray<FWallpaper, 2>> Wallpapers;
 		/** The building's (the grid's) wallpaper, facing X and Z: the camera-side walls'. */
 		TStaticArray<FWallpaper, 2> DefaultWallpapers;
+		/** Per space: its wallpaper is a finish of its own, on its camera-side walls too. */
+		TArray<bool> OwnFinish;
 		/** Per space: the color of its walls where no wallpaper has art (its floor's). */
 		TArray<FVector4f> SpaceColors;
 		FVector4f CeilingColor = FVector4f(0.3f, 0.3f, 0.3f, 0.5f);
@@ -490,7 +502,10 @@ namespace
 	 * - a solid cell (the side of a gallery's floor, of a lintel), or the air above what rises from its floor where no
 	 *   one's air is (a raised floor no room stands on, a frame, a nook behind furniture): a wall face,
 	 * - nothing from its floor up (a drop, the void): open, nothing built;
-	 * - past an exit's doorway, or around it where nothing is: closed in the dark the original shows there.
+	 * - past an exit's doorway, away from its room, or around it where nothing is: closed in the dark the original shows
+	 *   there;
+	 * - a slope (a flight's step): never closed, it is walked on; over a slope, the walls beside it close from the step's
+	 *   own cell.
 	 * On the sides the original drew (-X, -Z of the air: the cells' +X, +Z faces) its opaque art stays (but the top row of
 	 * the wallpaper, its cornice, where it now sits mid-wall); art that is not opaque is backed by the wallpaper and drawn
 	 * again in front of it. Back walls take their space's wallpaper; the camera-side walls, whose inside the original
@@ -501,7 +516,8 @@ namespace
 	 * the grid's mesh, and the cells they paint over to OutCovered (the frames there come off).
 	 */
 	void EmitEnclosure(const FLBARoomPlan& Plan, TConstArrayView<FAirColumn> Air, const TSet<FIntPoint>& BeyondExits,
-		TFunctionRef<bool(int32, int32, int32)> IsDrawn, TFunctionRef<FIntPoint(int32, int32, int32)> LayoutRowAt, const FLBAIsoImporter::FAtlas& Atlas,
+		TFunctionRef<bool(int32, int32, int32)> IsDrawn, TFunctionRef<bool(int32, int32, int32)> IsSlope, TFunctionRef<FIntPoint(int32, int32, int32)> LayoutRowAt,
+		const FLBAIsoImporter::FAtlas& Atlas,
 		const FEnclosureArt& Art, FLBAMeshBuilder& Builder, FLBAMeshBuilder& CeilingBuilder, float Scale, TSet<FIntVector>& OutCovered,
 		TSet<FIntVector4>& OutCoveredFaces)
 	{
@@ -637,15 +653,26 @@ namespace
 			const int32 FaceIndex = FaceOfSide[Side];
 			const bool bDrawnSide = Side == 0 || Side == 2;
 			const FIntVector Cell(Next.X, Y, Next.Y);
-			const FWallpaper& Wallpaper = bDrawnSide && Art.Wallpapers.IsValidIndex(At.Space) ? Art.Wallpapers[At.Space][Side / 2] : Art.DefaultWallpapers[Side / 2];
+			const bool bOwnFinish = Art.OwnFinish.IsValidIndex(At.Space) && Art.OwnFinish[At.Space];
+			const FWallpaper& Wallpaper = (bDrawnSide || bOwnFinish) && Art.Wallpapers.IsValidIndex(At.Space) ? Art.Wallpapers[At.Space][Side / 2] : Art.DefaultWallpapers[Side / 2];
 			bool bDecal = false;
 			if (bDrawnSide && IsDrawn(Next.X, Y, Next.Y))
 			{
-				// The original's art stays, but its cornice where the wall now goes on above it.
+				// The original's art stays, but its cornice (and the frieze under it) where the wall now goes on above it:
+				// the wallpaper puts them back under the ceiling. The wallpaper's top row, or the top rows of any wall panel
+				// as tall as the wallpaper's (its variants: a wall's end, a corner).
 				const TStaticArray<float, 3>* Coverage = Atlas.FaceCoverage.Find(Plan.GetBrick(Next.X, Y, Next.Y));
 				const bool bOpaque = Coverage && (*Coverage)[ColorSlotOf(FrontFaceOf(FaceIndex))] >= OpaqueCoverage;
-				const bool bCornice = Wallpaper.Rows.Num() >= 2 && Y + 1 < At.Top && !IsDrawn(Next.X, Y + 1, Next.Y)
-					&& LayoutRowAt(Next.X, Y, Next.Y) == Wallpaper.Rows.Last();
+				const FIntPoint OwnRow = LayoutRowAt(Next.X, Y, Next.Y);
+				const FLBALayout* OwnLayout = Art.Library && Art.Library->Layouts.IsValidIndex(OwnRow.X) ? &Art.Library->Layouts[OwnRow.X] : nullptr;
+				const FLBALayout* TopLayout = Art.Library && Wallpaper.Rows.Num() > 0 && Art.Library->Layouts.IsValidIndex(Wallpaper.Rows.Last().X)
+					? &Art.Library->Layouts[Wallpaper.Rows.Last().X] : nullptr;
+				const int32 Crown = Wallpaper.Rows.Num() >= FWallpaper::MinFrieze ? 2 : 1;
+				const int32 DrawnTop = TopDrawn(IsDrawn, Next, At.Floor + 1, At.Top);
+				const bool bPanelTop = OwnLayout && TopLayout && (OwnLayout->SizeX == 1 || OwnLayout->SizeZ == 1)
+					&& OwnLayout->SizeY == TopLayout->SizeY && OwnRow.Y >= OwnLayout->SizeY - Crown;
+				const bool bCornice = Wallpaper.Rows.Num() >= 2 && DrawnTop + 1 < At.Top && Y > DrawnTop - Crown
+					&& (OwnRow == Wallpaper.Rows.Last() || bPanelTop);
 				if (bOpaque && !bCornice)
 				{
 					return;
@@ -708,14 +735,34 @@ namespace
 		{
 			const FLBAPlanLevel* Level = Plan.FindLevel(At.Level);
 			const bool bExit = At.Connector != INDEX_NONE && Plan.GetConnectors()[At.Connector].Kind == ELBAConnector::Exit;
+			// An exit's doorway (an opening in a wall's line): its side facing away from its room (the original's plug
+			// right behind it) closes in the dark like the rest past it.
+			int32 Outward = INDEX_NONE;
+			const bool bExitDoorway = bExit && Level && Level->Gaps.Contains(At.Column);
+			for (int32 Side = 0; Side < 4 && bExitDoorway; ++Side)
+			{
+				if (Plan.FindRoom(At.Level, At.Column + FLBARoomPlan::Sides[Side]) != INDEX_NONE)
+				{
+					Outward = Side ^ 1;
+				}
+			}
+			// Over a slope (a flight's step), the walls beside it close from the step's own cell, open above the slope.
+			const bool bOnSlope = IsSlope(At.Column.X, At.Floor, At.Column.Y);
 			for (int32 Side = 0; Side < 4; ++Side)
 			{
 				const FIntPoint Next = At.Column + FLBARoomPlan::Sides[Side];
 				const bool bWall = Level && Level->Get(Next) == ELBAColumn::Wall;
-				const bool bPastExit = bExit && BeyondExits.Contains(Next);
-				for (int32 Y = At.Floor + 1; Y < At.Top; ++Y)
+				const bool bPastExit = bExit && (BeyondExits.Contains(Next) || Side == Outward);
+				// What rises from the air's floor beside it (a slope there is the next step up, walked on).
+				const bool bRising = Plan.IsSolid(Next.X, At.Floor + 1, Next.Y) && !IsSlope(Next.X, At.Floor + 1, Next.Y);
+				for (int32 Y = bOnSlope ? At.Floor : At.Floor + 1; Y < At.Top; ++Y)
 				{
-					if (AirAt.Contains(FIntVector(Next.X, Y, Next.Y)))
+					// Slopes off the walls are walked on: never closed.
+					if (AirAt.Contains(FIntVector(Next.X, Y, Next.Y)) || (!bWall && IsSlope(Next.X, Y, Next.Y)))
+					{
+						continue;
+					}
+					if (Y == At.Floor && (bExit || (!bWall && !Plan.IsSolid(Next.X, Y, Next.Y))))
 					{
 						continue;
 					}
@@ -733,7 +780,7 @@ namespace
 						EmitWall(At, Next, Side, Y, EPart::Step);
 						Cap(At, Next, Y);
 					}
-					else if (Plan.IsSolid(Next.X, Y, Next.Y) || Plan.IsSolid(Next.X, At.Floor + 1, Next.Y))
+					else if (Plan.IsSolid(Next.X, Y, Next.Y) || bRising)
 					{
 						EmitWall(At, Next, Side, Y, EPart::Solid);
 						Cap(At, Next, Y);
@@ -1563,7 +1610,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			// The rows of a profile: at each height, the most drawn row of the layout drawn most over all heights (the wall,
 			// not a window whose foot shows where the wall's is hidden behind furniture), else the most drawn row; heights
 			// nobody voted for (hidden) take the row under them, else above.
-			auto MakeWallpaper = [&MostVoted](const FProfileVotes& Profile)
+			auto MakeWallpaper = [&MostVoted, Library](const FProfileVotes& Profile)
 			{
 				TMap<int32, int32> LayoutVotes;
 				for (const FVotes& AtHeight : Profile)
@@ -1594,6 +1641,20 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 					if (Wallpaper.Rows[Index].X == INDEX_NONE)
 					{
 						Wallpaper.Rows[Index] = Wallpaper.Rows[Index + 1];
+					}
+				}
+				// Walls the original only drew up to their dado (partitions it cut low) go on as their layout does: a
+				// profile shorter than its top layout gets the rest of that layout's rows.
+				if (Wallpaper.Rows.Num() > 0 && Library->Layouts.IsValidIndex(Wallpaper.Rows.Last().X))
+				{
+					const FIntPoint Last = Wallpaper.Rows.Last();
+					const int32 LayoutHeight = Library->Layouts[Last.X].SizeY;
+					if (Wallpaper.Rows.Num() < LayoutHeight)
+					{
+						for (int32 Row = Last.Y + 1; Row < LayoutHeight; ++Row)
+						{
+							Wallpaper.Rows.Add(FIntPoint(Last.X, Row));
+						}
 					}
 				}
 				return Wallpaper;
@@ -1643,6 +1704,19 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				}
 			}
 			UE_LOG(LogLBA2, Log, TEXT("WALLPAPER grid %d default:%s"), GridIndex, *Describe(Art.DefaultWallpapers));
+			auto LayoutsOf = [](const TStaticArray<FWallpaper, 2>& Wallpapers)
+			{
+				TSet<int32> Layouts;
+				for (const FWallpaper& Wallpaper : Wallpapers)
+				{
+					for (const FIntPoint& Row : Wallpaper.Rows)
+					{
+						Layouts.Add(Row.X);
+					}
+				}
+				return Layouts;
+			};
+			const TSet<int32> BuildingLayouts = LayoutsOf(Art.DefaultWallpapers);
 			for (int32 SpaceIndex = 0; SpaceIndex < Spaces.Num(); ++SpaceIndex)
 			{
 				TStaticArray<FWallpaper, 2>& Wallpapers = Art.Wallpapers.AddDefaulted_GetRef();
@@ -1650,7 +1724,11 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				{
 					Wallpapers[Axis] = Override != INDEX_NONE ? Art.DefaultWallpapers[Axis] : Choose(&Votes[SpaceIndex], Axis);
 				}
-				UE_LOG(LogLBA2, Log, TEXT("WALLPAPER grid %d space %d:%s"), GridIndex, SpaceIndex, *Describe(Wallpapers));
+				// A room with a finish of its own (its back walls all one wallpaper the building's walls don't use, like the
+				// nursery being papered anew) has it all round, on its camera-side walls too.
+				const TSet<int32> Own = LayoutsOf(Wallpapers);
+				Art.OwnFinish.Add(Override == INDEX_NONE && Own.Num() == 1 && BuildingLayouts.Intersect(Own).Num() == 0);
+				UE_LOG(LogLBA2, Log, TEXT("WALLPAPER grid %d space %d:%s%s"), GridIndex, SpaceIndex, *Describe(Wallpapers), Art.OwnFinish.Last() ? TEXT(" (own finish)") : TEXT(""));
 			}
 
 			// Walls where no wallpaper has art take their space's floor color; bounce lights too.
@@ -1689,7 +1767,8 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				const FLBAGridCell& Cell = Grid.Get(X, Y, Z);
 				return Library->Layouts.IsValidIndex(Cell.Layout) ? FIntPoint(Cell.Layout, Library->Layouts[Cell.Layout].GetBlockCoords(Cell.Block).Y) : FIntPoint(INDEX_NONE, 0);
 			};
-			EmitEnclosure(Plan, Air, BeyondExits, IsDrawn, LayoutRowAt, *Atlas, Art, EnclosureBuilder, CeilingBuilder, Scale, Covered, CoveredFaces);
+			auto IsSlope = [&Query](int32 X, int32 Y, int32 Z) { return Query.ShapeAt(X, Y, Z) > 1; };
+			EmitEnclosure(Plan, Air, BeyondExits, IsDrawn, IsSlope, LayoutRowAt, *Atlas, Art, EnclosureBuilder, CeilingBuilder, Scale, Covered, CoveredFaces);
 
 			// Frames come off whole: an instance any cell of which the enclosure covers (no half curves left).
 			TSet<FIntVector4> RemovedInstances;

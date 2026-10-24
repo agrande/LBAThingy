@@ -14,7 +14,8 @@
  *   -LBA2Shots=ladder -LBA2Ladder=44:7    climbs a ladder zone (scene:zone) up, then back down (log + a shot per second)
  *   -LBA2Shots=door -LBA2Door=15:3        opens a door (scene:object) by interacting, walks through, checks it closes behind
  *   -LBA2ShotDir=<folder>                 where to write PNGs (default Saved/LBA2Shots)
- *   -LBA2HeroAt=x,y,yaw                   with camera poses: stands the player pawn on the ground there first
+ *   -LBA2HeroAt=x,y,yaw[,z]               with camera poses, hero or modern: stands the player pawn on the ground there first
+ *                                         (the first surface below z, default: the highest; indoors, below the ceiling)
  * It takes the screenshots once the level has settled, then quits.
  */
 UCLASS()
@@ -38,6 +39,8 @@ private:
 	bool TickDoor(UWorld* World, float DeltaTime);
 	bool TickMenu(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
+	/** -LBA2HeroAt: stands the pawn on the first surface below the point, facing its yaw. */
+	void PlaceHero(UWorld* World, APawn* Pawn) const;
 
 	/** -LBA2Shots=hero: drives the player's ALBACharacter through a scripted test and screenshots each step. */
 	bool bHero = false;
@@ -99,8 +102,9 @@ private:
 	double Elapsed = 0.0;
 	double PoseStart = 0.0;
 	bool bPosesReady = false;
-	/** -LBA2HeroAt: where the player pawn stands during the camera poses (x, y, yaw). */
+	/** -LBA2HeroAt: where the player pawn stands during the camera poses (x, y, yaw), and the height it is looked for below. */
 	TOptional<FVector> HeroAt;
+	double HeroFromZ = 100000.0;
 	FTSTicker::FDelegateHandle TickHandle;
 	TWeakObjectPtr<AActor> Camera;
 };
