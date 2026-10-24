@@ -118,17 +118,6 @@ struct FLBALibraryEnclosure
 	FLBAEnclosureSettings Enclosure;
 
 	/**
-	 * Layouts that frame doorways (jambs, arches, posts), at least 3 cells tall. An opening in a wall with one of
-	 * them at its side is a doorway even without a lintel.
-	 */
-	UPROPERTY(EditAnywhere, Category = "Enclosure")
-	TArray<int32> DoorwayJambs;
-
-	/** Flat layouts lying in doorways (doormats, sills). An opening whose floor is one of them is a doorway. */
-	UPROPERTY(EditAnywhere, Category = "Enclosure")
-	TArray<int32> DoorwayThresholds;
-
-	/**
 	 * Layouts that frame the walls the original cut down for the camera (caps along their top, curves down to the
 	 * doorways). Where the enclosure raises those walls, they come off and the wall goes on.
 	 */
@@ -151,8 +140,8 @@ struct FLBALibraryEnclosure
 	TArray<int32> IgnoredWallLayouts;
 
 	/**
-	 * Wall layout whose middle row dresses every room's walls where the enclosure raises them. -1: each room's own, the
-	 * layout row drawn most on its back walls.
+	 * Wall layout that dresses every wall where the enclosure raises it, its rows from the floor up. -1: the building's
+	 * default (the rows drawn most on its back walls) on the camera-side walls, each space's own on its back walls.
 	 */
 	UPROPERTY(EditAnywhere, Category = "Enclosure", meta = (ClampMin = "-1"))
 	int32 WallpaperLayout = INDEX_NONE;

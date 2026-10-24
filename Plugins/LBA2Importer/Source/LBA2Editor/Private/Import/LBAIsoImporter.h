@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Formats/LBAIso.h"
-#include "Import/LBARoomAnalysis.h"
+#include "Import/LBARoomPlan.h"
 #include "LBAWallStyles.h"
 
 class FLBAImportContext;
@@ -51,15 +51,12 @@ private:
 	bool LoadHeader();
 	/** Cube-change zones (doors) of the interior scenes, per grid. */
 	void LoadDoorZones();
-	void LogRooms(int32 GridIndex, const FLBARoomAnalysis& Rooms, const TArray<FLBADoorway>& Doorways, const TArray<FLBACellBox>& Zones);
 	const FLBALibrary* GetLibrary(int32 LibraryIndex);
 	const FAtlas* GetAtlas(int32 LibraryIndex);
 	void BuildKitMeshes(int32 LibraryIndex);
 	/** The wall styles of a library, found in all its grids (DA_LibNN_WallStyles). */
 	const TArray<FLBAWallStyle>& GetWallStyles(int32 LibraryIndex);
-	/** Doorways of a grid, with its library's doorway layouts and its scenes' cube-change zones as hints. */
-	TArray<FLBADoorway> FindDoorways(int32 GridIndex, int32 LibraryIndex, const FLBARoomAnalysis& Rooms) const;
-	/** Bricks of a library's walls, learned from the rooms of all its grids (FLBARoomModel). */
+	/** Bricks of a library's walls, learned from the plans of all its grids (FLBARoomPlan). */
 	const TSet<int32>& GetWallBricks(int32 LibraryIndex);
 	bool ImportGrid(int32 GridIndex);
 	FString GetGridLevelName(int32 GridIndex) const;

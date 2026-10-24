@@ -1,7 +1,6 @@
 """Leaks of an interior's enclosure, by ray casting the exported meshes (export_enclosure_obj.py) from inside its rooms.
-Rays from sample points of the rooms (the room model dumped by every import, "C x z room floor ceiling" lines) that
-hit nothing escape;
-each is reported at the first cell it crosses that is not room air, with the doorways' columns marked.
+Rays from sample points of the rooms (the plan's air dumped by every import: "C x z room floor top" lines for rooms,
+"K ..." for connectors) that hit nothing escape; each is reported at the first cell it crosses that is no air.
 Usage: raycast_leaks.py <grid> [points=60] [dirs=300]"""
 import collections, math, os, sys
 import numpy as np
@@ -32,11 +31,12 @@ A = T[:, 0]; E1 = T[:, 1] - A; E2 = T[:, 2] - A
 air = {}; starts = []
 for line in open(os.path.join(LOOKDEV, "enclosure", "cells", f"grid{gi:03d}.txt")):
     k, *v = line.split()
-    if k == "C":
-        x, z, room, floor, ceiling = map(int, v)
-        for y in range(floor + 1, ceiling):
-            air[(x, y, z)] = room
-        starts += [(x, y, z) for y in range(floor + 2, min(floor + 6, ceiling))]
+    if k in ("C", "K") and len(v) == 5:
+        x, z, owner, floor, top = map(int, v)
+        for y in range(floor + 1, top):
+            air[(x, y, z)] = owner
+        if k == "C":
+            starts += [(x, y, z) for y in range(floor + 2, min(floor + 6, top))]
 rng = np.random.default_rng(1)
 cells = starts
 points = [cells[i] for i in rng.choice(len(cells), min(npts, len(cells)), replace=False)]
