@@ -29,6 +29,8 @@
 #include "LBAAnimNotifies.h"
 #include "LBAEntityAsset.h"
 #include "LBATypes.h"
+#include "MaterialEditingLibrary.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "ReferenceSkeleton.h"
 #include "Rendering/SkeletalMeshModel.h"
 #include "StaticToSkeletalMeshConverter.h"
@@ -52,6 +54,16 @@ namespace
 			return Enum->GetNameStringByValue(Type);
 		}
 		return FString::Printf(TEXT("Type%d"), Type);
+	}
+
+	/**
+	 * Bodies with a glowing part that gives light (FLBADecorLight: Body, GlowColor, Light...): the spacecraft's blue
+	 * roof (bodies 70-78, its states), a subtle beacon.
+	 */
+	const FLBADecorLight* FindGlowingBody(int32 BodyIndex)
+	{
+		static const FLBADecorLight SpacecraftRoof = { 0, 192, 0.15f, 1000.f, 0.f, false, 2.f };
+		return BodyIndex >= 70 && BodyIndex <= 78 ? &SpacecraftRoof : nullptr;
 	}
 
 	/** LBA yaw rotation of a local vector (see RotateI in LIB386/3D). */
@@ -158,6 +170,25 @@ void FLBACharacterImporter::AssignBoneNames(int32 BodyIndex, int32 SkeletonIndex
 	}
 }
 
+UMaterialInterface* FLBACharacterImporter::GetBodyGlowMaterial()
+{
+	UMaterialInterface* Master = Context.GetMaterials().GetMaster(ELBAMaterial::Glow);
+	if (!BodyGlowMaterial)
+	{
+		// Half M_LBA_Glow's strength: a subtle glow (the spacecraft's roof showed as vivid cyan at 3).
+		BodyGlowMaterial = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(Context.GetContentPath(TEXT("Characters/Materials")), TEXT("MI_Body_Glow"));
+		if (!BodyGlowMaterial)
+		{
+			return Master;
+		}
+		UMaterialEditingLibrary::SetMaterialInstanceParent(BodyGlowMaterial, Master);
+		UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(BodyGlowMaterial, TEXT("GlowStrength"), 1.5f);
+		UMaterialEditingLibrary::UpdateMaterialInstance(BodyGlowMaterial);
+		Context.MarkForSave(BodyGlowMaterial);
+	}
+	return BodyGlowMaterial;
+}
+
 USkeletalMesh* FLBACharacterImporter::ImportBody(int32 BodyIndex, int32 SkeletonIndex, const FString& Name)
 {
 	const FLBABody* Body = GetBody(BodyIndex);
@@ -191,10 +222,34 @@ USkeletalMesh* FLBACharacterImporter::ImportBody(int32 BodyIndex, int32 Skeleton
 	Params.ColorMaterial = Context.GetMaterials().GetMaster(ELBAMaterial::Color);
 	Params.TranslucentMaterial = Context.GetMaterials().GetMaster(ELBAMaterial::Translucent);
 	Params.GetTexturedMaterial = [this](const FLBATextureRegion& Region, bool bMasked) { return GetBodyTexturedMaterial(Region, bMasked); };
+	const FLBADecorLight* Glowing = FindGlowingBody(BodyIndex);
+	if (Glowing)
+	{
+		Params.GlowColors.Add(Glowing->GlowColor);
+		Params.GlowMaterial = GetBodyGlowMaterial();
+	}
 	FLBAMeshBuilder Builder;
-	if (!LBABodyConverter::Convert(*Body, Params, Builder))
+	FBox3f Glow(ForceInit);
+	if (!LBABodyConverter::Convert(*Body, Params, Builder, &Glow))
 	{
 		return nullptr;
+	}
+	BodyLights.Remove(BodyIndex);
+	if (Glowing && Glow.IsValid)
+	{
+		// The light has the glowing part's color at full brightness, like the island lamps.
+		const FLinearColor GlowColor = FLinearColor::FromSRGBColor(LBABodyConverter::GetAlbedo(Context.GetPalette(), Glowing->GlowColor, ELBAPolyType::Gouraud));
+		FLBABodyLight& Light = BodyLights.Add(BodyIndex);
+		Light.Location = FVector(Glow.GetCenter());
+		Light.Color = GlowColor / FMath::Max(FMath::Max3(GlowColor.R, GlowColor.G, GlowColor.B), 1e-4f);
+		Light.Intensity = LBAEnvironment::GetDecorLightIntensity(*Glowing);
+		Light.Radius = Glowing->Radius;
+		Light.SourceRadius = Glow.GetExtent().GetMin();
+		Light.FalloffExponent = Glowing->FalloffExponent;
+	}
+	else if (Glowing)
+	{
+		Context.Warn(FString::Printf(TEXT("Body %d has no polygon of color %d to glow"), BodyIndex, Glowing->GlowColor));
 	}
 	FMeshDescription Description;
 	TArray<UMaterialInterface*> Materials;
@@ -620,6 +675,11 @@ int32 FLBACharacterImporter::ImportAll()
 			FLBAEntityBody& Out = Asset->Bodies.FindOrAdd(Body.Type);
 			Out.Mesh = BodyMeshes.FindRef(Body.BodyIndex);
 			Out.SourceBody = Body.BodyIndex;
+			Out.Lights.Reset();
+			if (const FLBABodyLight* Light = BodyLights.Find(Body.BodyIndex))
+			{
+				Out.Lights.Add(*Light);
+			}
 			if (Body.bHasBox)
 			{
 				const FVector A = LBA::ToUnreal(Body.BoxMin.X, Body.BoxMin.Y, Body.BoxMin.Z, Scale);

@@ -1965,11 +1965,13 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			}
 			// The grid's brick collision already covers these.
 			Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			if (Preset.RemakeLamps.Light > 0.f)
+			for (const FLBARemakeAssets::FLamp& Lamp : Placement.Lamps)
 			{
-				for (const FLBARemakeAssets::FLamp& Lamp : Placement.Lamps)
+				const FLBADecorLight& Light = Lamp.Kind == FLBARemakeAssets::FLamp::EKind::Pool ? Preset.RemakePools
+					: Lamp.Kind == FLBARemakeAssets::FLamp::EKind::Beacon ? Preset.RemakeBeacons : Preset.RemakeLamps;
+				if (Light.Light > 0.f)
 				{
-					LBAEnvironment::SpawnDecorLight(Context, Actor, Preset.RemakeLamps, Lamp.Position, Lamp.Color, Lamp.SourceRadius);
+					LBAEnvironment::SpawnDecorLight(Context, Actor, Light, Lamp.Position, Lamp.Color, Lamp.SourceRadius);
 				}
 			}
 		}

@@ -6,7 +6,9 @@
 #include "LBASceneActor.generated.h"
 
 class UBoxComponent;
+class UPointLightComponent;
 class USoundBase;
+struct FLBAEntityBody;
 class UStaticMesh;
 class UStaticMeshComponent;
 class ULBAAnimInstance;
@@ -96,7 +98,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "LBA")
 	TObjectPtr<UBoxComponent> CollisionBox;
 
+	/** Lights of the current body's glowing parts (FLBAEntityBody::Lights). */
+	UPROPERTY(Transient, VisibleAnywhere, BlueprintReadOnly, Category = "LBA")
+	TArray<TObjectPtr<UPointLightComponent>> BodyLights;
+
 private:
+	/** Replaces BodyLights with the lights of Body (null: none). */
+	void ApplyBodyLights(const FLBAEntityBody* Body);
+
 	void PlayStartAnimation();
 
 	UFUNCTION()

@@ -194,7 +194,35 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::Interior()
 	Preset.RemakeLamps.Radius = 600.f;
 	Preset.RemakeLamps.Halo = 0.f;
 	Preset.RemakeLamps.bShadows = true;
+	// The Temple of Bu's magic fonts flood their halls with light, evenly: the inverse-square falloff blew the fonts
+	// themselves and the statue between them to white. Unshadowed: the light sits in the basin, whose rim would
+	// otherwise shade the whole floor around it.
+	Preset.RemakePools.Light = 0.7f;
+	Preset.RemakePools.Radius = 2000.f;
+	Preset.RemakePools.Halo = 0.f;
+	Preset.RemakePools.bShadows = false;
+	Preset.RemakePools.FalloffExponent = 3.f;
+	// The cosmodrome's blue domes light the landing area around their pedestals, which shade the floor right below.
+	Preset.RemakeBeacons.Light = 0.25f;
+	Preset.RemakeBeacons.Radius = 1500.f;
+	Preset.RemakeBeacons.Halo = 0.f;
+	Preset.RemakeBeacons.bShadows = true;
+	Preset.RemakeBeacons.FalloffExponent = 2.f;
 	return Preset;
+}
+
+float LBAEnvironment::GetDecorLightIntensity(const FLBADecorLight& DecorLight)
+{
+	// A surface facing the light d meters away gets I / d^2 lux from it: a light of I * MeasuredSunGain / (pi d^2), like
+	// the sun's.
+	constexpr float ReferenceDistance = 3.f;
+	if (DecorLight.FalloffExponent > 0.f)
+	{
+		// The light is then in lux before the falloff (like the sun's): the same light at 3 m.
+		const float Falloff = FMath::Pow(1.f - FMath::Min(FMath::Square(ReferenceDistance * 100.f / DecorLight.Radius), 0.99f), DecorLight.FalloffExponent);
+		return DecorLight.Light * UE_PI / MeasuredSunGain / Falloff;
+	}
+	return DecorLight.Light * UE_PI * FMath::Square(ReferenceDistance) / MeasuredSunGain;
 }
 
 void LBAEnvironment::SpawnDecorLight(FLBAImportContext& Context, AActor* Decor, const FLBADecorLight& DecorLight, const FVector& LocalPosition,
@@ -207,13 +235,19 @@ void LBAEnvironment::SpawnDecorLight(FLBAImportContext& Context, AActor* Decor, 
 	{
 		return;
 	}
-	// A surface facing the light d meters away gets I / d^2 lux from it: a light of I * MeasuredSunGain / (pi d^2), like
-	// the sun's.
-	constexpr float ReferenceDistance = 3.f;
 	UPointLightComponent* Light = CastChecked<UPointLightComponent>(Actor->GetLightComponent());
 	Light->SetMobility(EComponentMobility::Movable);
-	Light->SetIntensityUnits(ELightUnits::Candelas);
-	Light->SetIntensity(DecorLight.Light * UE_PI * FMath::Square(ReferenceDistance) / MeasuredSunGain);
+	if (DecorLight.FalloffExponent > 0.f)
+	{
+		Light->SetUseInverseSquaredFalloff(false);
+		Light->SetLightFalloffExponent(DecorLight.FalloffExponent);
+		Light->SetIntensityUnits(ELightUnits::Unitless);
+	}
+	else
+	{
+		Light->SetIntensityUnits(ELightUnits::Candelas);
+	}
+	Light->SetIntensity(GetDecorLightIntensity(DecorLight));
 	Light->SetLightColor(Color);
 	Light->SetAttenuationRadius(DecorLight.Radius);
 	Light->SetSourceRadius(SourceRadius);

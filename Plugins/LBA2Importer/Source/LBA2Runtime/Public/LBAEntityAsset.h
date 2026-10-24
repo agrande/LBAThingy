@@ -46,6 +46,35 @@ enum class ELBAAnimType : uint8
 	DrowningStars = 47,
 };
 
+/**
+ * A light given by a glowing part of a body (the spacecraft's roof): an unshadowed point light at Location (mesh space).
+ * FalloffExponent 0: inverse-square falloff, Intensity in candelas; above 0: (1 - (d / Radius)^2)^FalloffExponent,
+ * Intensity unitless (lux before the falloff).
+ */
+USTRUCT(BlueprintType)
+struct LBA2RUNTIME_API FLBABodyLight
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	FVector Location = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	FLinearColor Color = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA", meta = (ClampMin = "0"))
+	float Intensity = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA", meta = (ClampMin = "0"))
+	float Radius = 1000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA", meta = (ClampMin = "0"))
+	float SourceRadius = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA", meta = (ClampMin = "0"))
+	float FalloffExponent = 0.f;
+};
+
 USTRUCT(BlueprintType)
 struct LBA2RUNTIME_API FLBAEntityBody
 {
@@ -61,6 +90,10 @@ struct LBA2RUNTIME_API FLBAEntityBody
 	/** Collision box authored for this body (Unreal space, relative to the actor). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
 	FBox CollisionBox = FBox(ForceInit);
+
+	/** Lights of its glowing parts. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
+	TArray<FLBABodyLight> Lights;
 };
 
 USTRUCT(BlueprintType)

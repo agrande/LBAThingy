@@ -2,6 +2,7 @@
 
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -156,6 +157,50 @@ void ALBASceneActor::SetBodyType(int32 NewBodyType)
 	ApplyBody();
 }
 
+void ALBASceneActor::ApplyBodyLights(const FLBAEntityBody* Body)
+{
+	for (UPointLightComponent* Light : BodyLights)
+	{
+		if (Light)
+		{
+			Light->DestroyComponent();
+		}
+	}
+	BodyLights.Reset();
+	if (!Body)
+	{
+		return;
+	}
+	for (const FLBABodyLight& Source : Body->Lights)
+	{
+		UPointLightComponent* Light = NewObject<UPointLightComponent>(this, NAME_None, RF_Transient);
+		// Rebuilt with the actor's construction in the editor, like the body itself.
+		Light->CreationMethod = EComponentCreationMethod::UserConstructionScript;
+		Light->SetMobility(EComponentMobility::Movable);
+		Light->SetupAttachment(GetMesh());
+		Light->SetRelativeLocation(Source.Location);
+		if (Source.FalloffExponent > 0.f)
+		{
+			Light->SetUseInverseSquaredFalloff(false);
+			Light->SetLightFalloffExponent(Source.FalloffExponent);
+			Light->SetIntensityUnits(ELightUnits::Unitless);
+		}
+		else
+		{
+			Light->SetIntensityUnits(ELightUnits::Candelas);
+		}
+		Light->SetIntensity(Source.Intensity);
+		Light->SetLightColor(Source.Color);
+		Light->SetAttenuationRadius(Source.Radius);
+		Light->SetSourceRadius(Source.SourceRadius);
+		// The light sits inside the glowing part, which must not block it.
+		Light->SetCastShadows(false);
+		Light->SetVolumetricScatteringIntensity(0.f);
+		Light->RegisterComponent();
+		BodyLights.Add(Light);
+	}
+}
+
 void ALBASceneActor::PlayAnimSlot(int32 NewAnimType, bool bLoop)
 {
 	AnimType = NewAnimType;
@@ -202,6 +247,7 @@ void ALBASceneActor::ApplyBody()
 	const ECollisionEnabled::Type Collision = BodyMesh ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision;
 	GetCapsuleComponent()->SetCollisionEnabled(Collision);
 	CollisionBox->SetCollisionEnabled(Collision);
+	ApplyBodyLights(BodyMesh ? Body : nullptr);
 
 #if WITH_EDITOR
 	// Show the start animation in the editor too.

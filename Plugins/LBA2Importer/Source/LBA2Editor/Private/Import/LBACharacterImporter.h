@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Formats/LBAAnim.h"
 #include "Formats/LBABody.h"
+#include "LBAEntityAsset.h"
 
 class FLBAImportContext;
 class FLBAAudioImporter;
@@ -52,6 +53,8 @@ private:
 	USkeletalMesh* ImportBody(int32 BodyIndex, int32 SkeletonIndex, const FString& Name);
 	UAnimSequence* ImportAnim(int32 AnimIndex, int32 SkeletonIndex, const FString& Name, const TArray<FLBAAnimAction>& Actions);
 	UMaterialInterface* GetBodyTexturedMaterial(const FLBATextureRegion& Region, bool bMasked);
+	/** Material of glowing body parts (see FindGlowingBody). */
+	UMaterialInterface* GetBodyGlowMaterial();
 	FString GetEntityName(int32 EntityIndex) const;
 	void BuildGalleryLevel(const TArray<class ULBAEntityAsset*>& Entities);
 
@@ -68,5 +71,8 @@ private:
 	TMap<int32, int32> BodySkeleton;
 	TMap<int32, TArray<FName>> BodyBoneNames;
 	TMap<int32, USkeletalMesh*> BodyMeshes;
+	/** Light of each body's glowing part (mesh space). */
+	TMap<int32, FLBABodyLight> BodyLights;
+	class UMaterialInstanceConstant* BodyGlowMaterial = nullptr;
 	TMap<TPair<int32, int32>, UAnimSequence*> AnimAssets;
 };

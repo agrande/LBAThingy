@@ -11,7 +11,9 @@ class UWorld;
  * Island decor that gives light (lampposts), by island object (.OBL entry): its polygons of palette color GlowColor
  * glow, and a point light at their center gives surfaces facing it the light Light from 3 m away (1 = shows their
  * base color), fading out at Radius (cm). Without bShadows the light casts no shadows: a soft pool of light around the
- * decor. Halo is how much it lights the fog around it (volumetric scattering; 0: none).
+ * decor. Halo is how much it lights the fog around it (volumetric scattering; 0: none). FalloffExponent 0 is the
+ * physical inverse-square falloff; above 0 the light fades as (1 - (d / Radius)^2)^FalloffExponent instead (still
+ * Light at 3 m): an even flood, without the hot spot on whatever stands right next to the light.
  */
 struct FLBADecorLight
 {
@@ -21,6 +23,7 @@ struct FLBADecorLight
 	float Radius = 1500.f;
 	float Halo = 0.15f;
 	bool bShadows = false;
+	float FalloffExponent = 0.f;
 };
 
 /**
@@ -173,6 +176,9 @@ struct FLBAEnvironmentPreset
 	 * Halo and bShadows as in FLBADecorLight. Light 0: lamps off.
 	 */
 	FLBADecorLight RemakeLamps = { 0, 0, 0.f };
+	/** Light of the glowing pools and beacons of lba2remake models (FLBARemakeAssets::FLamp::EKind), as RemakeLamps. */
+	FLBADecorLight RemakePools = { 0, 0, 0.f };
+	FLBADecorLight RemakeBeacons = { 0, 0, 0.f };
 
 	/** Preset for an island file name (CITABAU, DESERT, EMERAUDE...). */
 	static FLBAEnvironmentPreset ForIsland(const FString& IslandName);
@@ -211,6 +217,9 @@ namespace LBAEnvironment
 	 */
 	void SpawnDecorLight(FLBAImportContext& Context, AActor* Decor, const FLBADecorLight& DecorLight, const FVector& LocalPosition,
 		const FLinearColor& Color, float SourceRadius);
+
+	/** Intensity of a decor light's point light: candelas, or unitless with a FalloffExponent (see FLBADecorLight). */
+	float GetDecorLightIntensity(const FLBADecorLight& DecorLight);
 
 	/**
 	 * Spawns the light of a glowing window, attached to the decor actor: a rect light of the window's size (cm) at

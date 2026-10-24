@@ -46,14 +46,31 @@ namespace
 	const FLinearColor IncandescentColor(1.f, 0.754f, 0.323f);
 	/** Emissive strength of a lampshade: fabric lit from inside, dimmer than the bulb (M_LBA_Glow's GlowStrength, 3). */
 	constexpr float LampshadeGlow = 0.6f;
+	/** Emissive strength of glowing water: its rings of color stay visible (at 3 it showed as plain white). */
+	constexpr float PoolGlow = 0.8f;
+	/** Emissive strength of the cosmodrome's blue glass: stays blue (at 3 it showed as white). */
+	constexpr float BeaconGlow = 1.f;
 
-	enum class ELampPart : uint8 { None, Bulb, Shade };
+	/** Glowing parts flatter than this (height / width) are lights set into a surface: they glow but give no light. */
+	constexpr float MinBeaconHeight = 0.25f;
+
+	enum class ELampPart : uint8 { None, Bulb, Shade, Pool, Beacon };
 
 	ELampPart GetLampPart(const FLBAGltfPrimitive& Prim, const FLBAGltfMaterial* Material)
 	{
 		if (Prim.Node.Contains(TEXT("bulb")) || (Material && Material->Name.StartsWith(TEXT("keepMat_light"))))
 		{
 			return ELampPart::Bulb;
+		}
+		if (Material && Material->Name.StartsWith(TEXT("keepMat_water")))
+		{
+			// The Temple of Bu's magic water (its fonts and water piles): rings of pale cyan, glowing.
+			return ELampPart::Pool;
+		}
+		if (Material && Material->Name.StartsWith(TEXT("keepMat_blue_light")))
+		{
+			// The Temple of Bu's cosmodrome: blue glass domes on pedestals, and studs along its landing floors.
+			return ELampPart::Beacon;
 		}
 		return Material && Material->Name.StartsWith(TEXT("LampTexture")) ? ELampPart::Shade : ELampPart::None;
 	}
@@ -156,7 +173,7 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 	TMap<int32, int32> SectionByMaterial;
 	auto SectionFor = [&](int32 MaterialIndex, ELampPart Part) -> int32
 	{
-		const int32 Key = MaterialIndex * 3 + int32(Part);
+		const int32 Key = MaterialIndex * 5 + int32(Part);
 		if (const int32* Found = SectionByMaterial.Find(Key))
 		{
 			return *Found;
@@ -171,9 +188,21 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 			Material = Texture ? Materials.GetTextured(ELBAMaterial::TexturedGlow, Texture, Context.GetContentPath(TEXT("Remake/Materials")))
 				: Materials.GetMaster(ELBAMaterial::Glow);
 			UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Material);
-			if (Instance && Part == ELampPart::Shade)
+			if ((Part == ELampPart::Pool || Part == ELampPart::Beacon) && !Texture)
 			{
-				UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Instance, TEXT("GlowStrength"), LampshadeGlow);
+				Instance = Context.CreateOrReuseAsset<UMaterialInstanceConstant>(Context.GetContentPath(TEXT("Remake/Materials")),
+					Part == ELampPart::Pool ? TEXT("MI_Remake_PoolGlow") : TEXT("MI_Remake_BeaconGlow"));
+				if (Instance)
+				{
+					UMaterialEditingLibrary::SetMaterialInstanceParent(Instance, Material);
+					Context.MarkForSave(Instance);
+					Material = Instance;
+				}
+			}
+			if (Instance && Part != ELampPart::Bulb)
+			{
+				UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Instance, TEXT("GlowStrength"),
+					Part == ELampPart::Shade ? LampshadeGlow : Part == ELampPart::Pool ? PoolGlow : BeaconGlow);
 				UMaterialEditingLibrary::UpdateMaterialInstance(Instance);
 			}
 		}
@@ -208,21 +237,29 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 	{
 		FBox3f Bounds = FBox3f(ForceInit);
 		FLinearColor Color = IncandescentColor;
+		/** Pools and beacons: sum of their parts' colors. */
+		FLinearColor ColorSum = FLinearColor::Transparent;
 	};
-	TMap<FString, FLampPart> Bulbs, Shades;
+	TMap<FString, FLampPart> Bulbs, Shades, Pools, Beacons;
 
 	for (const FLBAGltfPrimitive& Prim : Model.Primitives)
 	{
 		const FLBAGltfMaterial* PrimMaterial = Model.Materials.IsValidIndex(Prim.Material) ? &Model.Materials[Prim.Material] : nullptr;
 		const ELampPart Part = GetLampPart(Prim, PrimMaterial);
 		const int32 Section = SectionFor(Prim.Material, Part);
-		FLampPart* Lamp = Part == ELampPart::Bulb ? &Bulbs.FindOrAdd(Prim.Node) : Part == ELampPart::Shade ? &Shades.FindOrAdd(Prim.Node) : nullptr;
+		FLampPart* Lamp = Part == ELampPart::Bulb ? &Bulbs.FindOrAdd(Prim.Node) : Part == ELampPart::Shade ? &Shades.FindOrAdd(Prim.Node)
+			: Part == ELampPart::Pool ? &Pools.FindOrAdd(Prim.Node) : Part == ELampPart::Beacon ? &Beacons.FindOrAdd(Prim.Node) : nullptr;
 		const float Emissive = PrimMaterial ? FMath::Max3(PrimMaterial->Emissive.R, PrimMaterial->Emissive.G, PrimMaterial->Emissive.B) : 0.f;
 		if (Lamp && Emissive > 0.f)
 		{
 			Lamp->Color = FLinearColor(PrimMaterial->Emissive.R / Emissive, PrimMaterial->Emissive.G / Emissive, PrimMaterial->Emissive.B / Emissive);
 		}
 		const FLinearColor Base = Model.Materials.IsValidIndex(Prim.Material) ? Model.Materials[Prim.Material].BaseColor : FLinearColor::White;
+		if (Part == ELampPart::Pool || Part == ELampPart::Beacon)
+		{
+			// The water and the glass shine in their own colors.
+			Lamp->ColorSum += FLinearColor(Base.R, Base.G, Base.B, 1.f);
+		}
 		auto MakeVertex = [&](uint32 Index)
 		{
 			FLBAVertex V;
@@ -281,6 +318,31 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 			Lamps.Add({ FVector(Part.Value.Bounds.GetCenter()), Part.Value.Color, Part.Value.Bounds.GetExtent().GetMin() });
 		}
 	}
+	// Pools shine from the middle of their surface, as wide as it; beacons from the top of their glass (its lower half
+	// sits in the pedestal's ring, which casts shadows), unless it is set flat into a surface.
+	auto AddColored = [&Lamps](const TMap<FString, FLampPart>& Parts, FLamp::EKind Kind)
+	{
+		for (const TPair<FString, FLampPart>& Part : Parts)
+		{
+			const FLinearColor& Sum = Part.Value.ColorSum;
+			const float Max = FMath::Max3(Sum.R, Sum.G, Sum.B);
+			const FVector3f Extent = Part.Value.Bounds.GetExtent();
+			const float Width = FMath::Min(Extent.X, Extent.Y);
+			if (!Part.Value.Bounds.IsValid || Max <= 0.f || (Kind == FLamp::EKind::Beacon && Extent.Z < MinBeaconHeight * Width))
+			{
+				continue;
+			}
+			FVector3f Position = Part.Value.Bounds.GetCenter();
+			if (Kind == FLamp::EKind::Beacon)
+			{
+				Position.Z = Part.Value.Bounds.Max.Z - Extent.Z * 0.5f;
+			}
+			Lamps.Add({ FVector(Position), FLinearColor(Sum.R / Max, Sum.G / Max, Sum.B / Max),
+				Kind == FLamp::EKind::Pool ? Width : Extent.GetMin() * 0.5f, Kind });
+		}
+	};
+	AddColored(Pools, FLamp::EKind::Pool);
+	AddColored(Beacons, FLamp::EKind::Beacon);
 
 	FMeshDescription Description;
 	TArray<UMaterialInterface*> MeshMaterials;
