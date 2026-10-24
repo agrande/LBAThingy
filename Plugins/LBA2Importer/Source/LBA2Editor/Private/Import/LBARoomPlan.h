@@ -101,6 +101,7 @@ struct FLBAPlanRoom
 struct FLBAPlanSpace
 {
 	TArray<int32> Rooms;
+	/** Its lowest room's level. */
 	int32 Level = 0;
 	/** First cell above its air. */
 	int32 Ceiling = 0;
@@ -197,19 +198,23 @@ struct FLBAWallBrickCounts
  *             R3 PARTITION: a wall with at least MinPartition columns of its own that ends inside the floor goes on as
  *             a line across it to the next wall: the opening beside its end is no room's either.
  * Rooms       R4 RECTANGLE: a room is the largest rectangle of floor and furniture off the wall lines, at least
- *             MinRoomWidth columns across, holding MinFloors floor cells, with a wall along one of its sides (with none it
+ *             MinRoomWidth columns across, holding MinFloors floor cells, with a wall along one of its sides or a step
+ *             to a split level beside it (with neither it
  *             is the top of something: a roof, wall tops), not standing on walls (more than half of its floor on the
- *             walls of a lower storey: a roof, a hull's top; an upper storey stands over the rooms below), enclosed
+ *             walls of a lower storey: a roof, a hull's top; an upper storey stands over the rooms below), on its
+ *             storey (more than half of its floor on the level's connected floor, not a patch at the same height: a
+ *             ledge, a rim), enclosed
  *             (more than half of its border open, nothing walkable and no wall there, is open ground); then the
  *             largest among the columns left, and so on. A floor that is no rectangle (an L) is several rooms sharing
  *             open sides.
  * Connectors  the columns no room took, per level by contact, joined through the flights they lead onto: Stairs
  *             (rooms of two levels), Passage (two rooms of one level), Exit (one room, a scene-change zone), Alcove
  *             (one room), Pocket (none).
- * Spaces      rooms joined by open sides, under one ceiling: their level + RoomHeight cells of air.
+ * Spaces      rooms joined by open sides, or by a step to a split level (at most Headroom up or down, no wall between:
+ *             a sunken lounge, a dais), under one ceiling: their highest room's level + RoomHeight cells of air.
  *             R5 DOUBLE HEIGHT: a space overlooked by a higher storey (its floor's edge, more than Headroom cells up,
  *             borders a floor column of the space open from the floor up past it: a gallery, a mezzanine) takes that
- *             storey's ceiling. Closer storeys are split levels: each keeps its own.
+ *             storey's ceiling. Closer storeys are split levels (above).
  *             Connectors take their highest room's ceiling.
  *
  * What is a wall: a column with WallHeight solid cells over the level (through window gaps) that is cut (collision above

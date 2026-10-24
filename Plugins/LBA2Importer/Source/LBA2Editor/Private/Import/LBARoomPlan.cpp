@@ -748,7 +748,15 @@ void FLBARoomPlan::BuildRooms(FLBAPlanLevel& Level, const FLevelRules& Rules)
 
 	// R4 RECTANGLE.
 	auto IsWallAt = [&Level](int32 X, int32 Z) { return Level.Get(FIntPoint(X, Z)) == ELBAColumn::Wall; };
-	auto IsWalled = [&IsWallAt](const FIntPoint& Min, const FIntPoint& Max)
+	// A wall along one of its sides, or a step to a split level (a floor at most Headroom up or down) beside it.
+	auto IsSplitLevel = [this, &Level](int32 X, int32 Z)
+	{
+		return GetFloorLevels(FIntPoint(X, Z)).ContainsByPredicate([&Level](int32 Other)
+		{
+			return Other != Level.Height && FMath::Abs(Other - Level.Height) <= Headroom;
+		});
+	};
+	auto IsWalled = [&IsWallAt, &IsSplitLevel](const FIntPoint& Min, const FIntPoint& Max)
 	{
 		for (int32 X = Min.X; X <= Max.X; ++X)
 		{
@@ -764,7 +772,38 @@ void FLBARoomPlan::BuildRooms(FLBAPlanLevel& Level, const FLevelRules& Rules)
 				return true;
 			}
 		}
+		for (int32 X = Min.X; X <= Max.X; ++X)
+		{
+			if (IsSplitLevel(X, Min.Y - 1) || IsSplitLevel(X, Max.Y + 1))
+			{
+				return true;
+			}
+		}
+		for (int32 Z = Min.Y; Z <= Max.Y; ++Z)
+		{
+			if (IsSplitLevel(Min.X - 1, Z) || IsSplitLevel(Max.X + 1, Z))
+			{
+				return true;
+			}
+		}
 		return false;
+	};
+	// Half of its floor or less on the level's connected floor (a patch at the same height: a ledge, a rim): off its storey.
+	auto IsOffStorey = [this, &Level, &Floor](const FIntPoint& Min, const FIntPoint& Max)
+	{
+		int32 Floors = 0, OnStorey = 0;
+		for (int32 X = Min.X; X <= Max.X; ++X)
+		{
+			for (int32 Z = Min.Y; Z <= Max.Y; ++Z)
+			{
+				if (Floor[ToColumnIndex(FIntPoint(X, Z))])
+				{
+					++Floors;
+					OnStorey += GetFloorLevels(FIntPoint(X, Z)).Contains(Level.Height);
+				}
+			}
+		}
+		return 2 * OnStorey <= Floors;
 	};
 	// More than half of its border open (nothing walkable, no wall: drops, the void, the grid's edge): open ground.
 	auto IsOpenGround = [this, &Level](const FIntPoint& Min, const FIntPoint& Max)
@@ -828,7 +867,7 @@ void FLBARoomPlan::BuildRooms(FLBAPlanLevel& Level, const FLevelRules& Rules)
 			const FIntPoint& Min = Rect.Key;
 			const FIntPoint& Max = Rect.Value;
 			const int32 Floors = CountIn(Floor, Min, Max);
-			if (Floors < MinFloors || FMath::Min(Max.X - Min.X, Max.Y - Min.Y) + 1 < MinRoomWidth || !IsWalled(Min, Max) || IsRoof(Min, Max) || IsOpenGround(Min, Max))
+			if (Floors < MinFloors || FMath::Min(Max.X - Min.X, Max.Y - Min.Y) + 1 < MinRoomWidth || !IsWalled(Min, Max) || IsRoof(Min, Max) || IsOffStorey(Min, Max) || IsOpenGround(Min, Max))
 			{
 				continue;
 			}
@@ -1029,6 +1068,29 @@ void FLBARoomPlan::BuildConnectors()
 
 void FLBARoomPlan::BuildSpaces()
 {
+	// Rooms joined by an open side or a step to a split level, seen from either of them.
+	TArray<TSet<int32>> Joined;
+	Joined.SetNum(Rooms.Num());
+	for (int32 RoomIndex = 0; RoomIndex < Rooms.Num(); ++RoomIndex)
+	{
+		const FLBAPlanRoom& Room = Rooms[RoomIndex];
+		for (int32 Side = 0; Side < 4; ++Side)
+		{
+			const bool bX = Sides[Side].X != 0;
+			const int32 From = bX ? Room.Min.Y : Room.Min.X, To = bX ? Room.Max.Y : Room.Max.X;
+			for (int32 A = From; A <= To; ++A)
+			{
+				const FIntPoint Column = bX ? FIntPoint(Side == 0 ? Room.Min.X - 1 : Room.Max.X + 1, A) : FIntPoint(A, Side == 2 ? Room.Min.Y - 1 : Room.Max.Y + 1);
+				int32 Other = INDEX_NONE;
+				const ELBARoomSide Kind = GetSide(RoomIndex, Column, Side, &Other);
+				if (Kind == ELBARoomSide::OpenSide || (Kind == ELBARoomSide::Step && Other != INDEX_NONE && FMath::Abs(Rooms[Other].Level - Room.Level) <= Headroom))
+				{
+					Joined[RoomIndex].Add(Other);
+					Joined[Other].Add(RoomIndex);
+				}
+			}
+		}
+	}
 	for (int32 RoomIndex = 0; RoomIndex < Rooms.Num(); ++RoomIndex)
 	{
 		if (Rooms[RoomIndex].Space != INDEX_NONE)
@@ -1038,31 +1100,26 @@ void FLBARoomPlan::BuildSpaces()
 		const int32 SpaceIndex = Spaces.Num();
 		FLBAPlanSpace& Space = Spaces.AddDefaulted_GetRef();
 		Space.Level = Rooms[RoomIndex].Level;
-		Space.Ceiling = FMath::Min(Space.Level + RoomHeight + 1, SizeY);
+		int32 Top = Space.Level;
 		TArray<int32> Todo = { RoomIndex };
 		Rooms[RoomIndex].Space = SpaceIndex;
 		while (Todo.Num() > 0)
 		{
 			const int32 Current = Todo.Pop(EAllowShrinking::No);
 			Space.Rooms.Add(Current);
-			const FLBAPlanRoom& Room = Rooms[Current];
-			for (int32 Side = 0; Side < 4; ++Side)
+			Space.Level = FMath::Min(Space.Level, Rooms[Current].Level);
+			Top = FMath::Max(Top, Rooms[Current].Level);
+			for (const int32 Other : Joined[Current])
 			{
-				const bool bX = Sides[Side].X != 0;
-				const int32 From = bX ? Room.Min.Y : Room.Min.X, To = bX ? Room.Max.Y : Room.Max.X;
-				for (int32 A = From; A <= To; ++A)
+				if (Rooms[Other].Space == INDEX_NONE)
 				{
-					const FIntPoint Column = bX ? FIntPoint(Side == 0 ? Room.Min.X - 1 : Room.Max.X + 1, A) : FIntPoint(A, Side == 2 ? Room.Min.Y - 1 : Room.Max.Y + 1);
-					int32 Other = INDEX_NONE;
-					if (GetSide(Current, Column, Side, &Other) == ELBARoomSide::OpenSide && Rooms[Other].Space == INDEX_NONE)
-					{
-						Rooms[Other].Space = SpaceIndex;
-						Todo.Add(Other);
-					}
+					Rooms[Other].Space = SpaceIndex;
+					Todo.Add(Other);
 				}
 			}
 		}
 		Space.Rooms.Sort();
+		Space.Ceiling = FMath::Min(Top + RoomHeight + 1, SizeY);
 	}
 
 	// R5 DOUBLE HEIGHT. The floor and furniture of each level's rooms and one-level connectors, and their space.
@@ -1096,12 +1153,17 @@ void FLBARoomPlan::BuildSpaces()
 			}
 		}
 	}
+	TArray<int32> BaseCeilings;
+	for (const FLBAPlanSpace& Space : Spaces)
+	{
+		BaseCeilings.Add(Space.Ceiling);
+	}
 	for (FLBAPlanSpace& Space : Spaces)
 	{
-		const FLBAPlanLevel* Level = FindLevel(Space.Level);
 		for (const int32 RoomIndex : Space.Rooms)
 		{
 			const FLBAPlanRoom& Room = Rooms[RoomIndex];
+			const FLBAPlanLevel* Level = FindLevel(Room.Level);
 			for (int32 X = Room.Min.X; X <= Room.Max.X; ++X)
 			{
 				for (int32 Z = Room.Min.Y; Z <= Room.Max.Y; ++Z)
@@ -1114,12 +1176,12 @@ void FLBARoomPlan::BuildSpaces()
 					{
 						for (const TPair<int32, int32>& Above : Upper.FindRef(FIntPoint(X, Z) + Side))
 						{
-							if (Above.Key <= Space.Level + Headroom || Space.OverlookedBy.Contains(Above.Value))
+							if (Above.Key <= Room.Level + Headroom || Space.OverlookedBy.Contains(Above.Value))
 							{
 								continue;
 							}
 							bool bOpen = true;
-							for (int32 Y = Space.Level + 1; Y <= Above.Key + 1 && Y < SizeY && bOpen; ++Y)
+							for (int32 Y = Room.Level + 1; Y <= Above.Key + 1 && Y < SizeY && bOpen; ++Y)
 							{
 								bOpen = !IsSolid(X, Y, Z);
 							}
@@ -1137,7 +1199,7 @@ void FLBARoomPlan::BuildSpaces()
 	{
 		for (const int32 Other : Space.OverlookedBy)
 		{
-			Space.Ceiling = FMath::Max(Space.Ceiling, FMath::Min(Spaces[Other].Level + RoomHeight + 1, SizeY));
+			Space.Ceiling = FMath::Max(Space.Ceiling, BaseCeilings[Other]);
 		}
 	}
 	for (FLBAPlanRoom& Room : Rooms)

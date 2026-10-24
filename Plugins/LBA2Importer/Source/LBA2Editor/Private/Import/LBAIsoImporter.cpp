@@ -487,8 +487,9 @@ namespace
 	 * on each of its four sides, closes on what is next to it unless that is air too:
 	 * - a wall of its level: a wall face (raising the walls the original cut down for the camera),
 	 * - air that stops lower (a doorway's header, a lower ceiling next door): a step face,
-	 * - a solid cell (the side of a gallery's floor, of a lintel): a wall face,
-	 * - nothing (a drop, the void, above a railing): open, nothing built;
+	 * - a solid cell (the side of a gallery's floor, of a lintel), or the air above what rises from its floor where no
+	 *   one's air is (a raised floor no room stands on, a frame, a nook behind furniture): a wall face,
+	 * - nothing from its floor up (a drop, the void): open, nothing built;
 	 * - past an exit's doorway, or around it where nothing is: closed in the dark the original shows there.
 	 * On the sides the original drew (-X, -Z of the air: the cells' +X, +Z faces) its opaque art stays (but the top row of
 	 * the wallpaper, its cornice, where it now sits mid-wall); art that is not opaque is backed by the wallpaper and drawn
@@ -732,7 +733,7 @@ namespace
 						EmitWall(At, Next, Side, Y, EPart::Step);
 						Cap(At, Next, Y);
 					}
-					else if (Plan.IsSolid(Next.X, Y, Next.Y))
+					else if (Plan.IsSolid(Next.X, Y, Next.Y) || Plan.IsSolid(Next.X, At.Floor + 1, Next.Y))
 					{
 						EmitWall(At, Next, Side, Y, EPart::Solid);
 						Cap(At, Next, Y);

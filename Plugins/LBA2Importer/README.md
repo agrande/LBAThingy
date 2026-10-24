@@ -64,15 +64,17 @@ architectural concepts, each found by one explicit rule, applied in this order:
    **R3 Partition**: a wall of at least 4 columns of its own that ends inside the floor goes on as a line across
    it to the next wall.
 5. **R4 Rectangle**: a room is the largest rectangle of floor and furniture off those lines, at least 2 columns
-   across, with 12 floor cells and a wall along one of its sides, not standing on walls (more than half of its
-   floor on the walls of a lower storey is a roof or a hull's top) and enclosed (more than half of its border
-   open is open ground); then the next largest, and so on. An L-shaped floor is two rooms sharing an open side.
+   across, with 12 floor cells and a wall (or a step to a split level) along one of its sides, not standing on walls (more than half of its
+   floor on the walls of a lower storey is a roof or a hull's top), on its storey (mostly on the level's connected
+   floor, not on a ledge or a rim at the same height) and enclosed (more than half of its border open is open
+   ground); then the next largest, and so on. An L-shaped floor is two rooms sharing an open side.
 6. **Connectors**: the columns no room took, joined through the flights they lead onto, named by what they join:
    **stairs** (rooms of two levels), **passage** (two rooms: a door or an arch), **exit** (one room and a
    scene-change zone), **alcove** (one room), pocket (none).
-7. **Spaces**: rooms joined by open sides, under one ceiling (their level + the room height). **R5 Double
+7. **Spaces**: rooms joined by open sides, or by a step to a split level (at most 4 cells up or down, no wall
+   between: a sunken lounge, a dais), under one ceiling (their highest room's level + the room height). **R5 Double
    height**: a space overlooked by a higher storey's floor edge, more than 4 cells up (a gallery, a mezzanine),
-   rises to that storey's ceiling. Closer storeys are split levels.
+   rises to that storey's ceiling. Closer storeys are split levels (above).
 
 Every import logs each enclosed grid's plan (rooms with what lies past each side, spaces, connectors) and dumps
 it to `Saved/LookDev/enclosure/cells/gridNNN.txt` with its air ("C x z room floor top" per room column, "K ..."
@@ -85,8 +87,9 @@ The enclosure (`SM_Grid_NNN_Enclosure`, an `Enclosure` actor tagged `LBAEnclosur
 each room's, connector's and flight's column from its floor up to its space's ceiling, the underside of a higher
 storey's floor (a gallery), a lintel, or, in a gap of a wall's line, the door height. Each air cell closes on
 each of its sides on a wall of its level (raising the walls the original cut down), on air that stops lower (a
-doorway's header, a lower ceiling), on a solid cell, and in the dark past an exit; never on nothing (drops, the
-void, railings stay open). The tops of what it closes on are capped under the ceiling. On the sides the
+doorway's header, a lower ceiling), on a solid cell or above what rises from its floor where no one's air is (a
+raised floor no room stands on, a frame, a nook), and in the dark past an exit; never on nothing from its floor
+up (drops and the void stay open). The tops of what it closes on are capped under the ceiling. On the sides the
 original drew (the air's -X and -Z) its opaque art stays, except its cornice where the wall now goes on above it;
 art that is not opaque is backed by the wallpaper and drawn again in front of it. Ceilings are
 `SM_Grid_NNN_Ceiling` (`EnclosureCeiling`, no shadow, so the overhead light enters; each space gets a soft bounce

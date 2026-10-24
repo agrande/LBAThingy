@@ -29,13 +29,16 @@ explicit rule, applied in this order (grid axes: X, Z horizontal, Y up; the iso 
               to the next wall: the opening beside the partition's end is no room's either. Shorter returns are
               door reveals, pilasters and the sides of niches.
   Rooms       R4 RECTANGLE: a room is the largest rectangle of FLOOR and FURNITURE columns off the wall lines, at
-              least MIN_ROOM_WIDTH columns wide, holding at least MIN_FLOORS floor cells, with a WALL column along
-              one of its sides (with none, it is the top of something: a roof, wall tops, a big piece of
-              furniture), and not standing on walls (more than half of its floor on the walls of a lower storey is a
-              roof, the top of a hull or of a wall; an upper storey stands over the rooms below), and enclosed (more
-              than half of its border open, nothing walkable and no wall there, is open ground); then the largest
-              among the columns left, and so on. A floor that is no rectangle (an L) is several rooms sharing open
-              sides: one space.
+              least MIN_ROOM_WIDTH columns wide, holding at least MIN_FLOORS floor cells, and
+                walled     a WALL column along one of its sides, or a step to a split level beside it (with
+                           neither, it is the top of something: a roof, wall tops, a big piece of furniture),
+                no roof    not more than half of its floor on the walls of a lower storey (a roof, the top of a
+                           hull or of a wall; an upper storey stands over the rooms below),
+                on storey  more than half of its floor on the level's connected floor (not a patch at the same
+                           height: a ledge, a rim),
+                enclosed   not more than half of its border open, nothing walkable and no wall there (open ground);
+              then the largest among the columns left, and so on. A floor that is no rectangle (an L) is several
+              rooms sharing open sides: one space.
   Connectors  the columns no room took: FLOOR and FURNITURE columns of each level grouped by contact, joined by the
               flights of stairs they lead onto. Each is, by the rooms it touches:
                 STAIRS   rooms of two levels: stairs between storeys, with the landings and doorways at their ends,
@@ -47,12 +50,13 @@ explicit rule, applied in this order (grid axes: X, Z horizontal, Y up; the iso 
                 WALL, OPEN_SIDE (a room of the same level with no wall between: one space, as the two rectangles of
                 an L-shaped room), a connector (STAIRS, PASSAGE, EXIT, ALCOVE), STEP (a room or floor of another
                 level), OPEN (a drop, the void, the grid's edge: nothing to build).
-  Spaces      rooms joined by open sides: one space under one ceiling (an L-shaped room, an irregular hall).
-  Ceilings    the first cell over a space's air: its level + the library's room height (cells of air) + 1,
+  Spaces      rooms joined by open sides, or by a step to a split level (at most HEADROOM up or down, no wall
+              between: a sunken lounge, a dais): one space under one ceiling (an L-shaped room, an irregular hall).
+  Ceilings    the first cell over a space's air: its highest room's level + the room height (cells of air) + 1,
               R5 DOUBLE HEIGHT: or the ceiling of a higher storey that overlooks it: that storey's floor (its edge,
               railings included), more than HEADROOM cells up (one can stand under it), borders a floor column of
               the space that is open from the space's floor up past it (a gallery, a mezzanine, a landing over a
-              hall). Storeys closer than that are split levels: each keeps its own ceiling.
+              hall). Storeys closer than that are split levels (see Spaces).
               A connector's: the highest of its rooms'. Under a gallery or a lintel the geometry stops at the
               first solid cell above the floor.
 
@@ -470,18 +474,26 @@ class Plan:
             fl = [(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1) if floor[x, z]]
             return 2 * sum(any(c.cls[f] == WALL for c in lower) for f in fl) > len(fl)
 
+        def off_storey(x0, x1, z0, z1):
+            fl = [(x, z) for x in range(x0, x1 + 1) for z in range(z0, z1 + 1) if floor[x, z]]
+            return 2 * sum(level in self.room_floor_levels.get(f, ()) for f in fl) <= len(fl)
+
         def open_ground(x0, x1, z0, z1):
             border = [(x, z0 - 1) for x in range(x0, x1 + 1)] + [(x, z1 + 1) for x in range(x0, x1 + 1)]                 + [(x0 - 1, z) for z in range(z0, z1 + 1)] + [(x1 + 1, z) for z in range(z0, z1 + 1)]
             open_ = sum(not inside(*n) or (cols.cls[n] == OTHER and not self.room_floor_levels.get(n)) for n in border)
             return 2 * open_ > len(border)
 
         def walled(x0, x1, z0, z1):
-            return bool(wall[x0 + 1:x1 + 2, z0].any() or wall[x0 + 1:x1 + 2, z1 + 2].any() or wall[x0, z0 + 1:z1 + 2].any() or wall[x1 + 2, z0 + 1:z1 + 2].any())
+            if wall[x0 + 1:x1 + 2, z0].any() or wall[x0 + 1:x1 + 2, z1 + 2].any() or wall[x0, z0 + 1:z1 + 2].any() or wall[x1 + 2, z0 + 1:z1 + 2].any():
+                return True
+            # Or a step to a split level: a floor at most HEADROOM up or down.
+            border = [(x, z0 - 1) for x in range(x0, x1 + 1)] + [(x, z1 + 1) for x in range(x0, x1 + 1)]                 + [(x0 - 1, z) for z in range(z0, z1 + 1)] + [(x1 + 1, z) for z in range(z0, z1 + 1)]
+            return any(l != level and abs(l - level) <= HEADROOM for n in border for l in self.room_floor_levels.get(n, ()))
         while True:
             best = None
             for x0, x1, z0, z1 in maximal_rectangles(free):
                 n = int(floor[x0:x1 + 1, z0:z1 + 1].sum())
-                if n < MIN_FLOORS or min(x1 - x0, z1 - z0) + 1 < MIN_ROOM_WIDTH or not walled(x0, x1, z0, z1) or roof(x0, x1, z0, z1)                         or open_ground(x0, x1, z0, z1):
+                if n < MIN_FLOORS or min(x1 - x0, z1 - z0) + 1 < MIN_ROOM_WIDTH or not walled(x0, x1, z0, z1) or roof(x0, x1, z0, z1)                         or off_storey(x0, x1, z0, z1) or open_ground(x0, x1, z0, z1):
                     continue
                 key = ((x1 - x0 + 1) * (z1 - z0 + 1), n, -x0, -z0)
                 if best is None or key > best[0]:
@@ -563,16 +575,23 @@ class Plan:
     def _spaces(self):
         """Spaces, then R5 DOUBLE HEIGHT, then the connectors' ceilings."""
         self.spaces = []        # dict(rooms, level, ceiling, overlooked_by)
+        joined = collections.defaultdict(set)       # seen from either room
+        for o, r in enumerate(self.rooms):
+            for side in r["sides"].values():
+                for _, kind, k in side:
+                    if kind == "open_side" or (kind == "step" and k is not None and abs(self.rooms[k]["level"] - r["level"]) <= HEADROOM):
+                        joined[o].add(k); joined[k].add(o)
         space_of = {}
         for ri in range(len(self.rooms)):
             if ri in space_of:
                 continue
-            rooms = flood([ri], lambda o: True, lambda o: [k for side in self.rooms[o]["sides"].values() for _, kind, k in side if kind == "open_side"])
+            rooms = flood([ri], lambda o: True, lambda o: joined[o])
             for o in rooms:
                 space_of[o] = len(self.spaces)
                 self.rooms[o]["space"] = len(self.spaces)
-            level = self.rooms[ri]["level"]
-            self.spaces.append(dict(rooms=sorted(rooms), level=level, ceiling=min(level + self.room_height + 1, 25), overlooked_by=[]))
+            top = max(self.rooms[o]["level"] for o in rooms)
+            self.spaces.append(dict(rooms=sorted(rooms), level=min(self.rooms[o]["level"] for o in rooms),
+                                    ceiling=min(top + self.room_height + 1, 25), overlooked_by=[]))
         # The floor columns of each level's rooms and connectors, and their space.
         upper = {}
         for ri, r in enumerate(self.rooms):
@@ -591,9 +610,10 @@ class Plan:
         upper_at = collections.defaultdict(list)
         for k, v in upper.items():
             upper_at[k[1]].append((k, v))
+        base = [sp["ceiling"] for sp in self.spaces]
         for si, sp in enumerate(self.spaces):
-            level = sp["level"]
             for ri in sp["rooms"]:
+                level = self.rooms[ri]["level"]
                 x0, x1, z0, z1 = self.rooms[ri]["box"]
                 for x in range(x0, x1 + 1):
                     for z in range(z0, z1 + 1):
@@ -605,7 +625,7 @@ class Plan:
                                     sp["overlooked_by"].append(other)
         for sp in self.spaces:
             for other in sp["overlooked_by"]:
-                sp["ceiling"] = max(sp["ceiling"], min(self.spaces[other]["level"] + self.room_height + 1, 25))
+                sp["ceiling"] = max(sp["ceiling"], base[other])
         for r in self.rooms:
             r["ceiling"] = self.spaces[r["space"]]["ceiling"]
         for c in self.connectors:
