@@ -498,7 +498,10 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   and saturation over the whole image.
 - **Sky**: Unreal's sky atmosphere, tinted (*Sky Luminance Factor*) so its average matches the island's
   original sky (the cloud half of its sky/sea texture page), with Unreal's volumetric clouds (coverage
-  and color per island, storm clouds over Citadel). The Emerald Moon has no atmosphere.
+  and color per island, storm clouds over Citadel). The Emerald Moon has no atmosphere. Citabau (nice
+  weather) has a *clear sky* instead (`ClearSkyColor`): a deep cerulean sky with white clouds, which the
+  sun lights as brightly as the sky is tinted (its *Cloud Scattered Luminance Scale*); the sky light and
+  the water are calibrated for the brighter clouds.
 - **Sea**: on Twinsun (Citabau, Citadel, the desert) Unreal's water (Water plugin): a water zone over the
   island and an ocean filling it, out to the horizon, with Epic's ocean material tinted towards the
   original sea's color under the island's lights (`MI_<Island>_Ocean`), and a calm swell or storm

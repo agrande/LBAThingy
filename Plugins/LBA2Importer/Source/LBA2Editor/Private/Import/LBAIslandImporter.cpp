@@ -1232,6 +1232,11 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		Preset.SeaTileSize = 8192.f * Scale;
 	}
 	Preset.bWater &= Preset.SeaColor.GetLuminance() > 0.f;
+	if (Preset.ClearSkyColor.IsSet())
+	{
+		Preset.SkyColor = Preset.ClearSkyColor.GetValue();
+		Preset.CloudColor = FLinearColor(0.98f, 0.98f, 0.98f);
+	}
 
 	// Modern fog: the original drew everything crisp up to its fog distance and nothing beyond; the height fog keeps
 	// that range clear and lets you see the rest of the island fading into the palette's fog color, unless the

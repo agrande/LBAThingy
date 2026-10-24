@@ -55,6 +55,12 @@ namespace
 	constexpr float UniformSkyLuminance = 0.41f;
 
 	/**
+	 * Effective luminance of a clear sky, relative to its sky color: its white clouds brighten what the sky light
+	 * captures (measured on Citabau's harbour with the default cloud coverage, against the ground of the original sky).
+	 */
+	constexpr float ClearSkyLuminance = 1.83f;
+
+	/**
 	 * Volumetric fog reach (cm): light shafts and lamp halos around the player. No further than twice the fog's
 	 * visibility, beyond which nothing shows: its slices then stay fine near the camera.
 	 */
@@ -97,6 +103,9 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::ForIsland(const FString& IslandName
 	{
 		// Sunnier than the original's mid tones in the enhanced look (the desert's sand is bright enough).
 		Preset.EnhancedExposure = 0.3f;
+		// Nice weather: a deep cerulean sky with white clouds (matched to a painted reference, zenith about sRGB
+		// (23, 151, 180) once graded) rather than the original's pale blue.
+		Preset.ClearSkyColor = FLinearColor(0.0113f, 0.130f, 0.203f);
 	}
 	if (Name == TEXT("CITADEL"))
 	{
@@ -431,7 +440,8 @@ FLBAEnvironmentLights LBAEnvironment::ComputeLights(const FLBAEnvironmentPreset&
 		return Lights;
 	}
 	const float SkyLuminance = UsesUniformSkyLight(Preset) ? UniformSkyLuminance * GetSkyLightColor(Preset).GetLuminance()
-		: HasTintedSky(Preset) ? Preset.SkyColor.GetLuminance() : Preset.FogColor.GetLuminance();
+		: HasTintedSky(Preset) ? Preset.SkyColor.GetLuminance() * (Preset.ClearSkyColor.IsSet() ? ClearSkyLuminance : 1.f)
+		: Preset.FogColor.GetLuminance();
 	Lights.GroundLight = Preset.GroundRow / float(FMath::Max(NeutralRow, 1));
 	Lights.AmbientLight = FMath::Min(Preset.AmbientLight, Lights.GroundLight * Preset.MaxAmbientFraction);
 	Lights.SunIntensity = (Lights.GroundLight - Lights.AmbientLight) * UE_PI / (SinElevation * MeasuredSunGain);
@@ -536,6 +546,13 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 				const FLinearColor DefaultSky = DefaultSkyPerSunLux * FMath::Max(SunIntensity, 0.01f);
 				const FLinearColor Factor(Preset.SkyColor.R / DefaultSky.R, Preset.SkyColor.G / DefaultSky.G, Preset.SkyColor.B / DefaultSky.B);
 				Component->SetSkyLuminanceFactor(Factor);
+				// The sun is calibrated for the ground, far too dim for clouds in front of a sky brightened this much:
+				// a clear sky's clouds get the same boost, white instead of gray.
+				if (SunLight && Preset.ClearSkyColor.IsSet())
+				{
+					SunLight->CloudScatteredLuminanceScale = FLinearColor::White * Factor.GetLuminance();
+					SunLight->MarkRenderStateDirty();
+				}
 			}
 		}
 	}

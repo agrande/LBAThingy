@@ -135,6 +135,11 @@ struct FLBAEnvironmentPreset
 	 * it; black keeps Unreal's sky.
 	 */
 	FLinearColor SkyColor = FLinearColor::Black;
+	/**
+	 * Clear sky: replaces the original's pale sky color (SkyColor) with this deep blue, with white clouds lit as
+	 * brightly as the sky. Unset, clouds have the original sky's color and only the sun lights them.
+	 */
+	TOptional<FLinearColor> ClearSkyColor;
 
 	/** Unreal's volumetric clouds: coverage from -1 (clear) to 1 (overcast), albedo, storm clouds. */
 	bool bClouds = false;

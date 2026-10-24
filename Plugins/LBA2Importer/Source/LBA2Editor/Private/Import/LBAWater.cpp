@@ -51,6 +51,8 @@ namespace
 	 * exact for deep water; waves and reflections of the sky add about a fifth).
 	 */
 	constexpr float MeasuredWaterGain = 1.2f;
+	/** Under a clear sky, the white clouds' reflections add a quarter more (measured on Citabau's harbour). */
+	constexpr float ClearSkyWaterGain = 1.25f;
 
 	/** Water mesh tiles (cm) and their quads per side (2^n): 25 cm quads up close. */
 	constexpr float WaterTileSize = 400.f;
@@ -224,7 +226,8 @@ float LBAWater::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWater
 	};
 	const FLinearColor Absorption(InverseAbsorption(Albedo.R), InverseAbsorption(Albedo.G), InverseAbsorption(Albedo.B), 1.f);
 	const FLinearColor Scattering(1.f, 1.f, 1.f, WaterScattering * 1000.f);
-	const float NeutralLight = AlbedoScale * Transmission * MeasuredWaterGain / FMath::Max(Preset.SeaLight, 0.05f);
+	const float WaterGain = MeasuredWaterGain * (Preset.ClearSkyColor.IsSet() ? ClearSkyWaterGain : 1.f);
+	const float NeutralLight = AlbedoScale * Transmission * WaterGain / FMath::Max(Preset.SeaLight, 0.05f);
 	UE_LOG(LogLBA2, Display, TEXT("LBA2 water %s: sea %s, albedo %s, absorption distance %s cm, neutral light %.2f"), *Settings.Name,
 		*Preset.SeaColor.ToString(), *Albedo.ToString(), *Absorption.ToString(), NeutralLight);
 
