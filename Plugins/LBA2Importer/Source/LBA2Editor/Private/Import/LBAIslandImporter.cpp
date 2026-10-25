@@ -16,6 +16,7 @@
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBAPlanetBuilder.h"
 #include "Import/LBASeabed.h"
 #include "Import/LBAWater.h"
 #include "LBA2ImporterSettings.h"
@@ -1276,6 +1277,8 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 				Component->SetStaticMesh(SeabedMesh);
 				Component->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 				Component->SetCastShadow(false);
+				// Globe mode swaps it for its bent twin (LBAPlanetBuilder).
+				Actor->Tags.Add(TEXT("LBA_Seabed"));
 				GroundActors.Add(Actor);
 			}
 		}
@@ -1289,6 +1292,10 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		Water.TerrainActors = GroundActors;
 		const FLBAEnvironmentLights Lights = LBAEnvironment::ComputeLights(Preset, SunRotation, Xpl ? Xpl->ShadeNormalLevel : 12);
 		Preset.WaterNeutralLight = LBAWater::Spawn(Context, World, Water, Preset, Lights);
+		if (LBAPlanetBuilder::IsPlaced(Island.Name))
+		{
+			LBAPlanetBuilder::AddIsland(Context, Island, IslandFolder, Seabed, Preset, Lights);
+		}
 	}
 	if (UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))
 	{
@@ -1336,6 +1343,8 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 			Component->SetVisibility(false);
 			Component->SetHiddenInGame(true);
 			Component->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+			// Globe mode removes it: the planet's sea has no floor.
+			Floor->Tags.Add(TEXT("LBA_SeaFloor"));
 		}
 	}
 

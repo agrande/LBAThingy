@@ -26,8 +26,22 @@ struct FLBAWaterSettings
 	TArray<AActor*> TerrainActors;
 };
 
+/** How a level's sea renders as single layer water. */
+struct FLBAWaterLook
+{
+	/** Single scattering albedo, and the extinction split into scattering and absorption (1/cm). */
+	FLinearColor Albedo = FLinearColor::Black;
+	FLinearColor Scattering = FLinearColor::Black;
+	FLinearColor Absorption = FLinearColor::Black;
+	/** How bright open water renders relative to the preset's SeaColor (the palette shading's WaterNeutralLight). */
+	float NeutralLight = 1.f;
+};
+
 namespace LBAWater
 {
+	/** The sea's look under the level's lights: tinted towards the preset's SeaColor. */
+	FLBAWaterLook ComputeLook(const FLBAEnvironmentPreset& Preset, const FLBAEnvironmentLights& Lights);
+
 	/**
 	 * Spawns a water zone and an ocean at sea level: Unreal's ocean material tinted towards the preset's SeaColor
 	 * under the level's lights, with a calm swell or storm waves (shared, editable wave assets). Returns how bright

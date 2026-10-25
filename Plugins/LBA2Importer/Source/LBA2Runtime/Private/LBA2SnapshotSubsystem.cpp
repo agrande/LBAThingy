@@ -14,6 +14,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameFramework/WorldSettings.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformMisc.h"
 #include "LBA2Runtime.h"
@@ -25,6 +26,7 @@
 #include "LBADinofly.h"
 #include "LBAHitPointsComponent.h"
 #include "LBAIslandMenu.h"
+#include "LBAPlanetSubsystem.h"
 #include "LBAPlayerController.h"
 #include "LBAFlightMovementComponent.h"
 #include "LBASceneActor.h"
@@ -71,6 +73,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	else if (Spec.Equals(TEXT("dinofly"), ESearchCase::IgnoreCase))
 	{
 		bDinofly = true;
+		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("globe"), ESearchCase::IgnoreCase))
+	{
+		bGlobe = true;
 		bPosesReady = true;
 	}
 	else if (Spec.Equals(TEXT("wind"), ESearchCase::IgnoreCase))
@@ -624,6 +631,263 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 		}
 		++HeroStep;
 		HeroStepStart = Elapsed;
+	}
+	return true;
+}
+
+bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
+{
+	enum class EGlobeStep : uint8 { Fly, TurnTest, HighView };
+	struct FStep
+	{
+		const TCHAR* Name;
+		float Duration;
+		EGlobeStep Kind;
+		/** Steers away from the island (-1), towards it (1) or not (0); forward input. */
+		float Steer;
+		float Forward;
+		float Vertical;
+		/** Pumps the climb button every this many seconds (negative: taps the brake). */
+		float Pump;
+		bool bUntilLanded;
+		/** High views: camera height above the Dinofly (cm). */
+		float Height;
+	};
+	static const FStep Steps[] =
+	{
+		{ TEXT("takeoff"), 2.5f, EGlobeStep::Fly, 0.f, 0.f, 1.f, 0.f, false, 0.f },
+		{ TEXT("climb"), 6.f, EGlobeStep::Fly, 0.f, 0.f, 0.f, 0.4f, false, 0.f },
+		{ TEXT("fly_out"), 35.f, EGlobeStep::Fly, -1.f, 1.f, 0.f, 1.f, false, 0.f },
+		{ TEXT("at_sea"), 1.f, EGlobeStep::Fly, -1.f, 1.f, 0.f, 1.f, false, 0.f },
+		{ TEXT("turn_back"), 6.f, EGlobeStep::Fly, 1.f, 0.6f, 0.f, 1.f, false, 0.f },
+		{ TEXT("island_on_horizon"), 3.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f },
+		{ TEXT("land_on_sea"), 60.f, EGlobeStep::Fly, 1.f, 0.f, 0.f, -0.45f, true, 0.f },
+		{ TEXT("floating"), 2.f, EGlobeStep::Fly, 0.f, 0.f, 0.f, 0.f, false, 0.f },
+		{ TEXT("turn_test"), 0.f, EGlobeStep::TurnTest, 0.f, 0.f, 0.f, 0.f, false, 0.f },
+		{ TEXT("high_view"), 4.f, EGlobeStep::HighView, 0.f, 0.f, 0.f, 0.f, false, 50000.f },
+		{ TEXT("higher_view"), 4.f, EGlobeStep::HighView, 0.f, 0.f, 0.f, 0.f, false, 150000.f },
+		{ TEXT("takeoff_home"), 2.5f, EGlobeStep::Fly, 0.f, 0.f, 1.f, 0.f, false, 0.f },
+		{ TEXT("climb_home"), 4.f, EGlobeStep::Fly, 1.f, 0.f, 0.f, 0.4f, false, 0.f },
+		{ TEXT("fly_home"), 40.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f },
+		{ TEXT("home"), 1.f, EGlobeStep::Fly, 1.f, 0.5f, 0.f, 1.f, false, 0.f },
+	};
+	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	ULBAPlanetSubsystem* Planets = World->GetSubsystem<ULBAPlanetSubsystem>();
+	if (GlobeStep < 0)
+	{
+		ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+		if (!Planets || !Planets->IsActive() || !Hero)
+		{
+			if (Elapsed > 15.0)
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots globe: no planet (open the island with ?Globe) or no ALBACharacter"));
+				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+				return false;
+			}
+			return true;
+		}
+		if (!Hero->SummonDinofly())
+		{
+			return true;
+		}
+		GlobeStep = 0;
+		GlobeStepStart = Elapsed;
+		GlobeFrame = 0;
+		GlobeTurns = Planets->GetRecenterCount();
+		NextReport = Elapsed;
+		return true;
+	}
+	if (GlobeStep >= NumSteps)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe done: %d turns of the world, %.1f fps average over %d frames, worst frame %.1f ms"),
+			Planets->GetRecenterCount(), GlobeFrames / FMath::Max(GlobeFrameTime, 1e-3), GlobeFrames, GlobeWorstFrame * 1000.0);
+		FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+		return false;
+	}
+
+	const FStep& Step = Steps[GlobeStep];
+	// -LBA2GlobeQuick: out to sea and the turn test only.
+	if (Step.Kind == EGlobeStep::HighView && FParse::Param(FCommandLine::Get(), TEXT("LBA2GlobeQuick")))
+	{
+		GlobeStep = NumSteps;
+		return true;
+	}
+	const double StepTime = Elapsed - GlobeStepStart;
+	ALBADinofly* Dinofly = Cast<ALBADinofly>(Pawn);
+	const FLBAPlanetIsland* Island = Planets->GetPlanetAsset() && Planets->GetPlanetAsset()->Islands.Num() > 0 ? &Planets->GetPlanetAsset()->Islands[0] : nullptr;
+	const FVector IslandCenter = Island ? Planets->GetLevelToWorld().TransformPosition(FVector(Island->Center, 0.0)) : FVector::ZeroVector;
+	auto Shoot = [&](const FString& Name)
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Globe_%02d_%s.png"), GlobeStep, *Name), false, false);
+	};
+	auto NextStep = [&]()
+	{
+		++GlobeStep;
+		GlobeStepStart = Elapsed;
+		GlobeFrame = 0;
+	};
+	auto SetConsole = [](const TCHAR* Name, int32 Value)
+	{
+		if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Name))
+		{
+			Variable->Set(Value);
+		}
+	};
+
+	if (Step.Kind == EGlobeStep::TurnTest)
+	{
+		// Frozen time, no automatic turns: two control shots, a forced 3 degree turn (the camera corrects it), then the
+		// automatic turn back. Every shot should match the controls but for TSR's noise.
+		if (GlobeFrame == 0)
+		{
+			World->GetWorldSettings()->SetTimeDilation(0.0001f);
+			SetConsole(TEXT("lba.Globe.Turns"), 0);
+		}
+		else if (GlobeFrame == 40 || GlobeFrame == 41)
+		{
+			Shoot(FString::Printf(TEXT("turn_control%d"), GlobeFrame - 40));
+		}
+		else if (GlobeFrame == 42)
+		{
+			// -LBA2GlobeTurn=degrees (default 3, six times a normal turn, so problems show).
+			float Degrees = 3.f;
+			FParse::Value(FCommandLine::Get(), TEXT("LBA2GlobeTurn="), Degrees);
+			Planets->DebugTurn(Degrees);
+			Shoot(TEXT("turn_forced"));
+		}
+		else if (GlobeFrame == 43)
+		{
+			Shoot(TEXT("turn_forced_next"));
+		}
+		else if (GlobeFrame == 50)
+		{
+			SetConsole(TEXT("lba.Globe.Turns"), 1);
+			Shoot(TEXT("turn_back"));
+		}
+		else if (GlobeFrame == 51)
+		{
+			Shoot(TEXT("turn_back_next"));
+		}
+		else if (GlobeFrame >= 60)
+		{
+			World->GetWorldSettings()->SetTimeDilation(1.f);
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe turn test done, turns %d"), Planets->GetRecenterCount());
+			NextStep();
+			return true;
+		}
+		++GlobeFrame;
+		return true;
+	}
+
+	if (Step.Kind == EGlobeStep::HighView)
+	{
+		// A camera high above the Dinofly, looking at the island over the curve of the sea.
+		ACameraActor* View = Cast<ACameraActor>(Camera.Get());
+		if (GlobeFrame == 0)
+		{
+			const FVector Location = Pawn->GetActorLocation() + FVector(0.0, 0.0, Step.Height);
+			const FRotator Rotation = (IslandCenter - Location).Rotation();
+			if (!View)
+			{
+				View = World->SpawnActor<ACameraActor>(Location, Rotation);
+				Camera = View;
+			}
+			View->SetActorLocationAndRotation(Location, Rotation);
+			View->GetCameraComponent()->SetFieldOfView(70.f);
+			PC->SetViewTarget(View);
+		}
+		++GlobeFrame;
+		if (StepTime >= Step.Duration)
+		{
+			// The view goes back to the Dinofly once this shot is taken (next step).
+			Shoot(Step.Name);
+			NextStep();
+		}
+		return true;
+	}
+
+	if (!Dinofly)
+	{
+		UE_LOG(LogLBA2, Error, TEXT("LBA2Shots globe: the player isn't on the Dinofly (%s)"), Pawn ? *Pawn->GetName() : TEXT("none"));
+		FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+		return false;
+	}
+	Dinofly->DisableInput(PC);
+	if (PC->GetViewTarget() != Dinofly)
+	{
+		PC->SetViewTarget(Dinofly);
+	}
+
+	// Steering towards or away from the island.
+	float Turn = 0.f;
+	if (Step.Steer != 0.f)
+	{
+		const FVector ToIsland = (IslandCenter - Dinofly->GetActorLocation()) * Step.Steer;
+		const double Desired = FMath::RadiansToDegrees(FMath::Atan2(ToIsland.Y, ToIsland.X));
+		Turn = float(FMath::Clamp(FRotator::NormalizeAxis(Desired - Dinofly->GetActorRotation().Yaw) / 30.0, -1.0, 1.0));
+	}
+	static double NextPump = 0.0;
+	if (GlobeFrame == 0)
+	{
+		NextPump = Elapsed;
+	}
+	if (Step.Pump != 0.f && Elapsed >= NextPump)
+	{
+		Step.Pump > 0.f ? Dinofly->Flap() : Dinofly->BrakeTap();
+		NextPump += FMath::Abs(Step.Pump);
+	}
+	Dinofly->SetHoverInput(FVector2D(Turn, Step.Forward), Step.Vertical);
+	Dinofly->SetDiveInput(false);
+
+	// The camera's path in planet space: a turn of the world must not show as a jerk.
+	if (APlayerCameraManager* Manager = PC->PlayerCameraManager)
+	{
+		const FMinimalViewInfo& ViewInfo = Manager->GetCameraCacheView();
+		const FTransform PlanetToWorld = Planets->GetPlanetToWorld();
+		const FVector CameraOnPlanet = PlanetToWorld.InverseTransformPosition(ViewInfo.Location);
+		const FQuat ViewOnPlanet = PlanetToWorld.GetRotation().Inverse() * ViewInfo.Rotation.Quaternion();
+		static FVector LastDelta = FVector::ZeroVector;
+		static double LastTurn = 0.0;
+		if (GlobeFrame > 1)
+		{
+			const FVector Delta = CameraOnPlanet - GlobeLastCamera;
+			const double ViewTurn = FMath::RadiansToDegrees(ViewOnPlanet.AngularDistance(GlobeLastView));
+			const int32 Turns = Planets->GetRecenterCount();
+			if (Turns != GlobeTurns)
+			{
+				UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe turn %d (%s t=%.2f, frame %.1f ms): camera moved %.1f cm, view turned %.3f deg; the frame before %.1f cm, %.3f deg; jerk %.2f cm"),
+					Turns, Step.Name, StepTime, DeltaTime * 1000.f, Delta.Size(), ViewTurn, LastDelta.Size(), LastTurn, (Delta - LastDelta).Size());
+			}
+			LastDelta = Delta;
+			LastTurn = ViewTurn;
+			GlobeTurns = Turns;
+		}
+		GlobeLastCamera = CameraOnPlanet;
+		GlobeLastView = ViewOnPlanet;
+	}
+	GlobeFrameTime += DeltaTime;
+	GlobeWorstFrame = FMath::Max(GlobeWorstFrame, double(DeltaTime));
+	++GlobeFrames;
+	++GlobeFrame;
+
+	if (Elapsed >= NextReport)
+	{
+		double SeaZ = 0.0;
+		Planets->GetSeaSurface(Dinofly->GetActorLocation(), SeaZ);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe %s t=%.1f: %.0f m from the island, %.1f m above the sea, speed %.1f m/s, turns %d, landed %d floating %d"),
+			Step.Name, StepTime, FVector::Dist2D(Dinofly->GetActorLocation(), IslandCenter) / 100.0, (Dinofly->GetActorLocation().Z - SeaZ) / 100.0,
+			Dinofly->GetFlight()->Velocity.Size() / 100.0, Planets->GetRecenterCount(), Dinofly->GetFlight()->IsLanded() ? 1 : 0, Dinofly->GetFlight()->IsFloating() ? 1 : 0);
+		NextReport = Elapsed + 1.0;
+	}
+
+	const bool bLandedEarly = Step.bUntilLanded && Dinofly->GetFlight()->IsLanded();
+	if (StepTime >= Step.Duration || bLandedEarly)
+	{
+		Shoot(Step.Name);
+		NextStep();
 	}
 	return true;
 }
@@ -1427,6 +1691,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bWind)
 	{
 		return TickWind(World, DeltaTime);
+	}
+	if (bGlobe)
+	{
+		return TickGlobe(World, DeltaTime);
 	}
 	if (bScenes)
 	{

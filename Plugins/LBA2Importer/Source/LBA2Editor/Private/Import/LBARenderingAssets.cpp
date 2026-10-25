@@ -12,18 +12,23 @@
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionCameraPositionWS.h"
+#include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionLocalPosition.h"
 #include "Materials/MaterialExpressionParticleDirection.h"
 #include "Materials/MaterialExpressionParticlePositionWS.h"
 #include "Materials/MaterialExpressionParticleRandom.h"
 #include "Materials/MaterialExpressionParticleRelativeTime.h"
 #include "Materials/MaterialExpressionParticleSize.h"
+#include "Materials/MaterialExpressionPreviousFrameSwitch.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSceneTexture.h"
+#include "Materials/MaterialExpressionSingleLayerWaterMaterialOutput.h"
 #include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureObjectParameter.h"
+#include "Materials/MaterialExpressionTime.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
 #include "Materials/MaterialInstanceConstant.h"
@@ -382,14 +387,15 @@ UMaterial* FLBARenderingAssets::GetMaster()
 UMaterial* FLBARenderingAssets::CreateMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 28;
+	constexpr int32 Version = 30;
 
 	CreateDitherTextures();
+	UMaterialParameterCollection* PlanetCollection = GetPlanetParameters();
 	CreateHalftoneRamp();
 
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_PaletteShading"), &bExisted);
-	if (!Material || (bExisted && LBAMaterials::IsGeneratedVersion(Material, Version)))
+	if (!Material || (bExisted && LBAMaterials::IsGeneratedVersion(Material, Version) && !bPlanetParametersChanged))
 	{
 		return Material;
 	}
@@ -450,6 +456,15 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		const TCHAR* Name;
 		UMaterialExpression* Expression;
 	};
+	// Globe mode's world to anchor level transform (MPC_LBA_Planet, LBAPlanet.ush).
+	auto Planet = [&](const TCHAR* Name, int32 Y) -> UMaterialExpression*
+	{
+		UMaterialExpressionCollectionParameter* Node = Cast<UMaterialExpressionCollectionParameter>(Add(UMaterialExpressionCollectionParameter::StaticClass(), -900, Y));
+		Node->Collection = PlanetCollection;
+		Node->ParameterName = Name;
+		Node->ParameterId = PlanetCollection ? PlanetCollection->GetParameterId(Name) : FGuid();
+		return Node;
+	};
 	// Defaults are the original look; MI_LBA_Look_Enhanced overrides them (FLBARenderingAssets::GetLook).
 	UTexture2D* DefaultShades = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
 	const FInput Inputs[] =
@@ -467,6 +482,11 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("HalftoneRamp"), TextureObject(TEXT("HalftoneRamp"), HalftoneRamp, 960) },
 		// The island's sea texture, set per level (LBAEnvironment), for cartoon water.
 		{ TEXT("SeaTexture"), TextureObject(TEXT("SeaTexture"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1080) },
+		{ TEXT("PlanetX"), Planet(TEXT("PlanetPatternX"), 1200) },
+		{ TEXT("PlanetY"), Planet(TEXT("PlanetPatternY"), 1280) },
+		{ TEXT("PlanetZ"), Planet(TEXT("PlanetPatternZ"), 1360) },
+		{ TEXT("PlanetPattern"), Planet(TEXT("PlanetPattern"), 1440) },
+		{ TEXT("PlanetCap"), Planet(TEXT("PlanetPatternCap"), 1520) },
 		{ TEXT("Strength"), Scalar(TEXT("Strength"), 1.f, TEXT("Palette")) },
 		{ TEXT("NeutralRow"), Scalar(TEXT("NeutralRow"), 12.f, TEXT("Palette")) },
 		{ TEXT("NeutralLight"), Scalar(TEXT("NeutralLight"), 1.f, TEXT("Palette")) },
@@ -599,6 +619,11 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Dither.StretchSmoothness = StretchSmoothness;\n"
 		"S.Halftone.DotPixels = max(DotSpacing, 1.0);\n"
 		"S.Halftone.Contrast = DotContrast;\n"
+		"S.Planet.X = PlanetX;\n"
+		"S.Planet.Y = PlanetY;\n"
+		"S.Planet.Z = PlanetZ;\n"
+		"S.Planet.Pattern = PlanetPattern;\n"
+		"S.Planet.Cap = PlanetCap;\n"
 		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture,\n"
 		"    Dither, DitherSampler, DitherRamp, DitherRampSampler, HalftoneRamp, HalftoneRampSampler, S);"), DitherDotsPerSide);
 
@@ -741,6 +766,207 @@ UMaterialParameterCollection* FLBARenderingAssets::GetWindParameters()
 		Context.MarkForSave(WindParameters);
 	}
 	return WindParameters;
+}
+
+UMaterialParameterCollection* FLBARenderingAssets::GetPlanetParameters()
+{
+	if (PlanetParameters)
+	{
+		return PlanetParameters;
+	}
+	PlanetParameters = Context.CreateOrReuseAsset<UMaterialParameterCollection>(GetFolder(), TEXT("MPC_LBA_Planet"));
+	if (!PlanetParameters)
+	{
+		return nullptr;
+	}
+	// Defaults: no planet (LBAPlanet.ush). Existing parameters keep their ids (materials refer to them by id).
+	const TPair<const TCHAR*, FLinearColor> Defaults[] =
+	{
+		{ TEXT("PlanetSea"), FLinearColor::Transparent },
+		{ TEXT("PlanetSeaX"), FLinearColor(1.f, 0.f, 0.f, 0.f) },
+		{ TEXT("PlanetSeaY"), FLinearColor(0.f, 1.f, 0.f, 0.f) },
+		{ TEXT("PlanetSeaZ"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
+		{ TEXT("PlanetCenter"), FLinearColor::Transparent },
+		{ TEXT("PlanetCap0"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
+		{ TEXT("PlanetCapEdge0"), FLinearColor::Transparent },
+		{ TEXT("PlanetCap1"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
+		{ TEXT("PlanetCapEdge1"), FLinearColor::Transparent },
+		{ TEXT("PlanetPatternX"), FLinearColor(1.f, 0.f, 0.f, 0.f) },
+		{ TEXT("PlanetPatternY"), FLinearColor(0.f, 1.f, 0.f, 0.f) },
+		{ TEXT("PlanetPatternZ"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
+		{ TEXT("PlanetPattern"), FLinearColor::Transparent },
+		{ TEXT("PlanetPatternCap"), FLinearColor::Transparent },
+		// Last frame, for the sea's motion vectors: the disc's axes, and the world's move since (current to previous).
+		{ TEXT("PlanetSeaXPrev"), FLinearColor(1.f, 0.f, 0.f, 0.f) },
+		{ TEXT("PlanetSeaYPrev"), FLinearColor(0.f, 1.f, 0.f, 0.f) },
+		{ TEXT("PlanetPreviousX"), FLinearColor(1.f, 0.f, 0.f, 0.f) },
+		{ TEXT("PlanetPreviousY"), FLinearColor(0.f, 1.f, 0.f, 0.f) },
+		{ TEXT("PlanetPreviousZ"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
+	};
+	// Parameters dropped from the list go (only generated materials use the collection).
+	bool bChanged = PlanetParameters->VectorParameters.RemoveAll([&Defaults](const FCollectionVectorParameter& Parameter)
+	{
+		for (const TPair<const TCHAR*, FLinearColor>& Default : Defaults)
+		{
+			if (Parameter.ParameterName == Default.Key)
+			{
+				return false;
+			}
+		}
+		return true;
+	}) > 0;
+	for (const TPair<const TCHAR*, FLinearColor>& Default : Defaults)
+	{
+		if (!PlanetParameters->GetVectorParameterByName(Default.Key))
+		{
+			FCollectionVectorParameter& Parameter = PlanetParameters->VectorParameters.AddDefaulted_GetRef();
+			Parameter.ParameterName = Default.Key;
+			Parameter.DefaultValue = Default.Value;
+			bChanged = true;
+		}
+	}
+	if (bChanged)
+	{
+		PlanetParameters->PostEditChange();
+		Context.MarkForSave(PlanetParameters);
+		// Materials compiled against the old layout lose their planet (the palette shading turned off at sea): the
+		// ones using it are rebuilt.
+		bPlanetParametersChanged = true;
+	}
+	return PlanetParameters;
+}
+
+UMaterial* FLBARenderingAssets::GetPlanetSeaMaster()
+{
+	if (PlanetSeaMaster)
+	{
+		return PlanetSeaMaster;
+	}
+	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
+	constexpr int32 Version = 5;
+
+	bool bExisted = false;
+	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_PlanetSea"), &bExisted);
+	if (!Material || (bExisted && LBAMaterials::IsGeneratedVersion(Material, Version) && !bPlanetParametersChanged))
+	{
+		return PlanetSeaMaster = Material;
+	}
+	LBAMaterials::BeginRebuild(Material, Version);
+	UMaterialParameterCollection* Collection = GetPlanetParameters();
+
+	// Single layer water like the islands' Unreal ocean, so the palette shading draws it as cartoon water. The disc is
+	// bent onto the planet by its world position offset; its normal (world space) is the planet's, with ripples.
+	Material->MaterialDomain = MD_Surface;
+	Material->BlendMode = BLEND_Opaque;
+	Material->SetShadingModel(MSM_SingleLayerWater);
+	Material->bTangentSpaceNormal = false;
+
+	auto Add = [Material](UClass* Class, int32 X, int32 Y)
+	{
+		return UMaterialEditingLibrary::CreateMaterialExpression(Material, Class, X, Y);
+	};
+	auto Planet = [&](const TCHAR* Name, int32 Y) -> UMaterialExpression*
+	{
+		UMaterialExpressionCollectionParameter* Node = Cast<UMaterialExpressionCollectionParameter>(Add(UMaterialExpressionCollectionParameter::StaticClass(), -900, Y));
+		Node->Collection = Collection;
+		Node->ParameterName = Name;
+		Node->ParameterId = Collection ? Collection->GetParameterId(Name) : FGuid();
+		return Node;
+	};
+	int32 ParameterY = 600;
+	auto Scalar = [&](const TCHAR* Name, float Default)
+	{
+		UMaterialExpressionScalarParameter* Node = Cast<UMaterialExpressionScalarParameter>(Add(UMaterialExpressionScalarParameter::StaticClass(), -600, ParameterY));
+		ParameterY += 80;
+		Node->ParameterName = Name;
+		Node->DefaultValue = Default;
+		Node->Group = TEXT("Sea");
+		return Node;
+	};
+	auto Vector = [&](const TCHAR* Name, const FLinearColor& Default)
+	{
+		UMaterialExpressionVectorParameter* Node = Cast<UMaterialExpressionVectorParameter>(Add(UMaterialExpressionVectorParameter::StaticClass(), -600, ParameterY));
+		ParameterY += 160;
+		Node->ParameterName = Name;
+		Node->DefaultValue = Default;
+		Node->Group = TEXT("Sea");
+		return Node;
+	};
+	auto MakeCustom = [&](const TCHAR* Description, int32 Y, std::initializer_list<TPair<const TCHAR*, UMaterialExpression*>> Inputs, const TCHAR* Code)
+	{
+		UMaterialExpressionCustom* Custom = Cast<UMaterialExpressionCustom>(Add(UMaterialExpressionCustom::StaticClass(), -250, Y));
+		Custom->Description = Description;
+		Custom->OutputType = CMOT_Float3;
+		Custom->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBAPlanet.ush") };
+		Custom->Inputs.Reset();
+		for (const TPair<const TCHAR*, UMaterialExpression*>& Input : Inputs)
+		{
+			FCustomInput& CustomInput = Custom->Inputs.AddDefaulted_GetRef();
+			CustomInput.InputName = Input.Key;
+			CustomInput.Input.Connect(0, Input.Value);
+		}
+		Custom->Code = Code;
+		return Custom;
+	};
+
+	UMaterialExpression* Sea = Planet(TEXT("PlanetSea"), -800);
+	UMaterialExpression* SeaX = Planet(TEXT("PlanetSeaX"), -720);
+	UMaterialExpression* SeaY = Planet(TEXT("PlanetSeaY"), -640);
+	UMaterialExpression* SeaZ = Planet(TEXT("PlanetSeaZ"), -560);
+	UMaterialExpression* Center = Planet(TEXT("PlanetCenter"), -480);
+	UMaterialExpression* Cap0 = Planet(TEXT("PlanetCap0"), -400);
+	UMaterialExpression* Edge0 = Planet(TEXT("PlanetCapEdge0"), -320);
+	UMaterialExpression* Cap1 = Planet(TEXT("PlanetCap1"), -240);
+	UMaterialExpression* Edge1 = Planet(TEXT("PlanetCapEdge1"), -160);
+	UMaterialExpression* PatternX = Planet(TEXT("PlanetPatternX"), -80);
+	UMaterialExpression* PatternY = Planet(TEXT("PlanetPatternY"), 0);
+
+	// The disc slides over the sea under the player: its motion vectors (which TSR and motion blur rely on) follow the
+	// sea, not the disc (LBAPlanetSeaPreviousOffset).
+	UMaterialExpression* Local = Add(UMaterialExpressionLocalPosition::StaticClass(), -900, -900);
+	UMaterialExpressionCustom* Offset = MakeCustom(TEXT("LBA planet sea offset"), -600,
+		{ { TEXT("Local"), Local }, { TEXT("Sea"), Sea }, { TEXT("SeaX"), SeaX }, { TEXT("SeaY"), SeaY }, { TEXT("SeaZ"), SeaZ },
+		  { TEXT("Center"), Center }, { TEXT("Cap0"), Cap0 }, { TEXT("Edge0"), Edge0 }, { TEXT("Cap1"), Cap1 }, { TEXT("Edge1"), Edge1 } },
+		TEXT("return LBAPlanetSeaOffset(Local, Sea, SeaX.xyz, SeaY.xyz, SeaZ.xyz, Center.xyz, Cap0, Edge0, Cap1, Edge1);"));
+	UMaterialExpressionCustom* PreviousOffset = MakeCustom(TEXT("LBA planet sea offset (last frame)"), -1100,
+		{ { TEXT("Local"), Local }, { TEXT("Sea"), Sea }, { TEXT("SeaX"), SeaX }, { TEXT("SeaY"), SeaY }, { TEXT("SeaZ"), SeaZ },
+		  { TEXT("Center"), Center }, { TEXT("Cap0"), Cap0 }, { TEXT("Edge0"), Edge0 }, { TEXT("Cap1"), Cap1 }, { TEXT("Edge1"), Edge1 },
+		  { TEXT("PreviousSeaX"), Planet(TEXT("PlanetSeaXPrev"), -1400) }, { TEXT("PreviousSeaY"), Planet(TEXT("PlanetSeaYPrev"), -1320) },
+		  { TEXT("PreviousX"), Planet(TEXT("PlanetPreviousX"), -1240) }, { TEXT("PreviousY"), Planet(TEXT("PlanetPreviousY"), -1160) },
+		  { TEXT("PreviousZ"), Planet(TEXT("PlanetPreviousZ"), -1080) } },
+		TEXT("return LBAPlanetSeaPreviousOffset(Local, Sea, SeaX.xyz, SeaY.xyz, SeaZ.xyz, Center.xyz, Cap0, Edge0, Cap1, Edge1,\n")
+		TEXT("    PreviousSeaX.xyz, PreviousSeaY.xyz, PreviousX, PreviousY, PreviousZ);"));
+	UMaterialExpressionPreviousFrameSwitch* Switch = Cast<UMaterialExpressionPreviousFrameSwitch>(Add(UMaterialExpressionPreviousFrameSwitch::StaticClass(), -100, -800));
+	Switch->CurrentFrame.Connect(0, Offset);
+	Switch->PreviousFrame.Connect(0, PreviousOffset);
+	UMaterialEditingLibrary::ConnectMaterialProperty(Switch, TEXT(""), MP_WorldPositionOffset);
+
+	// The pixel's position relative to the disc's center, subtracted in double precision.
+	UMaterialExpression* World = Add(UMaterialExpressionWorldPosition::StaticClass(), -900, 100);
+	UMaterialExpressionComponentMask* SeaCenter = Cast<UMaterialExpressionComponentMask>(Add(UMaterialExpressionComponentMask::StaticClass(), -750, 180));
+	SeaCenter->R = SeaCenter->G = SeaCenter->B = true;
+	SeaCenter->A = false;
+	SeaCenter->Input.Connect(0, Sea);
+	UMaterialExpressionSubtract* FromSea = Cast<UMaterialExpressionSubtract>(Add(UMaterialExpressionSubtract::StaticClass(), -600, 120));
+	FromSea->A.Connect(0, World);
+	FromSea->B.Connect(0, SeaCenter);
+	UMaterialExpressionCustom* Normal = MakeCustom(TEXT("LBA planet sea normal"), 0,
+		{ { TEXT("FromSea"), FromSea }, { TEXT("World"), World }, { TEXT("Time"), Add(UMaterialExpressionTime::StaticClass(), -900, 260) },
+		  { TEXT("Sea"), Sea }, { TEXT("Center"), Center }, { TEXT("Cap0"), Cap0 }, { TEXT("Edge0"), Edge0 }, { TEXT("Cap1"), Cap1 },
+		  { TEXT("Edge1"), Edge1 }, { TEXT("PatternX"), PatternX }, { TEXT("PatternY"), PatternY }, { TEXT("RippleSlope"), Scalar(TEXT("RippleSlope"), 0.05f) } },
+		TEXT("return LBAPlanetSeaNormal(FromSea, World, Time, Sea, Center.xyz, Cap0, Edge0, Cap1, Edge1, PatternX, PatternY, RippleSlope);"));
+	UMaterialEditingLibrary::ConnectMaterialProperty(Normal, TEXT(""), MP_Normal);
+	UMaterialEditingLibrary::ConnectMaterialProperty(Scalar(TEXT("Roughness"), 0.06f), TEXT(""), MP_Roughness);
+
+	// Water coefficients (1/cm), set per planet from its home island's sea (LBAWater::ComputeLook).
+	UMaterialExpressionSingleLayerWaterMaterialOutput* Water = Cast<UMaterialExpressionSingleLayerWaterMaterialOutput>(
+		Add(UMaterialExpressionSingleLayerWaterMaterialOutput::StaticClass(), 0, 600));
+	Water->ScatteringCoefficients.Connect(0, Vector(TEXT("Scattering"), FLinearColor(0.0025f, 0.0025f, 0.0025f)));
+	Water->AbsorptionCoefficients.Connect(0, Vector(TEXT("Absorption"), FLinearColor(0.02f, 0.004f, 0.002f)));
+	Water->PhaseG.Connect(0, Scalar(TEXT("PhaseG"), 0.1f));
+	Water->ColorScaleBehindWater.Connect(0, Scalar(TEXT("ColorScaleBehindWater"), 1.f));
+
+	return PlanetSeaMaster = LBAMaterials::EndRebuild(Context, Material);
 }
 
 UMaterial* FLBARenderingAssets::GetRainDropMaster()

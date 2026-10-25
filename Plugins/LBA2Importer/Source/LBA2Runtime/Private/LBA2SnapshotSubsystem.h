@@ -42,6 +42,7 @@ private:
 	bool TickDoor(UWorld* World, float DeltaTime);
 	bool TickAttack(UWorld* World, float DeltaTime);
 	bool TickMenu(UWorld* World, float DeltaTime);
+	bool TickGlobe(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
 	/** -LBA2HeroAt: stands the pawn on the first surface below the point, facing its yaw. */
 	void PlaceHero(UWorld* World, APawn* Pawn) const;
@@ -55,6 +56,21 @@ private:
 	float ModernBaseYaw = 0.f;
 	/** -LBA2Shots=dinofly: Twinsen summons the Dinofly, which flies a scripted sequence of inputs. */
 	bool bDinofly = false;
+	/**
+	 * -LBA2Shots=globe (open the island with ?Globe): the Dinofly flies out to sea and back while the world turns under
+	 * it; the camera's path in planet space is checked for jumps at every turn, a frozen frame is compared across a
+	 * forced turn, and the planet is shot from high above.
+	 */
+	bool bGlobe = false;
+	int32 GlobeStep = -1;
+	double GlobeStepStart = 0.0;
+	int32 GlobeFrame = 0;
+	int32 GlobeTurns = 0;
+	FVector GlobeLastCamera = FVector::ZeroVector;
+	FQuat GlobeLastView = FQuat::Identity;
+	double GlobeFrameTime = 0.0;
+	int32 GlobeFrames = 0;
+	double GlobeWorstFrame = 0.0;
 	/** -LBA2Shots=wind: the Dinofly hovers hands-off at places of Citadel's storm, then tries to fly away and climb. */
 	bool bWind = false;
 	bool bStepStarted = false;

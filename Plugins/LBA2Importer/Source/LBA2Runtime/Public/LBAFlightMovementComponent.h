@@ -214,7 +214,7 @@ public:
 	float MaxLandingSpeed = 1300.f;
 
 	/**
-	 * The Dinofly never goes under water (Water plugin bodies): touching the surface slowly lands on it (it floats,
+	 * The Dinofly never goes under water (Water plugin bodies, or a planet's sea): touching the surface slowly lands on it (it floats,
 	 * its center this high above the surface, in cm), faster skims off it.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Ground")
@@ -311,6 +311,10 @@ public:
 	/** Air density (1 at the reference altitude) where the Dinofly is. */
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	float GetAirDensity() const;
+
+	/** Height above the sea level (cm): world Z, or above a planet's sea in globe mode. */
+	UFUNCTION(BlueprintPure, Category = "Flight")
+	float GetAltitude() const;
 
 	/** Every hit: speed into the surface (cm/s), what was hit, where. */
 	UPROPERTY(BlueprintAssignable, Category = "Flight")

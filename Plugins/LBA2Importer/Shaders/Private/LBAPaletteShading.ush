@@ -40,6 +40,7 @@
 
 #include "/Plugin/LBA2Importer/Private/LBADither3D.ush"
 #include "/Plugin/LBA2Importer/Private/LBAHalftone.ush"
+#include "/Plugin/LBA2Importer/Private/LBAPlanet.ush"
 #include "/Plugin/LBA2Importer/Private/LBAWaterCartoon.ush"
 
 #define LBA_SHADE_ROWS 16
@@ -122,14 +123,21 @@ struct FLBADitherFrame
 };
 
 // World-aligned dither frame: the world position projected along the dominant axis of the geometric normal (taken
-// from depth, so normal maps don't break the projection up). Dots are spaced in centimetres of world space.
-FLBADitherFrame LBADitherSurfaceFrame(float2 ViewportUV, float Depth, float2 PixelSize)
+// from depth, so normal maps don't break the projection up). Dots are spaced in centimetres of world space. In globe
+// mode, of the anchor island's level space (LBAPlanet.ush), so they stay put when the world turns.
+FLBADitherFrame LBADitherSurfaceFrame(float2 ViewportUV, float Depth, float2 PixelSize, FLBAPlanetPattern Planet)
 {
 	const float3 Center = LBATranslatedPositionAt(ViewportUV, Depth);
-	const float3 DPDX = LBASurfaceDelta(ViewportUV, float2(PixelSize.x, 0.0), Center, Depth);
-	const float3 DPDY = LBASurfaceDelta(ViewportUV, float2(0.0, PixelSize.y), Center, Depth);
+	float3 DPDX = LBASurfaceDelta(ViewportUV, float2(PixelSize.x, 0.0), Center, Depth);
+	float3 DPDY = LBASurfaceDelta(ViewportUV, float2(0.0, PixelSize.y), Center, Depth);
+	FDFVector3 WorldPos = DFFastSubtract(Center, PrimaryView.PreViewTranslation);
+	if (LBAPlanetPatternTurned(Planet))
+	{
+		WorldPos = DFPromote(LBAPlanetPatternPosition(Planet, DFDemote(WorldPos)));
+		DPDX = LBAPlanetPatternVector(Planet, DPDX);
+		DPDY = LBAPlanetPatternVector(Planet, DPDY);
+	}
 	const float3 Axis = abs(cross(DPDX, DPDY));
-	const FDFVector3 WorldPos = DFFastSubtract(Center, PrimaryView.PreViewTranslation);
 
 	FLBADitherFrame Frame;
 	if (Axis.x >= Axis.y && Axis.x >= Axis.z)
@@ -269,6 +277,7 @@ struct FLBAPaletteShadingSettings
 	FLBADither3DSettings Dither;
 	FLBAHalftoneSettings Halftone;
 	FLBACartoonWaterSettings Cartoon;
+	FLBAPlanetPattern Planet;	// globe mode: world to the anchor island's level space (LBAPlanet.ush)
 };
 
 // Viewport UV of the point at a horizontal world offset from a translated world position; false off screen.
@@ -397,12 +406,16 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 {
 	const FLBACartoonWaterSettings C = S.Cartoon;
 	const float3 Translated = LBATranslatedPositionAt(ViewportUV, Depth);
-	const float2 P = DFDemote(DFFastSubtract(Translated, PrimaryView.PreViewTranslation)).xy;
+	// Sea coordinates: world XY, or in globe mode along the planet from the anchor island (LBAPlanet.ush).
+	const float3 World = DFDemote(DFFastSubtract(Translated, PrimaryView.PreViewTranslation));
+	const float3 Level = LBAPlanetPatternTurned(S.Planet) ? LBAPlanetPatternPosition(S.Planet, World) : World;
+	const float2 P = LBAPlanetSeaCoordinates(S.Planet, Level);
+	const float2 Bend = LBAPlanetPatternTurned(S.Planet) ? LBAPlanetPatternVector(S.Planet, WorldNormal).xy : WorldNormal.xy;
 	const float Time = View.GameTime;
 	const float BaseLuma = max(LBALuma(BaseColor), 1e-4);
 	// World size of a pixel on the water (its longest side, at grazing angles along the view): details smaller than a
 	// few pixels fade out in the distance instead of shimmering.
-	const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, LBAViewportPixelSize());
+	const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, LBAViewportPixelSize(), S.Planet);
 	const float Footprint = max(length(Frame.DUVDX), length(Frame.DUVDY));
 	const bool bNear = 3.0 * Footprint < C.Smoothing;
 
@@ -431,7 +444,7 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 		const float TexelsPerCm = float(Width) / max(C.TileSize, 1.0);
 		const float TexelsPerPixel = Footprint * TexelsPerCm;
 		const float Wobble = C.Wobble * saturate(1.5 - TexelsPerPixel);
-		const float2 Texels = (P + C.Drift * Time + WorldNormal.xy * Wobble) * TexelsPerCm;
+		const float2 Texels = (P + C.Drift * Time + Bend * Wobble) * TexelsPerCm;
 		TexIndex = LBANearestPaletteIndex(Lut, LBASeaColor(SeaTexture, int(Width), Texels, TexelsPerPixel, C));
 	}
 	float3 Color = LBAShadeColor(Shades, TexIndex, uint(round(Row)));
@@ -547,7 +560,7 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 	BRANCH
 	if (S.DitherAmount > 0.0 && !bExcluded && Fraction > 0.0 && Fraction < 1.0)
 	{
-		const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, LBAViewportPixelSize());
+		const FLBADitherFrame Frame = LBADitherSurfaceFrame(ViewportUV, Depth, LBAViewportPixelSize(), S.Planet);
 		float Dots;
 		BRANCH
 		if (S.DotPattern >= 0.5)

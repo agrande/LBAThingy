@@ -22,5 +22,8 @@ public class LBA2Runtime : ModuleRules
 			"Slate",
 			"SlateCore",
 		});
+
+		// Globe mode's debug command reading material compile errors (lba.Globe.SeaErrors).
+		PrivateDependencyModuleNames.Add("RHI");
 	}
 }

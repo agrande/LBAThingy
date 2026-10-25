@@ -3,6 +3,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Pawn.h"
 #include "LBADinoflySettings.h"
+#include "LBAPlanetSubsystem.h"
 #include "LBAWindSubsystem.h"
 #include "WaterBodyComponent.h"
 #include "WaterBodyManager.h"
@@ -93,7 +94,24 @@ void ULBAFlightMovementComponent::SetDead(bool bInDead)
 
 float ULBAFlightMovementComponent::GetAirDensity() const
 {
-	return UpdatedComponent ? ULBADinoflySettings::Get().GetAirDensity(UpdatedComponent->GetComponentLocation().Z) : 1.f;
+	return UpdatedComponent ? ULBADinoflySettings::Get().GetAirDensity(GetAltitude()) : 1.f;
+}
+
+float ULBAFlightMovementComponent::GetAltitude() const
+{
+	if (!UpdatedComponent)
+	{
+		return 0.f;
+	}
+	// Above the sea level: 0, or a planet's sea under the Dinofly (globe mode).
+	const FVector Location = UpdatedComponent->GetComponentLocation();
+	const ULBAPlanetSubsystem* Planet = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>();
+	double SeaZ = 0.0;
+	if (Planet && Planet->GetSeaSurface(Location, SeaZ))
+	{
+		return float(Location.Z - SeaZ);
+	}
+	return float(Location.Z);
 }
 
 float ULBAFlightMovementComponent::GetCruiseSpeed() const
@@ -112,7 +130,7 @@ void ULBAFlightMovementComponent::AddVerticalImpulse(float Impulse)
 void ULBAFlightMovementComponent::UpdateVertical(float DeltaTime, float HorizontalSpeed)
 {
 	const ULBADinoflySettings& Settings = ULBADinoflySettings::Get();
-	const float Z = UpdatedComponent->GetComponentLocation().Z;
+	const float Z = GetAltitude();
 	const float Density = Settings.GetAirDensity(Z);
 
 	// Beats: every press, or by themselves while climb is held (when enabled). A beat soon after another is weaker,
@@ -505,7 +523,7 @@ void ULBAFlightMovementComponent::TickDive(float DeltaTime, float Height)
 		const FVector2D& Angles = ULBADinoflySettings::Get().DiveAngles;
 		TargetPath = FMath::DegreesToRadians(FMath::Lerp(Angles.X, Angles.Y, GetDiveAggression()));
 	}
-	else if (Vertical > 0.f && UpdatedComponent->GetComponentLocation().Z < MaxAltitude - 1000.f)
+	else if (Vertical > 0.f && GetAltitude() < MaxAltitude - 1000.f)
 	{
 		// Zoom climb: the speed carries the Dinofly up.
 		TargetPath = -FMath::DegreesToRadians(ZoomClimbAngle);
@@ -738,7 +756,7 @@ void ULBAFlightMovementComponent::Simulate(float DeltaTime)
 	FVector Accel = Up * (Pressure * Lift) - Dir * Drag + FVector(0.f, 0.f, -Gravity);
 	if (Flap > 0.f)
 	{
-		const float Altitude = UpdatedComponent->GetComponentLocation().Z;
+		const float Altitude = GetAltitude();
 		const float Strength = Flap * FMath::Clamp((MaxAltitude - Altitude) / 1000.f, 0.f, 1.f);
 		const FVector Forward = Dir * FMath::Cos(Alpha) + Up * FMath::Sin(Alpha);
 		Accel += Strength * (Forward * FlapThrust + FVector::UpVector * FlapHoverLift * FMath::Max(0.f, 1.f - Speed / HoverFadeSpeed));
@@ -795,6 +813,15 @@ void ULBAFlightMovementComponent::TickAirborne(float DeltaTime)
 
 bool ULBAFlightMovementComponent::FindWaterSurface(const FVector& Location, float& OutSurfaceZ) const
 {
+	// On a planet the sea is everywhere (globe mode).
+	const ULBAPlanetSubsystem* Planet = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>();
+	double PlanetSeaZ = 0.0;
+	if (Planet && Planet->GetSeaSurface(Location, PlanetSeaZ))
+	{
+		OutSurfaceZ = float(PlanetSeaZ);
+		return true;
+	}
+
 	bool bFound = false;
 	FWaterBodyManager::ForEachWaterBodyComponent(GetWorld(), [&](UWaterBodyComponent* Body)
 	{

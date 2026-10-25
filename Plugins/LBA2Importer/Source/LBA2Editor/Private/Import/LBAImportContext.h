@@ -36,6 +36,8 @@ struct FLBAStaticMeshOptions
 	TArray<FName> NoShadowSlots;
 	/** Distance field built as if two-sided: single-sided shells (interior enclosures) still block Lumen's light. */
 	bool bTwoSidedDistanceField = false;
+	/** No distance field (meshes Lumen never traces, like a planet's sea disc). */
+	bool bNoDistanceField = false;
 };
 
 /**

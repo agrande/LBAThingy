@@ -205,11 +205,8 @@ namespace
 	}
 }
 
-float LBAWater::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWaterSettings& Settings, const FLBAEnvironmentPreset& Preset,
-	const FLBAEnvironmentLights& Lights)
+FLBAWaterLook LBAWater::ComputeLook(const FLBAEnvironmentPreset& Preset, const FLBAEnvironmentLights& Lights)
 {
-	const FName Folder(TEXT("Environment"));
-
 	// Water color: deep water scatters back Albedo * Light, Albedo = scattering / (scattering + absorption) per
 	// channel. The albedo follows the sea color's hue, as bright as the light allows: the original's sea is a bright
 	// painted texture, real water is darker, so the palette shading gets the remaining factor as the water's neutral
@@ -218,18 +215,31 @@ float LBAWater::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWater
 	FLinearColor Albedo(Preset.SeaColor.R / FMath::Max(Light.R, 1e-4f), Preset.SeaColor.G / FMath::Max(Light.G, 1e-4f), Preset.SeaColor.B / FMath::Max(Light.B, 1e-4f));
 	const float AlbedoScale = FMath::Min(1.f, MaxWaterAlbedo / FMath::Max(FMath::Max3(Albedo.R, Albedo.G, Albedo.B), 1e-4f));
 	Albedo *= AlbedoScale;
-	Albedo.A = 1.f;
-	auto InverseAbsorption = [](float ChannelAlbedo)
+	auto Absorption = [](float ChannelAlbedo)
 	{
-		const float Absorption = WaterScattering * (1.f / FMath::Clamp(ChannelAlbedo, 1e-3f, 1.f) - 1.f);
-		return 1.f / FMath::Max(Absorption, 1e-6f);
+		return FMath::Max(WaterScattering * (1.f / FMath::Clamp(ChannelAlbedo, 1e-3f, 1.f) - 1.f), 1e-6f);
 	};
-	const FLinearColor Absorption(InverseAbsorption(Albedo.R), InverseAbsorption(Albedo.G), InverseAbsorption(Albedo.B), 1.f);
-	const FLinearColor Scattering(1.f, 1.f, 1.f, WaterScattering * 1000.f);
+	FLBAWaterLook Look;
+	Look.Albedo = FLinearColor(Albedo.R, Albedo.G, Albedo.B, 1.f);
+	Look.Scattering = FLinearColor(WaterScattering, WaterScattering, WaterScattering, 1.f);
+	Look.Absorption = FLinearColor(Absorption(Albedo.R), Absorption(Albedo.G), Absorption(Albedo.B), 1.f);
 	const float WaterGain = MeasuredWaterGain * (Preset.ClearSkyColor.IsSet() ? ClearSkyWaterGain : 1.f);
-	const float NeutralLight = AlbedoScale * Transmission * WaterGain / FMath::Max(Preset.SeaLight, 0.05f);
+	Look.NeutralLight = AlbedoScale * Transmission * WaterGain / FMath::Max(Preset.SeaLight, 0.05f);
+	return Look;
+}
+
+float LBAWater::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWaterSettings& Settings, const FLBAEnvironmentPreset& Preset,
+	const FLBAEnvironmentLights& Lights)
+{
+	const FName Folder(TEXT("Environment"));
+
+	// Unreal's ocean material takes the absorption as a distance (cm) and the scattering in 1/m (alpha).
+	const FLBAWaterLook Look = ComputeLook(Preset, Lights);
+	const FLinearColor Absorption(1.f / Look.Absorption.R, 1.f / Look.Absorption.G, 1.f / Look.Absorption.B, 1.f);
+	const FLinearColor Scattering(1.f, 1.f, 1.f, WaterScattering * 1000.f);
+	const float NeutralLight = Look.NeutralLight;
 	UE_LOG(LogLBA2, Display, TEXT("LBA2 water %s: sea %s, albedo %s, absorption distance %s cm, neutral light %.2f"), *Settings.Name,
-		*Preset.SeaColor.ToString(), *Albedo.ToString(), *Absorption.ToString(), NeutralLight);
+		*Preset.SeaColor.ToString(), *Look.Albedo.ToString(), *Absorption.ToString(), NeutralLight);
 
 	UMaterialInterface* WaterMaterial = MakeWaterMaterial(Context, Settings.MaterialFolder, FString::Printf(TEXT("MI_%s_Ocean"), *Settings.Name),
 		GetClippedOceanMaterial(Context), Absorption, Scattering);

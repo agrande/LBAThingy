@@ -1,0 +1,201 @@
+// LBAPlanet.ush
+//
+// Globe mode (ULBAPlanetSubsystem): islands stay flat on a round planet. The sea is a sphere, flat over a cap around
+// each island (the island's tangent plane, where its coasts are), bending down to the sphere across a ring. The world
+// turns under the player out at sea, so surface patterns are laid out in the anchor island's level space instead of
+// world space. Values come from MPC_LBA_Planet, written each frame:
+//
+//   PlanetSea            xyz: center of the sea disc (world, under the player), w: planet radius (cm)
+//   PlanetSeaX/Y/Z       the disc's axes (world); Z is the planet's up under the player
+//   PlanetCenter         xyz: the planet's center relative to the disc's center
+//   PlanetCap0/1         xyz: an island's up (world), w: radius of its flat cap (cm)
+//   PlanetCapEdge0/1     x: where its sea is round again (cm), y: 1 if the island exists
+//   PlanetPatternX/Y/Z   rows of world -> anchor level (xyz: rotation, w: translation)
+//   PlanetPattern        xy: the anchor's cap center (level), z: planet radius, w: 1 when the rows aren't identity
+//   PlanetPatternCap     x, y: the anchor's cap and round radii, z: 1 in globe mode
+//
+// The cap's shape mirrors FLBAPlanetCap (LBAPlanet.h).
+
+#pragma once
+
+struct FLBAPlanetCapShape
+{
+	float Radius;
+	float CapRadius;
+	float BlendRadius;
+};
+
+float LBAPlanetCapAngle(FLBAPlanetCapShape C)
+{
+	return atan(C.CapRadius / C.Radius);
+}
+
+// Distance along the island's plane (tangent plane, then arc length) of a point Angle away from the cap's center.
+float LBAPlanetCapDistance(FLBAPlanetCapShape C, float Angle)
+{
+	const float CapAngle = LBAPlanetCapAngle(C);
+	return Angle <= CapAngle ? C.Radius * tan(Angle) : C.CapRadius + (Angle - CapAngle) * C.Radius;
+}
+
+float LBAPlanetCapRoundness(FLBAPlanetCapShape C, float Distance)
+{
+	return C.BlendRadius <= C.CapRadius ? step(C.CapRadius, Distance) : smoothstep(C.CapRadius, C.BlendRadius, Distance);
+}
+
+float LBAPlanetCapSeaRadius(FLBAPlanetCapShape C, float Angle)
+{
+	const float Roundness = LBAPlanetCapRoundness(C, LBAPlanetCapDistance(C, Angle));
+	return Roundness >= 1.0 ? C.Radius : lerp(C.Radius / cos(Angle), C.Radius, Roundness);
+}
+
+// Angle between two unit vectors, precise when they are close (acos isn't).
+float LBAPlanetAngle(float3 A, float3 B)
+{
+	return atan2(length(cross(A, B)), dot(A, B));
+}
+
+FLBAPlanetCapShape LBAPlanetCapShape(float Radius, float4 Cap, float4 Edge)
+{
+	FLBAPlanetCapShape C;
+	C.Radius = Radius;
+	C.CapRadius = Cap.w;
+	C.BlendRadius = max(Edge.x, Cap.w);
+	return C;
+}
+
+// Distance of the sea from the planet's center in a direction (world).
+float LBAPlanetSeaRadius(float3 Direction, float Radius, float4 Cap0, float4 Edge0, float4 Cap1, float4 Edge1)
+{
+	float SeaRadius = Radius;
+	if (Edge0.y > 0.0)
+	{
+		SeaRadius = max(SeaRadius, LBAPlanetCapSeaRadius(LBAPlanetCapShape(Radius, Cap0, Edge0), LBAPlanetAngle(Direction, Cap0.xyz)));
+	}
+	if (Edge1.y > 0.0)
+	{
+		SeaRadius = max(SeaRadius, LBAPlanetCapSeaRadius(LBAPlanetCapShape(Radius, Cap1, Edge1), LBAPlanetAngle(Direction, Cap1.xyz)));
+	}
+	return SeaRadius;
+}
+
+// Where a vertex of the sea disc (local position in cm: rings in its XY plane) is on the sea, relative to the disc's
+// center. The disc's center is on the sphere under the player; its rings go out along great circles, a ring's radius
+// being its arc length, and each vertex sits on the sea in its direction.
+float3 LBAPlanetSeaSurface(float3 Local, float4 Sea, float3 SeaX, float3 SeaY, float3 SeaZ, float3 CenterFromSea,
+	float4 Cap0, float4 Edge0, float4 Cap1, float4 Edge1)
+{
+	const float Radius = max(Sea.w, 1.0);
+	const float Rho = length(Local.xy);
+	const float2 Along = Rho > 1e-3 ? Local.xy / Rho : float2(1.0, 0.0);
+	const float Angle = Rho / Radius;
+	const float3 Direction = cos(Angle) * SeaZ + sin(Angle) * (Along.x * SeaX + Along.y * SeaY);
+	return CenterFromSea + Direction * LBAPlanetSeaRadius(Direction, Radius, Cap0, Edge0, Cap1, Edge1);
+}
+
+// World position offset of a vertex of the sea disc.
+float3 LBAPlanetSeaOffset(float3 Local, float4 Sea, float3 SeaX, float3 SeaY, float3 SeaZ, float3 CenterFromSea,
+	float4 Cap0, float4 Edge0, float4 Cap1, float4 Edge1)
+{
+	return LBAPlanetSeaSurface(Local, Sea, SeaX, SeaY, SeaZ, CenterFromSea, Cap0, Edge0, Cap1, Edge1) - (Local.x * SeaX + Local.y * SeaY);
+}
+
+// The same vertex's offset last frame, for motion vectors. The disc slides over the sea under the player, so a vertex
+// isn't the same point of the sea from one frame to the next: it gets where its current point of the sea was last
+// frame (the sea only moves with the planet). PreviousX/Y/Z: rows of the world's move since last frame, current to
+// previous (xyz rotation, w translation, relative to the discs' centers); PreviousSeaX/Y: last frame's disc axes.
+float3 LBAPlanetSeaPreviousOffset(float3 Local, float4 Sea, float3 SeaX, float3 SeaY, float3 SeaZ, float3 CenterFromSea,
+	float4 Cap0, float4 Edge0, float4 Cap1, float4 Edge1, float3 PreviousSeaX, float3 PreviousSeaY,
+	float4 PreviousX, float4 PreviousY, float4 PreviousZ)
+{
+	const float3 Surface = LBAPlanetSeaSurface(Local, Sea, SeaX, SeaY, SeaZ, CenterFromSea, Cap0, Edge0, Cap1, Edge1);
+	const float3 Previous = float3(dot(PreviousX.xyz, Surface) + PreviousX.w, dot(PreviousY.xyz, Surface) + PreviousY.w,
+		dot(PreviousZ.xyz, Surface) + PreviousZ.w);
+	return Previous - (Local.x * PreviousSeaX + Local.y * PreviousSeaY);
+}
+
+// Normal of the sea (world) at a point given relative to the disc's center, with small ripples laid out in the
+// anchor level's space (so they stay put when the world turns).
+float3 LBAPlanetSeaNormal(float3 FromSea, float3 World, float Time, float4 Sea, float3 CenterFromSea,
+	float4 Cap0, float4 Edge0, float4 Cap1, float4 Edge1, float4 PatternX, float4 PatternY, float RippleSlope)
+{
+	const float Radius = max(Sea.w, 1.0);
+	const float3 Direction = normalize(FromSea - CenterFromSea);
+	float3 Normal = Direction;
+	// Flat over the nearest island's cap, bending to the sphere's normal across its ring.
+	const bool bFirst = Edge0.y > 0.0 && (Edge1.y <= 0.0 || dot(Direction, Cap0.xyz) >= dot(Direction, Cap1.xyz));
+	const float4 Cap = bFirst ? Cap0 : Cap1;
+	const float4 Edge = bFirst ? Edge0 : Edge1;
+	if (Edge.y > 0.0)
+	{
+		const FLBAPlanetCapShape C = LBAPlanetCapShape(Radius, Cap, Edge);
+		const float Roundness = LBAPlanetCapRoundness(C, LBAPlanetCapDistance(C, LBAPlanetAngle(Direction, Cap.xyz)));
+		Normal = normalize(lerp(Cap.xyz, Direction, Roundness));
+	}
+
+	// Ripples: a few deep water waves (cm), their slopes along the level's X and Y.
+	const float2 P = float2(dot(PatternX.xyz, World) + PatternX.w, dot(PatternY.xyz, World) + PatternY.w);
+	const float4 Lengths = float4(130.0, 230.0, 370.0, 610.0);
+	const float2 Dirs[4] = { float2(0.94, 0.34), float2(-0.42, 0.91), float2(0.71, -0.70), float2(0.16, 0.99) };
+	float2 Slope = 0.0;
+	UNROLL
+	for (int Index = 0; Index < 4; ++Index)
+	{
+		const float K = 2.0 * PI / Lengths[Index];
+		const float Omega = sqrt(981.0 * K);
+		Slope += Dirs[Index] * cos(K * dot(Dirs[Index], P) - Omega * Time) * (0.25 + 0.25 * Index);
+	}
+	Slope *= RippleSlope;
+	const float3 Tangent = normalize(PatternX.xyz - Normal * dot(PatternX.xyz, Normal));
+	const float3 Bitangent = normalize(cross(Normal, Tangent));
+	return normalize(Normal - Slope.x * Tangent - Slope.y * Bitangent);
+}
+
+// Post-process side: world positions to the anchor level's space ----------------------------------------------------
+
+struct FLBAPlanetPattern
+{
+	float4 X;
+	float4 Y;
+	float4 Z;
+	float4 Pattern;
+	float4 Cap;
+};
+
+bool LBAPlanetPatternTurned(FLBAPlanetPattern P)
+{
+	return P.Pattern.w > 0.0;
+}
+
+float3 LBAPlanetPatternPosition(FLBAPlanetPattern P, float3 World)
+{
+	return float3(dot(P.X.xyz, World) + P.X.w, dot(P.Y.xyz, World) + P.Y.w, dot(P.Z.xyz, World) + P.Z.w);
+}
+
+float3 LBAPlanetPatternVector(FLBAPlanetPattern P, float3 Vector)
+{
+	return float3(dot(P.X.xyz, Vector), dot(P.Y.xyz, Vector), dot(P.Z.xyz, Vector));
+}
+
+// Sea texture coordinates of a point of the sea (anchor level space): its level XY over the island's cap, then
+// stretched along the planet (distance along it from the cap's center, in its direction) so the texture keeps its
+// size all the way around.
+float2 LBAPlanetSeaCoordinates(FLBAPlanetPattern P, float3 Level)
+{
+	if (P.Cap.z <= 0.0)
+	{
+		return Level.xy;
+	}
+	const float2 Center = P.Pattern.xy;
+	const float Radius = max(P.Pattern.z, 1.0);
+	const float3 FromCenter = Level - float3(Center, -Radius);
+	const float Horizontal = length(FromCenter.xy);
+	if (Horizontal < 1e-3)
+	{
+		return Level.xy;
+	}
+	FLBAPlanetCapShape C;
+	C.Radius = Radius;
+	C.CapRadius = P.Cap.x;
+	C.BlendRadius = max(P.Cap.y, P.Cap.x);
+	return Center + FromCenter.xy / Horizontal * LBAPlanetCapDistance(C, atan2(Horizontal, FromCenter.z));
+}

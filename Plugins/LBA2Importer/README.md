@@ -489,6 +489,53 @@ station N, `-100-N` steps onto the level's gateway N (`-LBA2MenuScenes=-5,15,-1`
 Pain tests, menu closed: `-200-H` drops Twinsen from H meters, `-400` onto the smallest hit zone, `-500` walks him into
 the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScenes=-207,-212,-400,-500,-501,-300`).
 
+### Globe mode (prototype)
+
+Islands placed on a planet can open on it: a small round planet (Twinsun: 2 km radius) whose sea curves away to a
+real horizon, the island sitting on it as imported. `lba.Globe.Open CITABAU` opens Citadel (sunny) that way; so does
+any travel to it with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. For now only
+Citadel is placed; the Dinofly is the sea vehicle (it floats and skims on the planet's sea).
+
+How it holds together:
+
+- **The island stays flat.** Its level is unchanged: on and near the island the world is exactly where the level
+  has it, and everything (characters, scenes, zones, the storm formula) works as before. The sea is flat over a
+  *cap* around the island (its land plus 20 m) and bends down to the sphere across a 150 m ring
+  (`FLBAPlanetCap`, mirrored in `Shaders/Private/LBAPlanet.ush`). In globe mode the level's Water plugin ocean and its
+  invisible sea floor are removed, and its seabed is swapped for a copy bent with the sea.
+- **Out at sea the world turns under the player.** Whenever the sea's up under the player is more than 0.5 degrees
+  from the world's +Z, everything but the player is rotated about the player to make it +Z again
+  (`ULBAPlanetSubsystem`). Gameplay code keeps its flat-world assumptions (gravity -Z, Z = height) within that half
+  degree. The camera is tilted by the angle left (`ULBAPlanetCameraModifier`), so the turns don't show; surface
+  patterns (dither dots, cartoon sea) are laid out in the island level's space, and the sea's motion vectors follow
+  the sea, so TSR and motion blur don't see them either. Back near the island, the world snaps back where the level
+  has it, taking the player along. Invisible markers (volumes, starts, target points) never move.
+- **The sea** is a disc of rings kept under the player and bent onto the planet by its material (`M_LBA_PlanetSea`:
+  single layer water with the home island's water colour, so the palette shading draws it as cartoon water); sea
+  queries (`GetSeaSurface`, used by the Dinofly's floating and its altitude for air density) are analytic.
+- **Sky:** the island's sky atmosphere becomes the planet's (centered on it, 2 km ground radius); a second sun on
+  the other side of the planet lights the other hemisphere (each sun is switched off below its horizon).
+- **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
+  (HOLOMAP.HQR, ARROW.BIN: latitude, longitude) and is turned so its calibrated sun keeps its angles. The planet's
+  sun is the direction that gives every listed island its sun's elevation (Citadel 31.3 and Desert 36.8 degrees,
+  both exact). Output: `/Game/LBA2/Planets/DA_Planet_TWINSUN`, the sea disc and material, and each placed island's
+  `SM_<ISLAND>_Seabed_Globe`. The planets list is a table in `LBAPlanetBuilder.cpp`.
+
+Measured on Citadel (`-LBA2Shots=globe`, open the level with `?Globe`): about 20 turns flying 400 m out and as many
+back; at each, the camera's path on the planet has no jerk (0.1 to 2 cm, as between ordinary frames). A frozen
+frame turned 0.5 degrees differs from untouched ones by 1.1 (mean, 0-255; untouched frames 0.3), all gone the next
+frame; turned 3 degrees, by 4.8, mostly the sky near the horizon (Unreal's height fog is flat in the world). A turn
+moves about 540 actors in 4 ms; the snap back near the island takes one 36 ms frame. 140 fps on average in
+standalone game. `-LBA2GlobeQuick` stops after the turn test, `-LBA2GlobeTurn=0.5` sets its angle.
+Console: `lba.Globe.Debug 1` (state on screen; 2 logs every turn, 3 their cost by class), `lba.Globe.Turns 0`
+(stops turning, the camera keeps correcting), `lba.Globe.Recenter 3` (turns the world 3 degrees: it must not show),
+`lba.Globe.SeaErrors` (the sea material's compile errors).
+
+Not done yet: other islands (stubs from the holomap and LBA1, Desert), the Hamalayi belt and its passes, a boat,
+streaming more than one island, the fast travel menu landing on the globe, space; packaged builds don't cook the planet
+asset yet. Height fog stays flat in the world (it shifts with each turn: visible only on large turns); views from high
+above are hazy.
+
 ### Tests tab, feature test map and gateways
 
 After the planets, the menu's **Tests** tab lists the test levels and sandboxes (**Project Settings > Plugins > LBA2 >
@@ -816,6 +863,8 @@ color, shade row / light, surfaces without fog).
 - [x] Dinofly flight choices: pump A (climb rate), hold X (dive), Morse on B (brake, tires), stalls when not pumping, lift from speed in thick air, attitude from the flight's forces, procedural wings, pain (hit stars, flinch), death and retry
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [x] Travel menu by planet, island and scene (interiors included), after lba2remake's teleport menu
+- [ ] Globe mode: islands on a round 2 km planet, the world turning under the player at sea (prototype: Citadel, the
+      Dinofly at sea; next: island stubs, the Hamalayi belt, a boat, fast travel onto the globe, space)
 - [x] Tests tab, feature test map (stations, gateways; default map), editor level selector on the toolbar
 - [x] Twinsen's life points: falls, hit zones and enemies that hurt on touch, hit stars, death screen and retry
 - [x] L4 Scenes: per-scene levels streamed into islands and interiors, objects, sprites, typed zone volumes,

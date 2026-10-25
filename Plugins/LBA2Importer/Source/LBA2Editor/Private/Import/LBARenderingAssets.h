@@ -30,6 +30,8 @@ class UVolumeTexture;
  *    rain get their own instances (LBAEnvironment).
  *  - MPC_LBA_Wind: the storm wind for shaders (FLBAStormWind::ShaderParameterNames, Shaders/Private/LBAWind.ush),
  *    written each frame by ULBAWindSubsystem; all zero (no wind) without a storm.
+ *  - MPC_LBA_Planet: globe mode's planet for shaders (Shaders/Private/LBAPlanet.ush), written each frame by
+ *    ULBAPlanetSubsystem; off without a planet. M_LBA_PlanetSea: a planet's sea (single layer water bent onto it).
  */
 class FLBARenderingAssets
 {
@@ -48,6 +50,12 @@ public:
 	/** The storm wind's parameter collection (created on first use). */
 	UMaterialParameterCollection* GetWindParameters();
 
+	/** Globe mode's parameter collection, MPC_LBA_Planet (created on first use, see LBAPlanet.ush). */
+	UMaterialParameterCollection* GetPlanetParameters();
+
+	/** A planet's sea: single layer water on the sea disc, bent onto the planet (created on first use). */
+	UMaterial* GetPlanetSeaMaster();
+
 private:
 	FString GetFolder() const;
 	UMaterial* GetMaster();
@@ -65,6 +73,10 @@ private:
 	UMaterial* RainMaster = nullptr;
 	UMaterial* RainDropMaster = nullptr;
 	UMaterialParameterCollection* WindParameters = nullptr;
+	UMaterialParameterCollection* PlanetParameters = nullptr;
+	/** The planet's collection changed this import: the materials using it are rebuilt. */
+	bool bPlanetParametersChanged = false;
+	UMaterial* PlanetSeaMaster = nullptr;
 	UMaterialInterface* Looks[2] = {};
 	UVolumeTexture* DitherTexture = nullptr;
 	UTexture2D* DitherRamp = nullptr;

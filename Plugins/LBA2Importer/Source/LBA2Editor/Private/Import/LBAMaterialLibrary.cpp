@@ -158,6 +158,11 @@ bool LBAMaterials::IsGeneratedVersion(const UMaterial* Material, int32 Version)
 void LBAMaterials::BeginRebuild(UMaterial* Material, int32 Version)
 {
 	UMaterialEditingLibrary::DeleteAllMaterialExpressions(Material);
+	// Some outputs outlive that (single layer water's: a second one fails the material's compile).
+	for (UMaterialExpression* Expression : TArray<TObjectPtr<UMaterialExpression>>(Material->GetExpressions()))
+	{
+		UMaterialEditingLibrary::DeleteMaterialExpression(Material, Expression);
+	}
 	for (UMaterialExpressionComment* Comment : TArray<TObjectPtr<UMaterialExpressionComment>>(Material->GetEditorComments()))
 	{
 		Material->GetExpressionCollection().RemoveComment(Comment);
