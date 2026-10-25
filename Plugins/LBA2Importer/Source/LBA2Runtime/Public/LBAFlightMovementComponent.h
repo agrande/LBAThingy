@@ -69,10 +69,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight")
 	ELBAFlightMode Mode = ELBAFlightMode::Hover;
 
-	/** Fast flight (cm/s), out of a dive: the body leans and the wings beat their fastest there. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
-	float HighCruiseSpeed = 1800.f;
-
 	/** Speed above the cruise is lost this slowly (cm/s^2) unless pulling back: drag, not braking. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Flight|Hover")
 	float CoastDeceleration = 250.f;
@@ -370,10 +366,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Flight")
 	float GetVerticalInput() const { return Vertical; }
-
-	/** Hover mode: fast flight, out of a dive (cm/s). */
-	UFUNCTION(BlueprintPure, Category = "Flight")
-	float GetMaxHoverSpeed() const { return HighCruiseSpeed; }
 
 	/** Hover mode: speed of forward flight (cm/s), ULBADinoflySettings::CruiseSpeed. */
 	UFUNCTION(BlueprintPure, Category = "Flight")
