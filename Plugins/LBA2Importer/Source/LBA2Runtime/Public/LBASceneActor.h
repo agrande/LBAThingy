@@ -57,6 +57,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA")
 	bool bFallable = false;
 
+	/**
+	 * Life points the player loses touching it, thrown back (0: harmless, the imported scenes' default: their enemies
+	 * don't fight back). The feature test map's enemies hurt.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA", meta = (ClampMin = "0"))
+	float TouchDamage = 0.f;
+
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	void SetBodyType(int32 NewBodyType);
 

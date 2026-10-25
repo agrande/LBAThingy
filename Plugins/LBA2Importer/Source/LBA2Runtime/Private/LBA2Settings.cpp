@@ -26,4 +26,9 @@ ULBA2Settings::ULBA2Settings()
 	{
 		NonEnemySceneEntities.Add(Entity(Name));
 	}
+	for (const TCHAR* Level : { TEXT("/Game/LBA2/Characters/L_CharacterGallery"), TEXT("/Game/ThirdPerson/Lvl_ThirdPerson"),
+		TEXT("/Game/Variant_Platforming/Lvl_Platforming"), TEXT("/Game/Variant_Combat/Lvl_Combat"), TEXT("/Game/Variant_SideScrolling/Lvl_SideScrolling") })
+	{
+		SandboxLevels.Add(TSoftObjectPtr<UWorld>(FSoftObjectPath(FString::Printf(TEXT("%s.%s"), Level, *FPackageName::GetShortName(Level)))));
+	}
 }

@@ -40,6 +40,8 @@ enum class ELBAImportLayer : uint8
 	Scenes,
 	Text,
 	Audio,
+	/** The feature test map (needs Characters and Scenes). */
+	Tests,
 };
 
 /**

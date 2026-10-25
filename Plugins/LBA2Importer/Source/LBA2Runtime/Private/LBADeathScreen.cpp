@@ -8,6 +8,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "LBAIslandTravelSubsystem.h"
@@ -122,6 +123,31 @@ void ULBADeathScreen::Retry()
 		PC->SetShowMouseCursor(false);
 	}
 	ULBAIslandTravelSubsystem* Travel = GetGameInstance() ? GetGameInstance()->GetSubsystem<ULBAIslandTravelSubsystem>() : nullptr;
+	// A test level starts over at the station closest to where the player died.
+	const APawn* Pawn = GetOwningPlayerPawn();
+	const FString Package = UWorld::RemovePIEPrefix(GetWorld()->GetOutermost()->GetName());
+	for (const FLBATestLevelInfo& Level : Travel && Pawn ? ULBAIslandTravelSubsystem::FindTestLevels(GetWorld()) : TArray<FLBATestLevelInfo>())
+	{
+		if (Level.Level.ToSoftObjectPath().GetLongPackageName() != Package)
+		{
+			continue;
+		}
+		FName Closest;
+		double ClosestDistance = UE_BIG_NUMBER;
+		for (const FLBATestStationInfo& Station : Level.Stations)
+		{
+			const double Distance = FVector::Dist(Station.Transform.GetLocation(), Pawn->GetActorLocation());
+			if (Distance < ClosestDistance)
+			{
+				ClosestDistance = Distance;
+				Closest = Station.Tag;
+			}
+		}
+		if (Travel->TravelToTestLevel(Level.Level, Closest, true))
+		{
+			return;
+		}
+	}
 	const FName IslandId = Travel ? Travel->GetCurrentIslandId() : NAME_None;
 	if (IslandId.IsNone() || !Travel->TravelToIsland(IslandId))
 	{

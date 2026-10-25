@@ -10,6 +10,7 @@ class USpringArmComponent;
 class UInputAction;
 class UInputMappingContext;
 class ULBAAnimInstance;
+class ULBAHitPointsComponent;
 class ALBADinofly;
 struct FInputActionValue;
 
@@ -168,6 +169,48 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Mounts")
 	TSubclassOf<ALBADinofly> DinoflyClass;
 
+	/**
+	 * Falls hurt from HardLandingSpeed on (a 6 m drop), by this much life per cm/s faster: about 50 (the original's full
+	 * life) at 1700 cm/s, a 15 m drop.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Pain")
+	float FallDamagePerSpeed = 0.082f;
+
+	/** After a hit, nothing hurts for this long (s): touching an enemy or standing in a hit zone hurts once a while. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Pain")
+	float HurtInvulnerability = 0.8f;
+
+	/** Speed (cm/s) at which touching an enemy throws Twinsen back, and up. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Pain")
+	FVector2D TouchKnockback = FVector2D(500.f, 300.f);
+
+	/** Life regained per second once Twinsen has not been hurt for LifeRegenDelay (s). 0: none, like the original. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Pain")
+	float LifeRegenPerSecond = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Pain")
+	float LifeRegenDelay = 4.f;
+
+	/** Seconds between dying and the death screen. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Pain")
+	float RetryDelay = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Pain")
+	TSubclassOf<class ULBADeathScreen> DeathScreenClass;
+
+	/** Twinsen's life points (50, the original's), and the hit stars. */
+	UFUNCTION(BlueprintPure, Category = "LBA|Pain")
+	class ULBAHitPointsComponent* GetHitPoints() const { return HitPoints; }
+
+	/** Hit points at zero. */
+	UFUNCTION(BlueprintPure, Category = "LBA|Pain")
+	bool IsDead() const { return bDead; }
+
+	/** Hit zones (ALBAHitVolume) and other damage hurt Twinsen's life points. */
+	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation,
+		FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
+
 	/** Mounts a nearby waiting Dinofly, or calls one over (prototype). */
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	ALBADinofly* SummonDinofly();
@@ -319,6 +362,20 @@ private:
 	void OnBehaviour(ELBABehaviour NewBehaviour) { SetBehaviour(NewBehaviour); }
 	void OnToggleControlMode(const FInputActionValue& Value);
 	void OnSummonDinofly(const FInputActionValue& Value) { SummonDinofly(); }
+
+	// Pain
+	/** Hurts Twinsen (stars from his head, his hit reaction) unless he was just hurt. Returns true if it hurt. */
+	bool Hurt(float Damage, int32 ReactionSlot);
+	UFUNCTION()
+	void HandleDeath();
+	void ShowDeathScreen();
+	bool bDead = false;
+	/** World time of the last hit that hurt (-1: none yet). */
+	double LastHurtTime = -1.0;
+	FTimerHandle DeathTimer;
+
+	UPROPERTY(VisibleAnywhere, Category = "LBA|Pain")
+	TObjectPtr<ULBAHitPointsComponent> HitPoints;
 
 	UPROPERTY(VisibleAnywhere, Category = "Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom;

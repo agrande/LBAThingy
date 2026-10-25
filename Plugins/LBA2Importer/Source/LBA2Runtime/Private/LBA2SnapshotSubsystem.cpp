@@ -21,6 +21,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "LBAAnimInstance.h"
 #include "LBACharacter.h"
+#include "LBADeathScreen.h"
 #include "LBADinofly.h"
 #include "LBAHitPointsComponent.h"
 #include "LBAIslandMenu.h"
@@ -29,6 +30,7 @@
 #include "LBASceneActor.h"
 #include "LBASceneAsset.h"
 #include "LBASceneTravelSubsystem.h"
+#include "LBATravelGateway.h"
 #include "LBAWindSubsystem.h"
 #include "LBAZoneVolume.h"
 #include "Misc/CommandLine.h"
@@ -736,7 +738,7 @@ bool ULBA2SnapshotSubsystem::TickMenu(UWorld* World, float DeltaTime)
 		MenuPhase = 0;
 		return true;
 	}
-	// One phase a second once the level has settled: open, shot, next planet, shot, pick the next scene.
+	// One phase a second once the level has settled: shot, open, shot, next tab, shot, pick the next place.
 	const double Time = Elapsed - SceneStepStart;
 	if (Time < 3.0 + MenuPhase)
 	{
@@ -746,22 +748,30 @@ bool ULBA2SnapshotSubsystem::TickMenu(UWorld* World, float DeltaTime)
 	switch (MenuPhase++)
 	{
 	case 0:
-		PC->OpenIslandMenu();
+		FScreenshotRequest::RequestScreenshot(Prefix + TEXT("_view.png"), true, false);
 		break;
 	case 1:
-		FScreenshotRequest::RequestScreenshot(Prefix + TEXT("_a.png"), true, false);
-		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots menu: %s, scene %d"), *Prefix, GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>()->GetCurrentScene());
+		PC->OpenIslandMenu();
 		break;
 	case 2:
+		FScreenshotRequest::RequestScreenshot(Prefix + TEXT("_a.png"), true, false);
 	{
-		// E, as the player would press it: the next planet.
+		const ALBACharacter* Hero = Cast<ALBACharacter>(PC->GetPawn());
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots menu: %s, scene %d, at %s, life %.1f"), *Prefix,
+			GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>()->GetCurrentScene(), *PC->GetPawn()->GetActorLocation().ToString(),
+			Hero ? Hero->GetHitPoints()->GetLife() : -1.f);
+	}
+		break;
+	case 3:
+	{
+		// E, as the player would press it: the next tab.
 		if (PC->GetIslandMenu())
 		{
 			FSlateApplication::Get().ProcessKeyDownEvent(FKeyEvent(EKeys::E, FModifierKeysState(), 0, false, 0, 0));
 		}
 		break;
 	}
-	case 3:
+	case 4:
 		FScreenshotRequest::RequestScreenshot(Prefix + TEXT("_b.png"), true, false);
 		break;
 	default:
@@ -773,8 +783,88 @@ bool ULBA2SnapshotSubsystem::TickMenu(UWorld* World, float DeltaTime)
 		}
 		if (ULBAIslandMenu* Menu = PC->GetIslandMenu())
 		{
-			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots menu: picking scene %d"), MenuScenes[SceneStep]);
-			Menu->OnButtonClicked(ELBAMenuAction::Scene, MenuScenes[SceneStep]);
+			// Scene numbers; -1 = the first test level's start, -2 - N = its station N (the Tests tab, as clicked);
+			// -100 - N = step onto the level's gateway N instead (menu closed). Pain tests (menu closed): -200 - H = drop
+			// from H meters, -300 = Retry on the death screen, -400 = onto the first hit zone, -500 = walk into the first
+			// enemy that hurts, -501 = stop walking.
+			const int32 Pick = MenuScenes[SceneStep];
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots menu: picking %d"), Pick);
+			ALBACharacter* Hero = Cast<ALBACharacter>(PC->GetPawn());
+			if (Pick <= -200 && Pick > -300 && Hero)
+			{
+				PC->CloseIslandMenu();
+				Hero->TeleportTo(Hero->GetActorLocation() + FVector(0.0, 0.0, (-200 - Pick) * 100.0), Hero->GetActorRotation());
+			}
+			else if (Pick == -300)
+			{
+				PC->CloseIslandMenu();
+				for (TObjectIterator<ULBADeathScreen> It; It; ++It)
+				{
+					if (It->IsInViewport())
+					{
+						It->Retry();
+					}
+				}
+			}
+			else if (Pick == -400 && Hero)
+			{
+				PC->CloseIslandMenu();
+				// The smallest one (its middle is clear), dropped into from above.
+				const ALBAHitVolume* Smallest = nullptr;
+				for (TActorIterator<ALBAHitVolume> It(World); It; ++It)
+				{
+					if (!Smallest || It->GetComponentsBoundingBox(true).GetVolume() < Smallest->GetComponentsBoundingBox(true).GetVolume())
+					{
+						Smallest = *It;
+					}
+				}
+				if (Smallest)
+				{
+					const FBox Box = Smallest->GetComponentsBoundingBox(true);
+					Hero->TeleportTo(FVector(Box.GetCenter().X, Box.GetCenter().Y, Box.Max.Z + 100.0), Hero->GetActorRotation(), false, true);
+				}
+			}
+			else if ((Pick == -500 || Pick == -501) && Hero)
+			{
+				PC->CloseIslandMenu();
+				for (TActorIterator<ALBASceneActor> It(World); It && Pick == -500; ++It)
+				{
+					if (It->TouchDamage > 0.f)
+					{
+						const FVector Direction = (It->GetActorLocation() - Hero->GetActorLocation()).GetSafeNormal2D();
+						Hero->TeleportTo(It->GetActorLocation() - Direction * 160.0 + FVector(0.0, 0.0, 20.0), Direction.Rotation());
+						PC->SetControlRotation(Direction.Rotation());
+						break;
+					}
+				}
+				Hero->SetMoveInput(Pick == -500 ? FVector2D(0.0, 1.0) : FVector2D::ZeroVector);
+			}
+			else if (Pick <= -100)
+			{
+				PC->CloseIslandMenu();
+				TArray<ALBATravelGateway*> Gateways;
+				for (TActorIterator<ALBATravelGateway> It(World); It; ++It)
+				{
+					Gateways.Add(*It);
+				}
+				Gateways.Sort([](const ALBATravelGateway& A, const ALBATravelGateway& B) { return A.GetName() < B.GetName(); });
+				if (Gateways.IsValidIndex(-100 - Pick))
+				{
+					ALBATravelGateway* Gateway = Gateways[-100 - Pick];
+					UE_LOG(LogLBA2, Display, TEXT("LBA2Shots menu: stepping onto %s (%s)"), *Gateway->GetName(), *Gateway->Destination.Describe(World).ToString());
+					PC->GetPawn()->TeleportTo(Gateway->GetActorLocation() + FVector(0.0, 0.0, 100.0), Gateway->GetActorRotation());
+				}
+			}
+			else if (Pick >= 0)
+			{
+				Menu->OnButtonClicked(ELBAMenuAction::Scene, Pick);
+			}
+			else
+			{
+				Menu->OnButtonClicked(ELBAMenuAction::TestsTab, INDEX_NONE);
+				Menu->OnButtonClicked(ELBAMenuAction::TestLevel, 0);
+				Menu->OnButtonClicked(Pick == -1 ? ELBAMenuAction::TestLevelStart : ELBAMenuAction::Station, Pick == -1 ? 0 : -2 - Pick);
+			}
 		}
 		// Start over in the level it opens (or in this one, teleported).
 		++SceneStep;

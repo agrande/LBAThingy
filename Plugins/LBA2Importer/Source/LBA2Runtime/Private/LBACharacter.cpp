@@ -15,6 +15,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
+#include "Engine/PlayerStartPIE.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
@@ -23,11 +24,14 @@
 #include "LBA2Settings.h"
 #include "LBAAnimInstance.h"
 #include "LBAAnimNotifies.h"
+#include "LBADeathScreen.h"
 #include "LBADinofly.h"
 #include "LBAHitPointsComponent.h"
+#include "LBASceneActor.h"
 #include "LBAInteractable.h"
 #include "LBAPlayerController.h"
 #include "LBASceneTravelSubsystem.h"
+#include "LBATestStation.h"
 #include "LBATypes.h"
 
 namespace
@@ -134,6 +138,12 @@ ALBACharacter::ALBACharacter()
 	Legs = { { TEXT("bone_08"), TEXT("bone_09"), TEXT("bone_10") }, { TEXT("bone_11"), TEXT("bone_12"), TEXT("bone_13") } };
 	HeadBones.Add(TEXT("bone_03"), 0.25f);
 	HeadBones.Add(TEXT("bone_14"), 0.75f);
+
+	// The original's 50 life points, one star per 5 points lost.
+	HitPoints = CreateDefaultSubobject<ULBAHitPointsComponent>(TEXT("HitPoints"));
+	HitPoints->MaxLife = 50.f;
+	HitPoints->DamagePerStar = 5.f;
+	HitPoints->StarSize = 22.f;
 }
 
 void ALBACharacter::BeginPlay()
@@ -146,6 +156,7 @@ void ALBACharacter::BeginPlay()
 	}
 	ApplyEntity();
 	SetControlMode(ControlMode);
+	HitPoints->OnDeath.AddDynamic(this, &ALBACharacter::HandleDeath);
 }
 
 void ALBACharacter::LoadDefaultBehaviours()
@@ -425,9 +436,13 @@ bool ALBACharacter::PlayActionSequence(UAnimSequence* Sequence, int32 AnimType)
 void ALBACharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (!GetEntity())
+	if (!GetEntity() || bDead)
 	{
 		return;
+	}
+	if (LifeRegenPerSecond > 0.f && (LastHurtTime < 0.0 || GetWorld()->GetTimeSeconds() - LastHurtTime > LifeRegenDelay))
+	{
+		HitPoints->Heal(LifeRegenPerSecond * DeltaSeconds);
 	}
 	UpdateAttack(DeltaSeconds);
 	if (IsClimbing() || TryStartClimb())
@@ -862,6 +877,20 @@ FString ALBACharacter::GetModernDebugString() const
 void ALBACharacter::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+	if (bDead)
+	{
+		return;
+	}
+	// Falls hurt past a hard landing; a bad one throws Twinsen on his head instead of the stumble.
+	const float FallDamage = (-GetVelocity().Z - HardLandingSpeed) * FallDamagePerSpeed;
+	if (FallDamage > 0.f)
+	{
+		LastHurtTime = -1.0;
+		const bool bBadFall = FallDamage >= HitPoints->MaxLife * 0.4f;
+		Hurt(FallDamage, int32(bBadFall ? ELBAAnimType::FallLandingHeadHit : ELBAAnimType::FallLandingStumble));
+		FallTime = 0.f;
+		return;
+	}
 	if (ControlMode == ELBAControlMode::Modern)
 	{
 		if (ActionSlot == INDEX_NONE)
@@ -1274,8 +1303,8 @@ bool ALBACharacter::IsMeleeTarget(const AActor* Actor) const
 	{
 		return false;
 	}
-	const ULBAHitPointsComponent* HitPoints = Actor->FindComponentByClass<ULBAHitPointsComponent>();
-	return HitPoints && !HitPoints->IsDead();
+	const ULBAHitPointsComponent* TargetHitPoints = Actor->FindComponentByClass<ULBAHitPointsComponent>();
+	return TargetHitPoints && !TargetHitPoints->IsDead();
 }
 
 void ALBACharacter::OnToggleControlMode(const FInputActionValue& Value)
@@ -1291,6 +1320,82 @@ ALBADinofly* ALBACharacter::SummonDinofly()
 	}
 	MoveInput = FVector2D::ZeroVector;
 	return ALBADinofly::Summon(this, DinoflyClass);
+}
+
+// Pain ----------------------------------------------------------------------------------------------------
+
+bool ALBACharacter::Hurt(float Damage, int32 ReactionSlot)
+{
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (bDead || Damage <= 0.f || (LastHurtTime >= 0.0 && Now - LastHurtTime < HurtInvulnerability))
+	{
+		return false;
+	}
+	LastHurtTime = Now;
+	UE_LOG(LogLBA2, Log, TEXT("%s hurt: %.1f damage, %.1f life left"), *GetName(), Damage, FMath::Max(0.f, HitPoints->GetLife() - Damage));
+	// The stars fly out of his head, like the original's from the top of the hurt object.
+	HitPoints->TakeHit(Damage, GetActorLocation() + FVector(0.0, 0.0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 20.0));
+	if (!bDead && !IsClimbing() && ReactionSlot != INDEX_NONE)
+	{
+		AttackHitTime = -1.f;
+		PlayAction(ReactionSlot);
+	}
+	return true;
+}
+
+float ALBACharacter::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+	const float Damage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	// Not while riding: the Dinofly takes the hits then.
+	if (Damage <= 0.f || !Controller)
+	{
+		return 0.f;
+	}
+	// Stars only: hit zones hurt again and again, and a hit reaction each time would hold Twinsen in place in them.
+	return Hurt(Damage, INDEX_NONE) ? Damage : 0.f;
+}
+
+void ALBACharacter::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation,
+	FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
+{
+	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+	// Enemies that hurt on contact (ALBASceneActor::TouchDamage) throw Twinsen back.
+	const ALBASceneActor* Enemy = Cast<ALBASceneActor>(Other);
+	if (Enemy && Enemy->TouchDamage > 0.f && !Enemy->IsDead() && Hurt(Enemy->TouchDamage, int32(ELBAAnimType::Hit)))
+	{
+		const FVector Away = (GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
+		LaunchCharacter(Away * TouchKnockback.X + FVector(0.0, 0.0, TouchKnockback.Y), true, true);
+	}
+}
+
+void ALBACharacter::HandleDeath()
+{
+	if (bDead)
+	{
+		return;
+	}
+	bDead = true;
+	UE_LOG(LogLBA2, Display, TEXT("%s died."), *GetName());
+	if (IsClimbing())
+	{
+		EndClimb();
+	}
+	MoveInput = FVector2D::ZeroVector;
+	AttackHitTime = -1.f;
+	bAttackQueued = false;
+	GetCharacterMovement()->StopMovementKeepPathing();
+	DisableInput(Cast<APlayerController>(Controller));
+	// Thrown on his head, and he stays down (Tick stops driving him).
+	PlayAction(int32(ELBAAnimType::FallLandingHeadHit));
+	if (IsPlayerControlled())
+	{
+		GetWorldTimerManager().SetTimer(DeathTimer, this, &ALBACharacter::ShowDeathScreen, FMath::Max(RetryDelay, 0.01f));
+	}
+}
+
+void ALBACharacter::ShowDeathScreen()
+{
+	ULBADeathScreen::Show(Cast<APlayerController>(GetController()), DeathScreenClass);
 }
 
 ALBAGameMode::ALBAGameMode()
@@ -1319,18 +1424,31 @@ void ALBAGameMode::RestartPlayer(AController* NewPlayer)
 
 AActor* ALBAGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
-	// Scene hero starts are tagged LBAScene_NNN: start at the first scene's (an interior has one; an island starts
-	// where its lowest-numbered scene does), else at the level's own PlayerStart.
+	// The editor's Play from Here first. Scene hero starts are tagged LBAScene_NNN: start at the first scene's (an
+	// interior has one; an island starts where its lowest-numbered scene does), else at the level's own PlayerStart.
+	// Test stations are only travelled to (a URL portal, Map#Station).
 	APlayerStart* SceneStart = nullptr;
+	APlayerStart* LevelStart = nullptr;
 	int32 SceneStartIndex = TNumericLimits<int32>::Max();
 	for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It)
 	{
-		FString Tag = It->PlayerStartTag.ToString();
-		if (Tag.RemoveFromStart(TEXT("LBAScene_")) && FCString::Atoi(*Tag) < SceneStartIndex)
+		if (It->IsA<APlayerStartPIE>())
 		{
-			SceneStart = *It;
-			SceneStartIndex = FCString::Atoi(*Tag);
+			return *It;
+		}
+		FString Tag = It->PlayerStartTag.ToString();
+		if (Tag.RemoveFromStart(TEXT("LBAScene_")))
+		{
+			if (FCString::Atoi(*Tag) < SceneStartIndex)
+			{
+				SceneStart = *It;
+				SceneStartIndex = FCString::Atoi(*Tag);
+			}
+		}
+		else if (!LevelStart && !It->IsA<ALBATestStation>())
+		{
+			LevelStart = *It;
 		}
 	}
-	return SceneStart ? SceneStart : Super::ChoosePlayerStart_Implementation(Player);
+	return SceneStart ? SceneStart : (LevelStart ? LevelStart : Super::ChoosePlayerStart_Implementation(Player));
 }

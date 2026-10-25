@@ -237,7 +237,7 @@ public:
 
 /**
  * Hit zone (type 8): Unreal's pain-causing volume, dealing the original's damage at its pace to whatever can
- * take damage (Twinsen has no health yet).
+ * take damage (Twinsen's life points, see ALBACharacter).
  */
 UCLASS()
 class LBA2RUNTIME_API ALBAHitVolume : public APainCausingVolume

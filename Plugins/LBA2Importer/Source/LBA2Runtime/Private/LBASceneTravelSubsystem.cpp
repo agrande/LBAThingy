@@ -137,16 +137,31 @@ int32 ULBASceneTravelSubsystem::GetCurrentScene() const
 	{
 		return INDEX_NONE;
 	}
+	const APlayerController* Player = GetGameInstance()->GetFirstLocalPlayerController(World);
+	const APawn* Pawn = Player ? Player->GetPawn() : nullptr;
+	const FVector Location = Pawn ? Pawn->GetActorLocation() : FVector::ZeroVector;
+	return FindSceneAt(World, Pawn ? &Location : nullptr, LastScene);
+}
+
+int32 ULBASceneTravelSubsystem::FindSceneAt(const UWorld* World, const FVector* Location, int32 InteriorScene)
+{
+	if (!World)
+	{
+		return INDEX_NONE;
+	}
 	TSet<FString> VisibleLevels;
 	for (const ULevelStreaming* Streaming : World->GetStreamingLevels())
 	{
-		if (Streaming && Streaming->IsLevelVisible())
+		bool bVisible = Streaming && Streaming->IsLevelVisible();
+#if WITH_EDITOR
+		// The editor's levels shown in the Levels panel.
+		bVisible |= Streaming && !World->IsGameWorld() && Streaming->GetShouldBeVisibleInEditor();
+#endif
+		if (bVisible)
 		{
 			VisibleLevels.Add(UWorld::RemovePIEPrefix(Streaming->GetWorldAssetPackageName()));
 		}
 	}
-	const APlayerController* Player = GetGameInstance()->GetFirstLocalPlayerController(World);
-	const APawn* Pawn = Player ? Player->GetPawn() : nullptr;
 
 	// An island streams all its cubes: the one under the player. An interior level may hold several scenes (one
 	// grid, several moments of the story): the one travelled to, else the first.
@@ -163,14 +178,14 @@ int32 ULBASceneTravelSubsystem::GetCurrentScene() const
 		}
 		if (GetBoolTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, bExterior)))
 		{
-			const ULBASceneAsset* Scene = Pawn ? Cast<ULBASceneAsset>(Asset.GetAsset()) : nullptr;
-			const FIntVector Local = Scene ? Scene->ToScene(Pawn->GetActorLocation()) : FIntVector(-1);
+			const ULBASceneAsset* Scene = Location ? Cast<ULBASceneAsset>(Asset.GetAsset()) : nullptr;
+			const FIntVector Local = Scene ? Scene->ToScene(*Location) : FIntVector(-1);
 			if (Local.X >= 0 && Local.X < LBA::IslandCubeSize && Local.Z >= 0 && Local.Z < LBA::IslandCubeSize)
 			{
 				return SceneIndex;
 			}
 		}
-		else if (SceneIndex == LastScene)
+		else if (SceneIndex == InteriorScene)
 		{
 			return SceneIndex;
 		}

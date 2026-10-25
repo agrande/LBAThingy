@@ -3,12 +3,18 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "GameFramework/Pawn.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "LBA2Runtime.h"
+#include "LBACharacter.h"
 #include "LBAPlayerController.h"
 #include "LBA2Settings.h"
+#include "LBASceneTravelSubsystem.h"
+#include "LBATestStation.h"
 #include "Misc/CommandLine.h"
+#include "Misc/PackageName.h"
 
 #define LOCTEXT_NAMESPACE "LBAIslandTravel"
 
@@ -176,6 +182,292 @@ bool ULBAIslandTravelSubsystem::TravelToIsland(FName IslandId)
 		}
 	}
 	UE_LOG(LogLBA2, Warning, TEXT("TravelToIsland: no island level named L_%s under %s"), *IslandId.ToString(), *GetDefault<ULBA2Settings>()->IslandsPath);
+	return false;
+}
+
+FLBATestStationInfo FLBATestStationInfo::FromStation(const ALBATestStation& Station)
+{
+	FLBATestStationInfo Info;
+	Info.Tag = Station.PlayerStartTag;
+	Info.DisplayName = Station.DisplayName.IsEmpty() ? FText::FromName(Station.PlayerStartTag) : Station.DisplayName;
+	Info.Description = Station.Description;
+	Info.Order = Station.Order;
+	Info.Transform = Station.GetActorTransform();
+	return Info;
+}
+
+FString FLBATestStationInfo::ToTagValue(const TArray<FLBATestStationInfo>& Stations)
+{
+	auto Field = [](const FString& Text)
+	{
+		return Text.Replace(TEXT("\t"), TEXT(" ")).Replace(TEXT("\r"), TEXT("")).Replace(TEXT("\n"), TEXT(" "));
+	};
+	TArray<FString> Lines;
+	for (const FLBATestStationInfo& Station : Stations)
+	{
+		Lines.Add(FString::Printf(TEXT("%s\t%d\t%s\t%s"), *Station.Tag.ToString(), Station.Order,
+			*Field(Station.DisplayName.ToString()), *Field(Station.Description.ToString())));
+	}
+	return FString::Join(Lines, TEXT("\n"));
+}
+
+TArray<FLBATestStationInfo> FLBATestStationInfo::FromTagValue(const FString& Value)
+{
+	TArray<FLBATestStationInfo> Stations;
+	TArray<FString> Lines;
+	Value.ParseIntoArrayLines(Lines);
+	for (const FString& Line : Lines)
+	{
+		TArray<FString> Fields;
+		Line.ParseIntoArray(Fields, TEXT("\t"), false);
+		if (Fields.Num() >= 4)
+		{
+			FLBATestStationInfo& Station = Stations.AddDefaulted_GetRef();
+			Station.Tag = *Fields[0];
+			Station.Order = FCString::Atoi(*Fields[1]);
+			Station.DisplayName = FText::FromString(Fields[2]);
+			Station.Description = FText::FromString(Fields[3]);
+		}
+	}
+	return Stations;
+}
+
+FLBATravelDestination FLBATravelDestination::ToIsland(FName Island)
+{
+	FLBATravelDestination Destination;
+	Destination.Kind = ELBATravelKind::Island;
+	Destination.Island = Island;
+	return Destination;
+}
+
+FLBATravelDestination FLBATravelDestination::ToScene(int32 Scene, FName Island)
+{
+	FLBATravelDestination Destination;
+	Destination.Kind = ELBATravelKind::Scene;
+	Destination.Scene = Scene;
+	Destination.Island = Island;
+	return Destination;
+}
+
+FLBATravelDestination FLBATravelDestination::ToTestLevel(const TSoftObjectPtr<UWorld>& Level, FName Station)
+{
+	FLBATravelDestination Destination;
+	Destination.Kind = ELBATravelKind::TestLevel;
+	Destination.Level = Level;
+	Destination.Station = Station;
+	return Destination;
+}
+
+FText FLBATravelDestination::Describe(const UWorld* World) const
+{
+	switch (Kind)
+	{
+	case ELBATravelKind::Island:
+		for (const FLBAIslandInfo& Info : ULBAIslandTravelSubsystem::FindIslands())
+		{
+			if (Info.Id == Island)
+			{
+				return Info.DisplayName;
+			}
+		}
+		return FText::FromName(Island);
+
+	case ELBATravelKind::Scene:
+		for (const FLBASceneMenuEntry& Entry : ULBASceneTravelSubsystem::FindMenuScenes())
+		{
+			if (Entry.SceneIndex == Scene)
+			{
+				return FText::FromString(Entry.Name);
+			}
+		}
+		return FText::Format(LOCTEXT("SceneName", "Scene {0}"), FText::AsNumber(Scene));
+
+	case ELBATravelKind::TestLevel:
+	{
+		const FString Package = Level.IsNull() ? (World ? UWorld::RemovePIEPrefix(World->GetOutermost()->GetName()) : FString())
+			: Level.ToSoftObjectPath().GetLongPackageName();
+		for (const FLBATestLevelInfo& Info : ULBAIslandTravelSubsystem::FindTestLevels(World))
+		{
+			if (Info.Level.ToSoftObjectPath().GetLongPackageName() != Package)
+			{
+				continue;
+			}
+			const FLBATestStationInfo* Found = Info.Stations.FindByPredicate([this](const FLBATestStationInfo& Entry) { return Entry.Tag == Station; });
+			return Found ? Found->DisplayName : Info.DisplayName;
+		}
+		return Station.IsNone() ? ULBAIslandTravelSubsystem::GetLevelDisplayName(Package) : FText::FromName(Station);
+	}
+	}
+	return FText::GetEmpty();
+}
+
+FText ULBAIslandTravelSubsystem::GetLevelDisplayName(const FString& PackageName)
+{
+	FString Name = FPackageName::GetShortName(PackageName);
+	if (!Name.RemoveFromStart(TEXT("L_")))
+	{
+		Name.RemoveFromStart(TEXT("Lvl_"));
+	}
+	// Words of a CamelCase name.
+	FString Spaced;
+	for (int32 Index = 0; Index < Name.Len(); ++Index)
+	{
+		const TCHAR Char = Name[Index];
+		if (Char == TEXT('_'))
+		{
+			Spaced.AppendChar(TEXT(' '));
+			continue;
+		}
+		if (Index > 0 && FChar::IsUpper(Char) && FChar::IsLower(Name[Index - 1]))
+		{
+			Spaced.AppendChar(TEXT(' '));
+		}
+		Spaced.AppendChar(Char);
+	}
+	return FText::FromString(Spaced);
+}
+
+TArray<FLBATestLevelInfo> ULBAIslandTravelSubsystem::FindTestLevels(const UWorld* LoadedWorld)
+{
+	TArray<FLBATestLevelInfo> Levels;
+	IAssetRegistry* Registry = IAssetRegistry::Get();
+	if (!Registry)
+	{
+		return Levels;
+	}
+	const ULBA2Settings* Settings = GetDefault<ULBA2Settings>();
+	if (!FPlatformProperties::RequiresCookedData())
+	{
+		// Uncooked standalone games start before the registry has gathered anything (cooked builds load it whole).
+		Registry->ScanPathsSynchronous({ Settings->TestLevelsPath });
+	}
+
+	// The feature map, the test levels folder, then the sandboxes; each once, and only those that exist.
+	TArray<FAssetData> Assets;
+	if (!Settings->FeatureLevel.IsNull())
+	{
+		Registry->GetAssetsByPackageName(Settings->FeatureLevel.ToSoftObjectPath().GetLongPackageFName(), Assets);
+	}
+	FARFilter Filter;
+	Filter.PackagePaths.Add(*Settings->TestLevelsPath);
+	Filter.bRecursivePaths = true;
+	Filter.ClassPaths.Add(UWorld::StaticClass()->GetClassPathName());
+	TArray<FAssetData> Folder;
+	Registry->GetAssets(Filter, Folder);
+	Folder.Sort([](const FAssetData& A, const FAssetData& B) { return A.AssetName.LexicalLess(B.AssetName); });
+	Assets.Append(Folder);
+	for (const TSoftObjectPtr<UWorld>& Sandbox : Settings->SandboxLevels)
+	{
+		if (!Sandbox.IsNull())
+		{
+			Registry->GetAssetsByPackageName(Sandbox.ToSoftObjectPath().GetLongPackageFName(), Assets);
+		}
+	}
+
+	const FString LoadedPackage = LoadedWorld ? UWorld::RemovePIEPrefix(LoadedWorld->GetOutermost()->GetName()) : FString();
+	TSet<FName> Seen;
+	for (const FAssetData& Asset : Assets)
+	{
+		if (!Asset.IsInstanceOf(UWorld::StaticClass()) || Seen.Contains(Asset.PackageName))
+		{
+			continue;
+		}
+		Seen.Add(Asset.PackageName);
+		FLBATestLevelInfo& Level = Levels.AddDefaulted_GetRef();
+		Level.Level = TSoftObjectPtr<UWorld>(Asset.GetSoftObjectPath());
+		Level.bFeatureLevel = Asset.PackageName == Settings->FeatureLevel.ToSoftObjectPath().GetLongPackageFName();
+		Level.DisplayName = GetLevelDisplayName(Asset.PackageName.ToString());
+		if (LoadedWorld && Asset.PackageName.ToString() == LoadedPackage)
+		{
+			for (TActorIterator<ALBATestStation> It(const_cast<UWorld*>(LoadedWorld)); It; ++It)
+			{
+				Level.Stations.Add(FLBATestStationInfo::FromStation(**It));
+			}
+		}
+		else
+		{
+			FString Value;
+			if (Asset.GetTagValue(ALBATestStation::StationsTag, Value))
+			{
+				Level.Stations = FLBATestStationInfo::FromTagValue(Value);
+			}
+		}
+		Level.Stations.StableSort([](const FLBATestStationInfo& A, const FLBATestStationInfo& B) { return A.Order < B.Order; });
+	}
+	return Levels;
+}
+
+bool ULBAIslandTravelSubsystem::TravelToTestLevel(const TSoftObjectPtr<UWorld>& Level, FName Station, bool bReload)
+{
+	UWorld* World = GetGameInstance()->GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+	const FString Current = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
+	const FString Package = Level.IsNull() ? Current : Level.ToSoftObjectPath().GetLongPackageName();
+	APlayerController* Player = GetGameInstance()->GetFirstLocalPlayerController(World);
+	APawn* Pawn = Player ? Player->GetPawn() : nullptr;
+	if (Package == Current && Pawn && !bReload)
+	{
+		// Here already: teleport to the station, or to where the level starts.
+		AActor* Target = nullptr;
+		for (TActorIterator<APlayerStart> It(World); It && !Target; ++It)
+		{
+			const bool bStation = It->IsA<ALBATestStation>();
+			if (Station.IsNone() ? !bStation : (bStation && It->PlayerStartTag == Station))
+			{
+				Target = *It;
+			}
+		}
+		if (Target)
+		{
+			UE_LOG(LogLBA2, Log, TEXT("Teleporting to %s"), Station.IsNone() ? TEXT("the level start") : *Station.ToString());
+			Pawn->TeleportTo(Target->GetActorLocation(), Target->GetActorRotation());
+			Player->SetControlRotation(Target->GetActorRotation());
+			return true;
+		}
+		if (!Station.IsNone())
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("TravelToTestLevel: no station %s in %s"), *Station.ToString(), *Package);
+			return false;
+		}
+	}
+	if (!FPackageName::DoesPackageExist(Package))
+	{
+		UE_LOG(LogLBA2, Warning, TEXT("TravelToTestLevel: no level %s"), *Package);
+		return false;
+	}
+	// The URL portal (Map#Tag) is the player start the game mode spawns at.
+	const FString Url = Station.IsNone() ? Package : Package + TEXT("#") + Station.ToString();
+	const FString Options = GetDefault<ULBA2Settings>()->bPlayTestLevelsAsTwinsen ? TEXT("game=") + ALBAGameMode::StaticClass()->GetPathName() : FString();
+	UE_LOG(LogLBA2, Log, TEXT("Travelling to %s"), *Url);
+	UGameplayStatics::OpenLevel(World, FName(*Url), true, Options);
+	return true;
+}
+
+bool ULBAIslandTravelSubsystem::TravelTo(const FLBATravelDestination& Destination)
+{
+	switch (Destination.Kind)
+	{
+	case ELBATravelKind::Island:
+		return TravelToIsland(Destination.Island);
+
+	case ELBATravelKind::Scene:
+	{
+		ULBASceneTravelSubsystem* SceneTravel = GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>();
+		const FLBAIslandInfo* Island = nullptr;
+		const TArray<FLBAIslandInfo> Islands = FindIslands();
+		if (!Destination.Island.IsNone())
+		{
+			Island = Islands.FindByPredicate([&Destination](const FLBAIslandInfo& Info) { return Info.Id == Destination.Island; });
+		}
+		return Island ? SceneTravel->TravelToSceneOnIsland(Destination.Scene, Island->Level) : SceneTravel->TravelToScene(Destination.Scene);
+	}
+
+	case ELBATravelKind::TestLevel:
+		return TravelToTestLevel(Destination.Level, Destination.Station);
+	}
 	return false;
 }
 

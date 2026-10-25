@@ -6,6 +6,7 @@
 #include "Import/LBAAudioImporter.h"
 #include "Import/LBACharacterImporter.h"
 #include "Import/LBASceneImporter.h"
+#include "Import/LBATestLevelImporter.h"
 #include "LBA2Runtime.h"
 #include "Misc/ScopedSlowTask.h"
 
@@ -98,6 +99,13 @@ bool FLBA2ImportRunner::Run(const ULBA2ImporterSettings& Settings, const TArray<
 			FLBAAudioImporter Audio(Context);
 			const int32 Count = Audio.ImportAllSamples();
 			Lines.Add(FString::Printf(TEXT("Audio: %d sound effects imported"), Count));
+			break;
+		}
+		case ELBAImportLayer::Tests:
+		{
+			FLBATestLevelImporter Importer(Context);
+			const int32 Count = Importer.ImportAll();
+			Lines.Add(FString::Printf(TEXT("Tests: %d test level(s) built"), Count));
 			break;
 		}
 		default:

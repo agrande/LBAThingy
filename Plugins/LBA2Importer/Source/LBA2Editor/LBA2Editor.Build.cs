@@ -17,6 +17,7 @@ public class LBA2Editor : ModuleRules
 		{
 			"LBA2Runtime",
 			"UnrealEd",
+			"LevelEditor",
 			"Slate",
 			"SlateCore",
 			"ToolMenus",

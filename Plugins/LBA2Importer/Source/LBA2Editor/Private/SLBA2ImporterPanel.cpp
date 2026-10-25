@@ -23,7 +23,7 @@ void SLBA2ImporterPanel::Construct(const FArguments& InArgs)
 	Settings->AutoDetectRemakeDirectory();
 
 	// Layers that are implemented are selected by default.
-	SelectedLayers = { ELBAImportLayer::Islands, ELBAImportLayer::Interiors, ELBAImportLayer::Characters, ELBAImportLayer::Scenes };
+	SelectedLayers = { ELBAImportLayer::Islands, ELBAImportLayer::Interiors, ELBAImportLayer::Characters, ELBAImportLayer::Scenes, ELBAImportLayer::Tests };
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	FDetailsViewArgs Args;

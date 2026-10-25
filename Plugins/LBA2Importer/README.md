@@ -20,7 +20,7 @@ Headless (batch) import:
 
 ```
 UnrealEditor-Cmd.exe LBAThingy.uproject -run=LBA2Import [-GameDir="..."] [-RemakeDir="..."]
-    [-Layers=Islands,Interiors,Characters,Scenes,Audio] [-Islands=CITABAU,DESERT] [-Grids=0,3] [-Entities=0,1]
+    [-Layers=Islands,Interiors,Characters,Scenes,Audio,Tests] [-Islands=CITABAU,DESERT] [-Grids=0,3] [-Entities=0,1]
     [-Scenes=0,43] [-DemoScenes] [-NoRemake] [-Root=/Game/LBA2]
 ```
 
@@ -222,6 +222,20 @@ In modern mode the LBA animations play in place and are kept in step with the mo
 Tunables are under *LBA|Modern* on the character: speeds, jump, camera distance, lean, head turn,
 and the leg/head bones. `-LBA2Shots=modern` runs a scripted test (starts, stops, walk, turns,
 reversal, jumps; side views with bursts of shots and a per-frame log).
+
+**Life points.** Twinsen has the original's 50 life points (`ULBAHitPointsComponent`, no HUD: hit stars fly out of
+his head, one per 5 points lost, and he plays his hit reaction). What hurts him:
+
+- falls past a hard landing (1100 cm/s, a 6 m drop), 0.082 points per cm/s faster: 7 m costs about 6, 12 m about 36
+  (he lands on his head), 15 m kills;
+- hit zones (`ALBAHitVolume`, the original's type 8 zones, and the feature map's red floors), through Unreal's damage:
+  stars only, no hit reaction (it would hold him in place in the zone, hit after hit);
+- enemies whose `TouchDamage` is set (the feature map's; the scenes' enemies still don't fight back), touching them
+  throws him back.
+
+After a hit nothing hurts for *Hurt Invulnerability* (0.8 s); he regains 1 point a second after 4 s without one (0
+restores the original's no regeneration). At zero he falls on his head and the death screen offers Retry: the
+level again, or in a test level its station closest to where he died. Tunables under *LBA|Pain* on the character.
 
 `ALBACharacter` loads its behaviour entities from **Project Settings > Plugins > LBA2 > Hero** and can be
 subclassed in Blueprint. `SetMoveInput` and `DoBehaviourAction` let AI or scripts drive it.
@@ -441,8 +455,57 @@ Nothing references the island levels, scenes or icons, so the LBA2Editor module 
 UMG widget built in C++, `IslandMenuClass` takes a Blueprint subclass), `ULBAIslandTravelSubsystem` (`GetIslands`,
 `TravelToIsland`) and `ULBASceneTravelSubsystem` (`FindMenuScenes`, `TravelToSceneOnIsland`, `GetCurrentScene`).
 Console: `lba.Travel DESERT`, `lba.Travel` (lists the islands), `lba.Scene 0`, `lba.IslandMenu`.
-`-LBA2Shots=menu -LBA2MenuScenes=7,43,138` opens the menu in each level, screenshots it, shows the next planet,
-screenshots again and picks the next scene.
+`-LBA2Shots=menu -LBA2MenuScenes=7,43,138` screenshots each level, opens the menu, screenshots it, shows the next
+tab, screenshots again and picks the next place: a scene number, `-1` the first test level's start, `-2-N` its
+station N, `-100-N` steps onto the level's gateway N (`-LBA2MenuScenes=-5,15,-1`: Arena station, museum, back).
+Pain tests, menu closed: `-200-H` drops Twinsen from H meters, `-400` onto the smallest hit zone, `-500` walks him into
+the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScenes=-207,-212,-400,-500,-501,-300`).
+
+### Tests tab, feature test map and gateways
+
+After the planets, the menu's **Tests** tab lists the test levels and sandboxes (**Project Settings > Plugins > LBA2 >
+Test Levels**): the feature test map first, apart and in its own color, then the levels under *Test Levels Path*
+(`/Game/LBA2/Tests`), then *Sandbox Levels* (the character gallery and Unreal's template levels). Each level lists its
+stations under it, with what to try there; picking one goes straight to it. Test levels open with `LBAGameMode`
+(*Play Test Levels As Twinsen*), so the template levels have Twinsen and the menu too.
+
+The feature test map, `/Game/LBA2/Tests/L_FeatureTest` (*Feature Level*), is the project's default map (game and
+editor). The **Tests** import layer builds it from prototype blocks (run it after Characters and Scenes; it only
+rebuilds what it generated, your own actors stay). It is a tight course, all of it in sight from the start and
+within 50 m, each zone a station of the menu:
+
+- **Jumps** (orange, ahead left): steps up to platforms over a burning floor (gaps of 1, 2 and 3 m), ledges of 50 to
+  125 cm.
+- **Tower** (green, ahead right): a 10 m ladder, a balcony at 5 m, a diving board; falls hurt.
+- **Arena** (blue, ahead): a walled square behind two sliding doors (sideways, upwards), the museum's enemies inside
+  (they hurt on touch) and two people who can't be hurt, a burning tile, crates.
+- **Slopes** (purple, right): ramps of 20 to 65 degrees.
+- **Dinofly** (yellow, far left): a 25 m tower to land on (a fall from it kills), 12 m pillars close together, a crash
+  wall, and gateways to where the game tries it best: the storm over Citadel (wind, rain), the harbour (the sea), the
+  desert.
+- **Gateways** (behind the start): every island, places of the game (Twinsen's house, the harbour, the museum, the
+  sewers, the Dome, the Temple of Bu, the School of Magic, the Moon) and the sandboxes.
+
+It is built for reading at a glance. Each zone has its own color (floor patch and structures, the template's
+prototype grid recolored, `Tests/Materials`), dangers are red with yellow lines (burning floors, doors, the ladder,
+the crash wall), and the sun comes high from behind the start, lighting the faces turned to the player. Signs are
+dark boards on posts whose text uses `M_LBA_SignText`: the engine's text material made unlit and drawn after motion
+blur, so neither the light nor the palette shading touches it (measured 15-18:1 against its board; the lit default
+text came out at 1.1-1.5:1 against the scene).
+
+Stations are `ALBATestStation` actors: player starts whose *Player Start Tag* names the station, so going there is
+Unreal's URL portal (`L_FeatureTest#Arena`) and `ALBAGameMode` never starts at one otherwise. Levels list their
+stations in an asset registry tag (`LBATestStations`), so the menu shows them without loading the level; place more
+in any test level and they show up. Gateways are `ALBATravelGateway` pads: step on one to go to an island, a scene
+(on a chosen island variant), a test level or a station; a player arriving on a pad must step off first.
+
+### Level selector (editor)
+
+The **Levels** button on the level editor's toolbar (next to Play; also **Tools > LBA2 Levels**, `lba.LevelSelector`)
+opens the travel menu in an editor tab: the same widget, tabs and lists, rebuilt for each level opened. Picking a
+place opens its level in the editor (asking to save changes first), frames it in the viewports and selects its start
+or station; *Play here* plays in the editor from the place picked last (`ALBAGameMode` honours Play from Here).
+`lba.LevelSelector.Go <scene number | ISLAND | station>` does the same as a pick.
 
 ## Scenes
 
@@ -714,6 +777,8 @@ color, shade row / light, surfaces without fog).
 - [x] Dinofly flight choices: pump A (climb rate), hold X (dive), Morse on B (brake, tires), stalls when not pumping, lift from speed in thick air, attitude from the flight's forces, procedural wings, pain (hit stars, flinch), death and retry
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [x] Travel menu by planet, island and scene (interiors included), after lba2remake's teleport menu
+- [x] Tests tab, feature test map (stations, gateways; default map), editor level selector on the toolbar
+- [x] Twinsen's life points: falls, hit zones and enemies that hurt on touch, hit stars, death screen and retry
 - [x] L4 Scenes: per-scene levels streamed into islands and interiors, objects, sprites, typed zone volumes,
   track points, hero starts; doors and ladders work in game
 - [x] Sliding doors used by interacting (E), sprites replaced by lba2remake models

@@ -25,6 +25,16 @@ enum class ELBAMenuAction : uint8
 	IslandStart,
 	/** Goes to a scene's hero start. */
 	Scene,
+	/** Shows the test levels and sandboxes. */
+	TestsTab,
+	/** Shows a test level's stations. */
+	TestLevel,
+	/** Goes to a test level's start. */
+	TestLevelStart,
+	/** Goes to a station of the test level shown. */
+	Station,
+	/** Editor: plays from the place last picked. */
+	Play,
 	Quit,
 };
 
@@ -40,7 +50,7 @@ public:
 
 	ELBAMenuAction Action = ELBAMenuAction::Quit;
 
-	/** ELBAPlanet, index into the menu's islands, or scene number. */
+	/** ELBAPlanet, index into the menu's islands or test levels, scene number, or index into the shown level's stations. */
 	int32 Value = INDEX_NONE;
 
 	UFUNCTION()
@@ -70,16 +80,20 @@ struct FLBAMenuButton
 
 	/** Tabs (planets, islands) grey out unless shown, focused or current. */
 	bool bTab = false;
+
+	/** Drawn in the feature color when not current (the feature test map). */
+	bool bFeature = false;
 };
 
 /**
  * Travel menu shown by ALBAPlayerController (M / gamepad Start), laid out like lba2remake's teleport menu: planets
  * along the top, the selected planet's islands on the left, and the selected island's scenes on the right (its
  * areas, each with the interiors it opens on). Picking an island goes to its level's start, picking a scene to that
- * scene's hero start. Playable with the mouse, the keyboard (arrows, Enter, Q / E for planets) or a gamepad (d-pad,
+ * scene's hero start. After the planets, the Tests tab lists the test levels and sandboxes, the feature test map first,
+ * each with its stations. Playable with the mouse, the keyboard (arrows, Enter, Q / E for tabs) or a gamepad (d-pad,
  * A, LB / RB). Esc, B, M or Start close it.
  * The layout is built in C++, so it needs no asset; a Blueprint subclass can restyle it through the colors and
- * icons below.
+ * icons below. The editor's level selector (LBA2Editor) is a subclass that opens levels in the editor instead.
  */
 UCLASS(Blueprintable)
 class LBA2RUNTIME_API ULBAIslandMenu : public UUserWidget
@@ -117,6 +131,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
 	FLinearColor CurrentColor = FLinearColor(1.f, 0.85f, 0.35f, 1.f);
 
+	/** Text of the feature test map, and the outline of its button. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
+	FLinearColor FeatureColor = FLinearColor(FColor(97, 206, 206));
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
 	TMap<ELBAPlanet, TSoftObjectPtr<UTexture2D>> PlanetIcons;
 
@@ -131,11 +149,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
 	TSoftObjectPtr<UTexture2D> BuildingIcon;
 
+	/** The Tests tab and the feature test map. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
+	TSoftObjectPtr<UTexture2D> TestsIcon;
+
 	/** Icons the menu loads by path (the LBA2Editor module adds them to cooks). */
 	TArray<FSoftObjectPath> GetIconPaths() const;
 
 	/** Gives keyboard/gamepad focus to where the player is (their scene or island), or the first island. */
 	void FocusDefaultButton();
+
+	/** Scrolls where the player is into view, without taking focus. */
+	void ScrollToCurrent();
 
 	void OnButtonClicked(ELBAMenuAction Action, int32 Value);
 
@@ -145,17 +170,47 @@ protected:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
+	/** Goes there: the game travels (and closes the menu), the editor opens the level. */
+	virtual void GoTo(const FLBATravelDestination& Destination);
+
+	/** Where the player is, to show their island, scene and station. False if unknown. */
+	virtual bool GetViewLocation(FVector& OutLocation) const;
+
+	/** The scene the player is in, -1 if unknown. */
+	virtual int32 GetCurrentScene() const;
+
+	/** Editor: plays from the place last picked. */
+	virtual void Play() {}
+
+	/**
+	 * Set by the editor's level selector: it lives in an editor tab, so it shows Play instead of Quit, never closes, and
+	 * only takes keyboard focus when clicked (the rest of the editor keeps it).
+	 */
+	bool bEditorMode = false;
+
 private:
 	void BuildTree();
 	void BuildIslandList();
 	void BuildSceneTree();
+	void BuildTestLevelList();
+	void BuildStationList();
 	void AddScenes(const TMap<int32, TArray<const FLBASceneMenuEntry*>>& Children, int32 Parent, int32 Depth);
-	FLBAMenuButton& AddButton(TArray<FLBAMenuButton>& List, ELBAMenuAction Action, int32 Value, const FText& Label, const TSoftObjectPtr<UTexture2D>& Icon, bool bTab, float Indent = 0.f);
+	/** Subtitle: a smaller grey line under the label. */
+	FLBAMenuButton& AddButton(TArray<FLBAMenuButton>& List, ELBAMenuAction Action, int32 Value, const FText& Label, const TSoftObjectPtr<UTexture2D>& Icon,
+		bool bTab, float Indent = 0.f, const FText& Subtitle = FText::GetEmpty());
 
 	void SelectPlanet(ELBAPlanet Planet);
 	void SelectIsland(int32 Island);
+	void ShowTests();
+	void SelectTestLevel(int32 Level);
+	/** Planets then Tests, step tabs to the right (negative: left). */
+	void CycleTab(int32 Step);
+	/** Where the player is (their scene, station or level start), else the island or test level shown. */
+	UButton* FindDefaultButton();
+	void ScrollTo(UButton* Target);
 	void FocusButton(UButton* Button);
-	/** Every button: planets, islands, scenes, Quit. */
+	bool HasMenuFocus(const UButton* Button) const;
+	/** Every button: tabs, islands or test levels, scenes or stations, footer. */
 	void ForEachButton(TFunctionRef<void(FLBAMenuButton&)> Visit);
 	void Close();
 
@@ -164,6 +219,9 @@ private:
 
 	TArray<ELBAPlanet> Planets;
 	TArray<FLBASceneMenuEntry> Scenes;
+
+	UPROPERTY(Transient)
+	TArray<FLBATestLevelInfo> TestLevels;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UVerticalBox> IslandList;
@@ -181,7 +239,7 @@ private:
 	TArray<FLBAMenuButton> SceneButtons;
 
 	UPROPERTY(Transient)
-	TArray<FLBAMenuButton> QuitButtons;
+	TArray<FLBAMenuButton> FooterButtons;
 
 	TWeakObjectPtr<UButton> LastFocused;
 	TOptional<FVector2D> LastCursor;
@@ -193,4 +251,13 @@ private:
 	/** Island the player is on or in (an interior's island), -1 if unknown. */
 	int32 HomeIsland = INDEX_NONE;
 	int32 CurrentScene = INDEX_NONE;
+
+	/** The Tests tab is shown instead of a planet. */
+	bool bShowTests = false;
+	/** Index into TestLevels. */
+	int32 SelectedTestLevel = INDEX_NONE;
+	/** Test level the player is in, -1 elsewhere. */
+	int32 CurrentTestLevel = INDEX_NONE;
+	/** The current test level's station the player is at (closest within reach), None if none. */
+	FName CurrentStation;
 };

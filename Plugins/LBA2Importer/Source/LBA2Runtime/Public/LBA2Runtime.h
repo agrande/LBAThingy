@@ -6,4 +6,10 @@ LBA2RUNTIME_API DECLARE_LOG_CATEGORY_EXTERN(LogLBA2, Log, All);
 
 class FLBA2RuntimeModule : public IModuleInterface
 {
+public:
+	virtual void StartupModule() override;
+	virtual void ShutdownModule() override;
+
+private:
+	FDelegateHandle StationsTagHandle;
 };

@@ -58,6 +58,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "LBA")
 	int32 GetCurrentScene() const;
 
+	/**
+	 * The scene at a location of a world (null: none known): the island cube under it among the visible scene levels, else
+	 * the interior scene InteriorScene if it is visible, else the lowest-numbered interior scene. -1 if none.
+	 */
+	static int32 FindSceneAt(const UWorld* World, const FVector* Location, int32 InteriorScene = INDEX_NONE);
+
 	/** Package of the island level last played for an island number (its variant), empty if none yet. */
 	FString GetLastIslandLevel(int32 Island) const;
 
