@@ -15,6 +15,7 @@
 #include "Import/LBABodyConverter.h"
 #include "Import/LBARoomPlan.h"
 #include "Import/LBAEnvironment.h"
+#include "Import/LBAHollow.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
@@ -310,6 +311,347 @@ namespace
 		bool bCeiling = true;
 	};
 
+	/** Art for a face of the enclosure: a brick's art face (its atlas cell and face index, +X or +Z), or none (flat). */
+	struct FFaceArt
+	{
+		const FIntPoint* Cell = nullptr;
+		int32 Face = 2;
+	};
+
+	/** The brick of a layout row at a wall column (the layout tiled along the wall from the grid's origin), or 0. */
+	int32 LayoutBrickAt(const FLBALibrary& Library, int32 ForbiddenBrick, const FIntPoint& Row, const FIntPoint& Column)
+	{
+		if (!Library.Layouts.IsValidIndex(Row.X))
+		{
+			return 0;
+		}
+		const FLBALayout& Layout = Library.Layouts[Row.X];
+		const int32 Index = (FMath::Abs(Column.Y) % Layout.SizeZ) * Layout.SizeX * Layout.SizeY + FMath::Clamp(Row.Y, 0, Layout.SizeY - 1) * Layout.SizeX
+			+ FMath::Abs(Column.X) % Layout.SizeX;
+		const int32 Brick = Layout.Blocks.IsValidIndex(Index) ? int32(Layout.Blocks[Index].Brick) : 0;
+		return Brick == ForbiddenBrick ? 0 : Brick;
+	}
+
+	/** A brick's art for a wall face along an axis (0: facing X, 1: facing Z), opaque enough to repeat: that side, else the other. */
+	FFaceArt WallFaceArt(const FLBAIsoImporter::FAtlas& Atlas, int32 Brick, int32 Axis)
+	{
+		FFaceArt Art;
+		const TStaticArray<float, 3>* Coverage = Brick ? Atlas.FaceCoverage.Find(Brick) : nullptr;
+		if (!Coverage)
+		{
+			return Art;
+		}
+		for (const int32 Slot : { Axis == 0 ? 1 : 2, Axis == 0 ? 2 : 1 })
+		{
+			if ((*Coverage)[Slot] >= OpaqueCoverage)
+			{
+				Art.Cell = Atlas.Cells.Find(Brick);
+				Art.Face = Slot == 1 ? 2 : 4;
+				return Art;
+			}
+		}
+		return Art;
+	}
+
+	/** Atlas UV of a point of a wall art face (A along it, B up it, 0..1), a little inside the face (its edge pixels repeated show as seams). */
+	FVector2f ArtUV(const FLBAIsoImporter::FAtlas& Atlas, const FFaceArt& Art, float A, float B, float Inset = 0.1f)
+	{
+		const FBrickFace& Face = GetBrickFaces()[Art.Face];
+		const FVector2f Center = (Face.Sprite[0] + Face.Sprite[1] + Face.Sprite[2] + Face.Sprite[3]) * 0.25f;
+		// The +X and +Z faces' corners: 0 (A 0, B 1), 1 (A 1, B 1), 2 (A 1, B 0), 3 (A 0, B 0).
+		const FVector2f Sprite = FMath::Lerp(FMath::Lerp(FMath::Lerp(Face.Sprite[3], Face.Sprite[0], B), FMath::Lerp(Face.Sprite[2], Face.Sprite[1], B), A), Center, Inset);
+		const FIntPoint& Offset = FaceOffsets[ColorSlotOf(FrontFaceOf(Art.Face))];
+		return FVector2f((Art.Cell->X + Offset.X + Sprite.X) / Atlas.Width, (Art.Cell->Y + Offset.Y + Sprite.Y) / Atlas.Height);
+	}
+
+	/**
+	 * A finish for surfaces the original never drew (a roof, the rock over a rim): the wall the original crowned what bounds
+	 * them with, as it stacks it. The most voted crown row (layout, row), and Depth rows of its layout from it down (one by
+	 * default: the row under a crown is often a dark frieze, which repeated stripes a roof); along a wall, the layout's own
+	 * columns.
+	 */
+	struct FCrownFinish
+	{
+		/** Rows from the top down. */
+		TArray<FIntPoint> Rows;
+
+		/** The row of the wall at a height (repeating from the top down). */
+		FIntPoint RowAt(int32 FromTop) const
+		{
+			return Rows.Num() > 0 ? Rows[FromTop % Rows.Num()] : FIntPoint(INDEX_NONE, 0);
+		}
+
+		/** The most voted row, and Depth rows of its layout from it down (fewer where the layout ends). */
+		static FCrownFinish FromVotes(const TMap<FIntPoint, int32>& Votes, int32 Depth = 1)
+		{
+			FIntPoint Best(INDEX_NONE, 0);
+			int32 BestCount = 0;
+			for (const TPair<FIntPoint, int32>& Pair : Votes)
+			{
+				if (Pair.Value > BestCount || (Pair.Value == BestCount && (Pair.Key.X < Best.X || (Pair.Key.X == Best.X && Pair.Key.Y > Best.Y))))
+				{
+					Best = Pair.Key;
+					BestCount = Pair.Value;
+				}
+			}
+			FCrownFinish Finish;
+			for (int32 Row = Best.Y; Best.X != INDEX_NONE && Row >= 0 && Finish.Rows.Num() < Depth; --Row)
+			{
+				Finish.Rows.Add(FIntPoint(Best.X, Row));
+			}
+			return Finish;
+		}
+	};
+
+	/** Bricks across (and up) a finish's texture (FinishTile): it repeats every this many cells. */
+	constexpr int32 FinishTileBricks = 16;
+
+	/**
+	 * A finish as a texture that tiles: FinishTileBricks x FinishTileBricks cells of wall, each a brick's wall face (its
+	 * sheared diamond side unsheared to SpriteW/2 x 15 pixels: one cell wide, one high), the finish's rows stacked from the top. A
+	 * curved surface textured by its position then keeps the art's size everywhere, however steep (atlas art mapped per
+	 * cell stretches up a vault's spring). Only bricks with an opaque, not shadowed, wall face; else the mean.
+	 * Amount pulls it toward a color (a roof toward the library's ceiling color: lighter than the walls, in their hue).
+	 */
+	TArray<FColor> RenderFinishTile(const FLBAIsoImporter::FAtlas& Atlas, const FLBALibrary& Library, int32 ForbiddenBrick, const FCrownFinish& Finish,
+		const FColor& Toward, float Amount, int32& OutWidth, int32& OutHeight)
+	{
+		constexpr int32 FaceW = SpriteW / 2, FaceH = 15;
+		OutWidth = FaceW * FinishTileBricks;
+		OutHeight = FaceH * FinishTileBricks;
+		TArray<FColor> Pixels;
+		Pixels.Init(FColor(70, 70, 70), OutWidth * OutHeight);
+		FLinearColor Sum = FLinearColor::Black;
+		int32 Count = 0;
+		TArray<bool> Done;
+		Done.Init(false, FinishTileBricks * FinishTileBricks);
+		// Each row's usable bricks along its layout: an opaque wall face at least half as bright as the row's brightest
+		// (the shadowed sides a rock layout draws read as black stripes once repeated).
+		TMap<FIntPoint, TArray<FFaceArt>> Usable;
+		for (const FIntPoint& Row : Finish.Rows)
+		{
+			TArray<TPair<FFaceArt, float>> Bricks;
+			float Brightest = 0.f;
+			const int32 Span = Library.Layouts.IsValidIndex(Row.X) ? FMath::Max(Library.Layouts[Row.X].SizeX, Library.Layouts[Row.X].SizeZ) : 0;
+			for (int32 K = 0; K < Span; ++K)
+			{
+				const int32 Brick = LayoutBrickAt(Library, ForbiddenBrick, Row, FIntPoint(K, K));
+				const FFaceArt Art = WallFaceArt(Atlas, Brick, 0);
+				const TStaticArray<FColor, 3>* Colors = Atlas.FaceColors.Find(Brick);
+				if (Art.Cell && Colors)
+				{
+					const float Luminance = FLinearColor((*Colors)[ColorSlotOf(FrontFaceOf(Art.Face))]).GetLuminance();
+					Bricks.Add(TPair<FFaceArt, float>(Art, Luminance));
+					Brightest = FMath::Max(Brightest, Luminance);
+				}
+			}
+			TArray<FFaceArt>& Kept = Usable.Add(Row);
+			for (const TPair<FFaceArt, float>& Brick : Bricks)
+			{
+				if (Brick.Value >= Brightest * 0.5f)
+				{
+					Kept.Add(Brick.Key);
+				}
+			}
+		}
+		for (int32 J = 0; J < FinishTileBricks; ++J)
+		{
+			for (int32 I = 0; I < FinishTileBricks; ++I)
+			{
+				// The row at this height, else any row with usable bricks.
+				const TArray<FFaceArt>* Bricks = Usable.Find(Finish.RowAt(J));
+				for (const TPair<FIntPoint, TArray<FFaceArt>>& Pair : Usable)
+				{
+					Bricks = Bricks && Bricks->Num() > 0 ? Bricks : &Pair.Value;
+				}
+				if (!Bricks || Bricks->Num() == 0)
+				{
+					continue;
+				}
+				const FFaceArt Art = (*Bricks)[I % Bricks->Num()];
+				Done[J * FinishTileBricks + I] = true;
+				for (int32 V = 0; V < FaceH; ++V)
+				{
+					for (int32 U = 0; U < FaceW; ++U)
+					{
+						const FVector2f UV = ArtUV(Atlas, Art, (U + 0.5f) / FaceW, 1.f - (V + 0.5f) / FaceH, 0.f);
+						const int32 SX = FMath::Clamp(FMath::FloorToInt(UV.X * Atlas.Width), 0, Atlas.Width - 1);
+						const int32 SY = FMath::Clamp(FMath::FloorToInt(UV.Y * Atlas.Height), 0, Atlas.Height - 1);
+						FColor Color = Atlas.Pixels.IsValidIndex(SY * Atlas.Width + SX) ? Atlas.Pixels[SY * Atlas.Width + SX] : FColor::Black;
+						Color = FColor(FMath::Lerp(Color.R, Toward.R, Amount), FMath::Lerp(Color.G, Toward.G, Amount), FMath::Lerp(Color.B, Toward.B, Amount), 255);
+						Pixels[(J * FaceH + V) * OutWidth + I * FaceW + U] = Color;
+						Sum += FLinearColor(Color);
+						++Count;
+					}
+				}
+			}
+		}
+		const FColor Mean = Count > 0 ? (Sum / float(Count)).ToFColor(false) : FColor(70, 70, 70);
+		for (int32 J = 0; J < FinishTileBricks; ++J)
+		{
+			for (int32 I = 0; I < FinishTileBricks; ++I)
+			{
+				for (int32 V = 0; V < FaceH && !Done[J * FinishTileBricks + I]; ++V)
+				{
+					for (int32 U = 0; U < FaceW; ++U)
+					{
+						Pixels[(J * FaceH + V) * OutWidth + I * FaceW + U] = Mean;
+					}
+				}
+			}
+		}
+		return Pixels;
+	}
+
+	/** UV of a point (cells: X, Z columns, Y cells) in a finish's tile, for a surface facing along Normal (LBA axes). */
+	FVector2f FinishUV(const FVector3f& At, const FVector3f& Normal)
+	{
+		const float Scale = 1.f / FinishTileBricks;
+		if (FMath::Abs(Normal.Y) > 0.7f)
+		{
+			// Seen from below: two cells of wall per column (a column is twice as wide as a cell is high).
+			return FVector2f(At.X, At.Z * 2.f) * Scale;
+		}
+		return FVector2f(FMath::Abs(Normal.X) > FMath::Abs(Normal.Z) ? At.Z : At.X, -At.Y) * Scale;
+	}
+
+	/**
+	 * A vault's roof (FLBAVault) as a mesh looking down into the air under it: a height field over its footprint, Height(X, Z)
+	 * in cells, sampled RoofSteps times per column, textured with a finish's tile by position (FinishUV: from below where it
+	 * is shallow, from the side where it is steep). Normals follow the curve.
+	 */
+	constexpr int32 RoofSteps = 2;
+	void EmitRoof(const FLBAVault& Vault, TFunctionRef<float(float, float)> Height, FLBAMeshBuilder& Builder, int32 Section, const FVector4f& Color, float Scale)
+	{
+		constexpr int32 Size = FLBARoomPlan::SizeXZ;
+		constexpr int32 N = Size * RoofSteps + 1;
+		TArray<float> Heights;
+		Heights.Init(TNumericLimits<float>::Lowest(), N * N);
+		auto HeightAt = [&](int32 I, int32 J)
+		{
+			I = FMath::Clamp(I, 0, N - 1);
+			J = FMath::Clamp(J, 0, N - 1);
+			float& Value = Heights[J * N + I];
+			if (Value == TNumericLimits<float>::Lowest())
+			{
+				Value = Height(float(I) / RoofSteps, float(J) / RoofSteps);
+			}
+			return Value;
+		};
+		auto Cells = [&](int32 I, int32 J) { return FVector3f(float(I) / RoofSteps, HeightAt(I, J), float(J) / RoofSteps); };
+		auto Position = [&](int32 I, int32 J) { const FVector3f C = Cells(I, J); return CornerPos(C.X, C.Y, C.Z, Scale); };
+		const FVector3f Down = FVector3f(LBA::DirToUnreal(0, -1, 0));
+		auto NormalAt = [&](int32 I, int32 J)
+		{
+			FVector3f Normal = ((Position(I + 1, J) - Position(I - 1, J)) ^ (Position(I, J + 1) - Position(I, J - 1))).GetSafeNormal();
+			return (Normal | Down) < 0.f ? -Normal : Normal;
+		};
+		for (int32 Z = 0; Z < Size; ++Z)
+		{
+			for (int32 X = 0; X < Size; ++X)
+			{
+				if (!Vault.Contains(FIntPoint(X, Z)))
+				{
+					continue;
+				}
+				for (int32 SI = 0; SI < RoofSteps; ++SI)
+				{
+					for (int32 SJ = 0; SJ < RoofSteps; ++SJ)
+					{
+						static const FIntPoint Corners[4] = { FIntPoint(0, 0), FIntPoint(1, 0), FIntPoint(1, 1), FIntPoint(0, 1) };
+						const int32 I0 = X * RoofSteps + SI, J0 = Z * RoofSteps + SJ;
+						// The quad's slope in LBA axes (cells; a column is two cells wide), for its projection.
+						const FVector3f C00 = Cells(I0, J0), C11 = Cells(I0 + 1, J0 + 1), C10 = Cells(I0 + 1, J0), C01 = Cells(I0, J0 + 1);
+						const FVector3f Slope = FVector3f(-(C10.Y + C11.Y - C00.Y - C01.Y) * 0.5f, 2.f / RoofSteps, -(C01.Y + C11.Y - C00.Y - C10.Y) * 0.5f).GetSafeNormal();
+						FLBAVertex V[4];
+						for (int32 K = 0; K < 4; ++K)
+						{
+							const int32 I = I0 + Corners[K].X, J = J0 + Corners[K].Y;
+							V[K].Position = Position(I, J);
+							V[K].Normal = NormalAt(I, J);
+							V[K].Color = Color;
+							V[K].UV = FinishUV(Cells(I, J), Slope);
+						}
+						Builder.AddTriangleFacing(Section, V[0], V[1], V[2], Down);
+						Builder.AddTriangleFacing(Section, V[0], V[2], V[3], Down);
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * The walls of a hollow (FLBAHollow): on each side of a column under its roof that is not under it too, the rock (or
+	 * masonry) rises from what the original drew there (a rim, a rampart, a pillar; nothing: from the bottom of the grid,
+	 * closing the void past a floor's edge) up to the roof's edge, looking into the hollow, textured with the finish's
+	 * tile. Past an exit (beside a scene-change zone) the walls are dark, as the original shows it.
+	 */
+	void EmitHollowWalls(const FLBAHollow& Hollow, TFunctionRef<float(float, float)> Height, TConstArrayView<FLBACellBox> Exits,
+		FLBAMeshBuilder& Builder, int32 Section, int32 DarkSection, const FVector4f& Color, float Scale)
+	{
+		constexpr int32 Size = FLBARoomPlan::SizeXZ;
+		auto NearExit = [&Exits](const FIntPoint& Column)
+		{
+			return Exits.ContainsByPredicate([&Column](const FLBACellBox& Box)
+			{
+				return Column.X >= Box.Min.X - 1 && Column.X <= Box.Max.X + 1 && Column.Y >= Box.Min.Z - 1 && Column.Y <= Box.Max.Z + 1;
+			});
+		};
+		const FVector4f Dark = LBABodyConverter::ToVertexColor(FColor(6, 6, 8), 0.5f);
+		for (int32 Z = 0; Z < Size; ++Z)
+		{
+			for (int32 X = 0; X < Size; ++X)
+			{
+				const FIntPoint Column(X, Z);
+				if (!Hollow.IsUnderRoof(Column))
+				{
+					continue;
+				}
+				const bool bExit = NearExit(Column);
+				for (int32 Side = 0; Side < 4; ++Side)
+				{
+					const FIntPoint Next = Column + FLBARoomPlan::Sides[Side];
+					if (Hollow.IsUnderRoof(Next))
+					{
+						continue;
+					}
+					// From what is drawn next to it (and over this column's own floor: its side shows below).
+					const int32 Drawn = Hollow.GetDrawnTop(Next);
+					const int32 Bottom = FMath::Max(Drawn != INDEX_NONE ? Drawn + 1 : 0, Hollow.GetFloor(Column) + 1);
+					// The edge between the two columns, from its start along +Z (sides -X, +X) or +X (sides -Z, +Z).
+					const bool bAlongZ = Side < 2;
+					const float EdgeX = X + (Side == 1 ? 1.f : 0.f), EdgeZ = Z + (Side == 3 ? 1.f : 0.f);
+					const FVector3f Normal(-FLBARoomPlan::Sides[Side].X, 0.f, -FLBARoomPlan::Sides[Side].Y);
+					const FVector3f Inward = FVector3f(LBA::DirToUnreal(Normal.X, 0, Normal.Z));
+					for (int32 Step = 0; Step < RoofSteps; ++Step)
+					{
+						const float A0 = float(Step) / RoofSteps, A1 = float(Step + 1) / RoofSteps;
+						const FVector2f P0 = bAlongZ ? FVector2f(EdgeX, EdgeZ + A0) : FVector2f(EdgeX + A0, EdgeZ);
+						const FVector2f P1 = bAlongZ ? FVector2f(EdgeX, EdgeZ + A1) : FVector2f(EdgeX + A1, EdgeZ);
+						const float Top0 = Height(P0.X, P0.Y), Top1 = Height(P1.X, P1.Y);
+						if (Top0 <= Bottom && Top1 <= Bottom)
+						{
+							continue;
+						}
+						const FVector3f Corners[4] = { FVector3f(P0.X, FMath::Max(Top0, float(Bottom)), P0.Y), FVector3f(P1.X, FMath::Max(Top1, float(Bottom)), P1.Y),
+							FVector3f(P1.X, Bottom, P1.Y), FVector3f(P0.X, Bottom, P0.Y) };
+						FLBAVertex V[4];
+						for (int32 K = 0; K < 4; ++K)
+						{
+							V[K].Position = CornerPos(Corners[K].X, Corners[K].Y, Corners[K].Z, Scale);
+							V[K].Normal = Inward;
+							V[K].Color = bExit ? Dark : Color;
+							V[K].UV = FinishUV(Corners[K], Normal);
+						}
+						const int32 Into = bExit ? DarkSection : Section;
+						Builder.AddTriangleFacing(Into, V[0], V[1], V[2], Inward);
+						Builder.AddTriangleFacing(Into, V[0], V[2], V[3], Inward);
+					}
+				}
+			}
+		}
+	}
+
 	/** A brick with art (some libraries stack bricks without any to block the camera-side walls). */
 	bool HasBrickArt(const FLBAIsoImporter::FAtlas* Atlas, int32 Brick)
 	{
@@ -518,8 +860,8 @@ namespace
 	void EmitEnclosure(const FLBARoomPlan& Plan, TConstArrayView<FAirColumn> Air, const TSet<FIntPoint>& BeyondExits,
 		TFunctionRef<bool(int32, int32, int32)> IsDrawn, TFunctionRef<bool(int32, int32, int32)> IsSlope, TFunctionRef<FIntPoint(int32, int32, int32)> LayoutRowAt,
 		const FLBAIsoImporter::FAtlas& Atlas,
-		const FEnclosureArt& Art, FLBAMeshBuilder& Builder, FLBAMeshBuilder& CeilingBuilder, float Scale, TSet<FIntVector>& OutCovered,
-		TSet<FIntVector4>& OutCoveredFaces)
+		const FEnclosureArt& Art, const FLBAVaultShape& VaultShape, TFunctionRef<UMaterialInterface*(const FCrownFinish&, bool)> MakeFinishMaterial, FLBAMeshBuilder& Builder, FLBAMeshBuilder& CeilingBuilder, float Scale,
+		TSet<FIntVector>& OutCovered, TSet<FIntVector4>& OutCoveredFaces)
 	{
 		const FBrickFace* Faces = GetBrickFaces();
 		const int32 BrickSection = Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material);
@@ -541,6 +883,8 @@ namespace
 		const bool bDebugArt = FParse::Param(FCommandLine::Get(), TEXT("LBA2EnclosureDebugArt"));
 		int32 Stats[3] = {};
 
+		// Vaulted spaces: the columns under their vault.
+		TMap<int32, TBitArray<>> VaultFootprints;
 		// Which air column holds each cell.
 		TMap<FIntVector, int32> AirAt;
 		TMap<FIntPoint, TArray<int32, TInlineAllocator<2>>> AirOfColumn;
@@ -793,6 +1137,17 @@ namespace
 			{
 				continue;
 			}
+			// A vaulted space's air that reaches its ceiling (its rooms, the connectors of its height): under its vault (below).
+			if (!VaultShape.IsFlat() && Art.bCeiling && !bUnder && Plan.GetSpaces().IsValidIndex(At.Space) && At.Top == Plan.GetSpaces()[At.Space].Ceiling)
+			{
+				TBitArray<>& Footprint = VaultFootprints.FindOrAdd(At.Space);
+				if (Footprint.Num() == 0)
+				{
+					Footprint.Init(false, FLBARoomPlan::SizeXZ * FLBARoomPlan::SizeXZ);
+				}
+				Footprint[FLBARoomPlan::ToColumnIndex(At.Column)] = true;
+				continue;
+			}
 			if (Art.bCeiling || bUnder)
 			{
 				if (!IsDrawn(At.Column.X, At.Top, At.Column.Y))
@@ -802,6 +1157,75 @@ namespace
 				const FVector4f Color = bDebugParts ? LBABodyConverter::ToVertexColor(PartColors[int32(EPart::Ceiling)], 0.5f) : Art.CeilingColor;
 				EmitQuad(FIntVector(At.Column.X, At.Top, At.Column.Y), 1, nullptr, 1, Color, 0.f, true);
 			}
+		}
+		// The vaults: each vaulted space's roof springs from its ceiling height at its walls and rises inward (FLBAVault), in
+		// the stone the walls around them are crowned with (the rows drawn on top of them); never through what is over it
+		// (a higher storey).
+		TMap<FIntPoint, int32> CrownVotes;
+		for (const TPair<int32, TBitArray<>>& Pair : VaultFootprints)
+		{
+			for (int32 Index = 0; Index < Pair.Value.Num(); ++Index)
+			{
+				const FIntPoint Column(Index % FLBARoomPlan::SizeXZ, Index / FLBARoomPlan::SizeXZ);
+				for (int32 Side = 0; Side < 4 && Pair.Value[Index]; ++Side)
+				{
+					const FIntPoint Next = Column + FLBARoomPlan::Sides[Side];
+					const FLBAPlanLevel* Level = Plan.FindLevel(Plan.GetSpaces()[Pair.Key].Level);
+					if (!FLBARoomPlan::IsInGrid(Next) || Pair.Value[FLBARoomPlan::ToColumnIndex(Next)] || !Level || Level->Get(Next) != ELBAColumn::Wall)
+					{
+						continue;
+					}
+					const int32 Top = TopDrawn(IsDrawn, Next, 0, LBA::GridSizeY);
+					for (int32 Y = Top; Y >= FMath::Max(Top - 1, 0) && Top != INDEX_NONE; --Y)
+					{
+						const TStaticArray<float, 3>* Coverage = Atlas.FaceCoverage.Find(Plan.GetBrick(Next.X, Y, Next.Y));
+						if (IsDrawn(Next.X, Y, Next.Y) && Coverage && FMath::Max((*Coverage)[1], (*Coverage)[2]) >= OpaqueCoverage)
+						{
+							++CrownVotes.FindOrAdd(LayoutRowAt(Next.X, Y, Next.Y));
+						}
+					}
+				}
+			}
+		}
+		UMaterialInterface* VaultMaterial = nullptr;
+		for (const TPair<int32, TBitArray<>>& Pair : VaultFootprints)
+		{
+			const FLBAPlanSpace& Space = Plan.GetSpaces()[Pair.Key];
+			const FLBAVault Vault(Pair.Value, VaultShape, Pair.Key);
+			TArray<int32> Overhead;
+			Overhead.Init(TNumericLimits<int32>::Max(), FLBARoomPlan::SizeXZ * FLBARoomPlan::SizeXZ);
+			for (int32 Index = 0; Index < Overhead.Num(); ++Index)
+			{
+				for (int32 Y = Space.Ceiling; Y < LBA::GridSizeY && Pair.Value[Index]; ++Y)
+				{
+					if (Plan.IsSolid(Index % FLBARoomPlan::SizeXZ, Y, Index / FLBARoomPlan::SizeXZ))
+					{
+						Overhead[Index] = Y;
+						break;
+					}
+				}
+			}
+			auto Height = [&](float X, float Z)
+			{
+				// At most the lowest thing over the columns meeting at the point.
+				float Cap = TNumericLimits<float>::Max();
+				for (const FIntPoint& Corner : { FIntPoint(0, 0), FIntPoint(-1, 0), FIntPoint(0, -1), FIntPoint(-1, -1) })
+				{
+					const FIntPoint Column(FMath::FloorToInt(X + 0.01f) + Corner.X, FMath::FloorToInt(Z + 0.01f) + Corner.Y);
+					if (Vault.Contains(Column) && FMath::Abs(Column.X + 0.5f - X) < 1.f && FMath::Abs(Column.Y + 0.5f - Z) < 1.f)
+					{
+						Cap = FMath::Min(Cap, float(Overhead[FLBARoomPlan::ToColumnIndex(Column)]));
+					}
+				}
+				return FMath::Min(Space.Ceiling + Vault.GetRise(X, Z), Cap);
+			};
+			if (!VaultMaterial)
+			{
+				VaultMaterial = bDebugParts || bDebugArt ? Atlas.FillMaterial : MakeFinishMaterial(FCrownFinish::FromVotes(CrownVotes), true);
+			}
+			const FVector4f Color = bDebugParts ? LBABodyConverter::ToVertexColor(PartColors[int32(EPart::Ceiling)], 0.5f)
+				: bDebugArt ? LBABodyConverter::ToVertexColor(FColor(255, 0, 255), 0.5f) : FVector4f(0.5f, 0.5f, 0.5f, 0.5f);
+			EmitRoof(Vault, Height, CeilingBuilder, CeilingBuilder.GetSection(TEXT("Roof"), VaultMaterial), Color, Scale);
 		}
 		UE_LOG(LogLBA2, Display, TEXT("Enclosure wall faces: %d wallpaper, %d wallpaper foot, %d flat"), Stats[0], Stats[1], Stats[2]);
 	}
@@ -1200,6 +1624,7 @@ const FLBAIsoImporter::FAtlas* FLBAIsoImporter::GetAtlas(int32 LibraryIndex)
 	Atlas.Texture = Context.CreateTexture(Folder, FString::Printf(TEXT("T_Lib%02d_Bricks"), LibraryIndex), Atlas.Width, Atlas.Height, Pixels, false);
 	Atlas.Material = Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Atlas.Texture, Folder);
 	Atlas.FillMaterial = Context.GetMaterials().GetMaster(ELBAMaterial::Color);
+	Atlas.Pixels = MoveTemp(Pixels);
 	return Atlases.Add(LibraryIndex, MakeUnique<FAtlas>(MoveTemp(Atlas))).Get();
 }
 
@@ -1525,7 +1950,138 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		};
 		// The library's wall styles (DA_LibNN_WallStyles: the vocabulary of a future wall builder).
 		GetWallStyles(Grid.LibraryIndex);
-		if (Settings.bEnclose)
+		// The enclosure's meshes: walls (casting shadows) and ceilings (letting the overhead light in).
+		auto CreateEnclosureMeshes = [&](const FLBAMeshBuilder& EnclosureBuilder, const FLBAMeshBuilder& CeilingBuilder)
+		{
+			for (const TPair<const FLBAMeshBuilder*, UStaticMesh**>& Pair : { TPair<const FLBAMeshBuilder*, UStaticMesh**>(&CeilingBuilder, &CeilingMesh),
+				TPair<const FLBAMeshBuilder*, UStaticMesh**>(&EnclosureBuilder, &EnclosureMesh) })
+			{
+				if (Pair.Key->IsEmpty())
+				{
+					continue;
+				}
+				FMeshDescription Description;
+				TArray<UMaterialInterface*> Materials;
+				TArray<FName> Slots;
+				Pair.Key->BuildStatic(Description, Materials, Slots);
+				FLBAStaticMeshOptions Options;
+				Options.bComplexAsSimple = true;
+				Options.bTwoSidedDistanceField = true;
+				const FString Name = Pair.Key == &CeilingBuilder ? FString::Printf(TEXT("SM_Grid_%03d_Ceiling"), GridIndex) : FString::Printf(TEXT("SM_Grid_%03d_Enclosure"), GridIndex);
+				*Pair.Value = Context.CreateStaticMesh(Context.GetContentPath(TEXT("Interiors/Grids/Enclosure")), Name,
+					MoveTemp(Description), Materials, Slots, Options);
+			}
+		};
+		const FLBAVaultShape VaultShape{ Settings.VaultRadius, Settings.VaultRise, Settings.VaultNoise };
+		// A finish's tiling texture and material (T_Grid_NNN_Finish): the art of curved surfaces (roofs, a hollow's walls).
+		// Roofs are pulled toward the library's ceiling color (as its flat ceilings are: lighter than the walls, in their hue).
+		auto MakeFinishMaterial = [&](const FCrownFinish& Finish, bool bRoof) -> UMaterialInterface*
+		{
+			constexpr float RoofLightening = 0.4f;
+			int32 Width = 0, Height = 0;
+			const FColor Ceiling = LibraryEnclosure ? LibraryEnclosure->CeilingColor : FColor(150, 140, 125);
+			const TArray<FColor> Pixels = RenderFinishTile(*Atlas, *Library, Forbidden, Finish, Ceiling, bRoof ? RoofLightening : 0.f, Width, Height);
+			const FString EnclosureFolder = Context.GetContentPath(TEXT("Interiors/Grids/Enclosure"));
+			const FString Name = FString::Printf(TEXT("T_Grid_%03d_%s"), GridIndex, bRoof ? TEXT("Roof") : TEXT("Finish"));
+			if (FParse::Param(FCommandLine::Get(), TEXT("LBA2EnclosureTiles")))
+			{
+				// -LBA2EnclosureTiles: the tile as a PPM image (Saved/LookDev/enclosure/tiles), to look at.
+				TArray<uint8> Image;
+				const FString Header = FString::Printf(TEXT("P6 %d %d 255\n"), Width, Height);
+				Image.Append(reinterpret_cast<const uint8*>(TCHAR_TO_ANSI(*Header)), Header.Len());
+				for (const FColor& Pixel : Pixels)
+				{
+					Image.Append({ Pixel.R, Pixel.G, Pixel.B });
+				}
+				FFileHelper::SaveArrayToFile(Image, *(FPaths::ProjectSavedDir() / TEXT("LookDev/enclosure/tiles") / (Name + TEXT(".ppm"))));
+			}
+			UTexture2D* Texture = Context.CreateTexture(EnclosureFolder, Name, Width, Height, Pixels, true);
+			return Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Texture, EnclosureFolder);
+		};
+		if (Settings.bEnclose && Settings.Structure == ELBAEnclosureStructure::Hollow)
+		{
+			// A hollow in the rock (FLBAHollow): one roof over the walkable floors, rock walls up to it from what bounds them.
+			const FLBAGridCells Cells = MakePlanCells(Query, Grid, *Library, Atlas, FrameLayouts);
+			FLBAHollow::FSettings HollowSettings;
+			HollowSettings.Clear = Settings.RoomHeight;
+			HollowSettings.SpringReach = Settings.SpringReach;
+			HollowSettings.Shape = VaultShape;
+			HollowSettings.Seed = GridIndex;
+			const FLBAHollow Hollow(Cells, HollowSettings, DoorZones.FindRef(GridIndex));
+			UE_LOG(LogLBA2, Display, TEXT("Grid %d %s"), GridIndex, *Hollow.Describe());
+			if (!Hollow.IsEmpty())
+			{
+				// The rock: the rows drawn on top of what bounds the hollow (its rims, the crown of its walls), a few mixed.
+				TMap<FIntPoint, int32> Votes;
+				for (int32 Index = 0; Index < FLBARoomPlan::SizeXZ * FLBARoomPlan::SizeXZ; ++Index)
+				{
+					const FIntPoint Column(Index % FLBARoomPlan::SizeXZ, Index / FLBARoomPlan::SizeXZ);
+					for (int32 Side = 0; Side < 4 && Hollow.IsUnderRoof(Column); ++Side)
+					{
+						const FIntPoint Next = Column + FLBARoomPlan::Sides[Side];
+						const int32 Top = Hollow.GetDrawnTop(Next);
+						for (int32 Y = Top; Y >= FMath::Max(Top - 1, 0) && !Hollow.IsUnderRoof(Next) && Top != INDEX_NONE; --Y)
+						{
+							const TStaticArray<float, 3>* Coverage = Atlas->FaceCoverage.Find(Query.BrickAt(Next.X, Y, Next.Y));
+							const FLBAGridCell& Cell = Grid.Get(Next.X, Y, Next.Y);
+							if (IsDrawn(Next.X, Y, Next.Y) && Coverage && FMath::Max((*Coverage)[1], (*Coverage)[2]) >= OpaqueCoverage)
+							{
+								++Votes.FindOrAdd(FIntPoint(Cell.Layout, Library->Layouts[Cell.Layout].GetBlockCoords(Cell.Block).Y));
+							}
+						}
+					}
+				}
+				const FCrownFinish Rock = FCrownFinish::FromVotes(Votes);
+				FString Rows;
+				for (const FIntPoint& Row : Rock.Rows)
+				{
+					Rows += FString::Printf(TEXT(" L%d/%d"), Row.X, Row.Y);
+				}
+				UE_LOG(LogLBA2, Log, TEXT("HOLLOW grid %d rock:%s"), GridIndex, *Rows);
+
+				const bool bDebugParts = FParse::Param(FCommandLine::Get(), TEXT("LBA2EnclosureDebug"));
+				const bool bPlain = bDebugParts || FParse::Param(FCommandLine::Get(), TEXT("LBA2EnclosureDebugArt"));
+				FLBAMeshBuilder EnclosureBuilder, CeilingBuilder;
+				auto Height = [&Hollow](float X, float Z) { return Hollow.GetRoof(X, Z); };
+				UMaterialInterface* Material = bPlain ? Atlas->FillMaterial : MakeFinishMaterial(Rock, false);
+				UMaterialInterface* RoofMaterial = bPlain ? Atlas->FillMaterial : MakeFinishMaterial(Rock, true);
+				const FVector4f Neutral(0.5f, 0.5f, 0.5f, 0.5f);
+				const FVector4f RoofColor = bDebugParts ? LBABodyConverter::ToVertexColor(FColor(40, 200, 60), 0.5f) : bPlain ? LBABodyConverter::ToVertexColor(FColor(255, 0, 255), 0.5f) : Neutral;
+				const FVector4f WallColor = bDebugParts ? LBABodyConverter::ToVertexColor(FColor(220, 40, 40), 0.5f) : RoofColor;
+				EmitRoof(Hollow.GetVault(), Height, CeilingBuilder, CeilingBuilder.GetSection(TEXT("Roof"), RoofMaterial), RoofColor, Scale);
+				EmitHollowWalls(Hollow, Height, DoorZones.FindRef(GridIndex), EnclosureBuilder, EnclosureBuilder.GetSection(TEXT("Finish"), Material),
+					EnclosureBuilder.GetSection(TEXT("BrickFill"), Atlas->FillMaterial), WallColor, Scale);
+				CreateEnclosureMeshes(EnclosureBuilder, CeilingBuilder);
+				UE_LOG(LogLBA2, Display, TEXT("Grid %d enclosure: hollow, %d triangles"), GridIndex, EnclosureBuilder.NumTriangles() + CeilingBuilder.NumTriangles());
+
+				// One bounce light, from the roof's lowest spring up (lighting the roof as its lit floors would, not the undersides
+				// of what stands under it); the hollow for the plugin's Tools: "C x z 0 floor top" per floor column.
+				FRoomBox& Box = RoomBoxes.AddDefaulted_GetRef();
+				int32 FloorCount = 0;
+				FString Dump = Hollow.Describe();
+				for (int32 Index = 0; Index < FLBARoomPlan::SizeXZ * FLBARoomPlan::SizeXZ; ++Index)
+				{
+					const FIntPoint Column(Index % FLBARoomPlan::SizeXZ, Index / FLBARoomPlan::SizeXZ);
+					const int32 Floor = Hollow.GetFloor(Column);
+					if (!Hollow.IsUnderRoof(Column) || Floor == INDEX_NONE)
+					{
+						continue;
+					}
+					const int32 Top = FMath::FloorToInt(Hollow.GetRoof(Column.X + 0.5f, Column.Y + 0.5f));
+					Dump += FString::Printf(TEXT("C %d %d 0 %d %d\n"), Column.X, Column.Y, Floor, Top);
+					Box.Min = Box.Min.ComponentMin(FIntVector(Column.X, FMath::FloorToInt(Hollow.GetSpring(Column.X + 0.5f, Column.Y + 0.5f)), Column.Y));
+					Box.Max = Box.Max.ComponentMax(FIntVector(Column.X, Top - 1, Column.Y));
+					if (const TStaticArray<FColor, 3>* Colors = Atlas->FaceColors.Find(Query.BrickAt(Column.X, Floor, Column.Y)))
+					{
+						Box.Floor += FLinearColor::FromSRGBColor((*Colors)[0]);
+						++FloorCount;
+					}
+				}
+				Box.Floor /= float(FMath::Max(FloorCount, 1));
+				FFileHelper::SaveStringToFile(Dump, *(FPaths::ProjectSavedDir() / FString::Printf(TEXT("LookDev/enclosure/cells/grid%03d.txt"), GridIndex)));
+			}
+		}
+		else if (Settings.bEnclose)
 		{
 			const FLBAGridCells Cells = MakePlanCells(Query, Grid, *Library, Atlas, FrameLayouts);
 			const FLBARoomPlan Plan(Cells, &GetWallBricks(Grid.LibraryIndex), DoorZones.FindRef(GridIndex), Settings.RoomHeight);
@@ -1768,7 +2324,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				return Library->Layouts.IsValidIndex(Cell.Layout) ? FIntPoint(Cell.Layout, Library->Layouts[Cell.Layout].GetBlockCoords(Cell.Block).Y) : FIntPoint(INDEX_NONE, 0);
 			};
 			auto IsSlope = [&Query](int32 X, int32 Y, int32 Z) { return Query.ShapeAt(X, Y, Z) > 1; };
-			EmitEnclosure(Plan, Air, BeyondExits, IsDrawn, IsSlope, LayoutRowAt, *Atlas, Art, EnclosureBuilder, CeilingBuilder, Scale, Covered, CoveredFaces);
+			EmitEnclosure(Plan, Air, BeyondExits, IsDrawn, IsSlope, LayoutRowAt, *Atlas, Art, VaultShape, MakeFinishMaterial, EnclosureBuilder, CeilingBuilder, Scale, Covered, CoveredFaces);
 
 			// Frames come off whole: an instance any cell of which the enclosure covers (no half curves left).
 			TSet<FIntVector4> RemovedInstances;
@@ -1793,30 +2349,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				}
 			}
 
-			if (CeilingBuilder.NumTriangles() > 0)
-			{
-				FMeshDescription Description;
-				TArray<UMaterialInterface*> Materials;
-				TArray<FName> Slots;
-				CeilingBuilder.BuildStatic(Description, Materials, Slots);
-				FLBAStaticMeshOptions Options;
-				Options.bComplexAsSimple = true;
-				Options.bTwoSidedDistanceField = true;
-				CeilingMesh = Context.CreateStaticMesh(Context.GetContentPath(TEXT("Interiors/Grids/Enclosure")), FString::Printf(TEXT("SM_Grid_%03d_Ceiling"), GridIndex),
-					MoveTemp(Description), Materials, Slots, Options);
-			}
-			if (!EnclosureBuilder.IsEmpty())
-			{
-				FMeshDescription Description;
-				TArray<UMaterialInterface*> Materials;
-				TArray<FName> Slots;
-				EnclosureBuilder.BuildStatic(Description, Materials, Slots);
-				FLBAStaticMeshOptions Options;
-				Options.bComplexAsSimple = true;
-				Options.bTwoSidedDistanceField = true;
-				EnclosureMesh = Context.CreateStaticMesh(Context.GetContentPath(TEXT("Interiors/Grids/Enclosure")), FString::Printf(TEXT("SM_Grid_%03d_Enclosure"), GridIndex),
-					MoveTemp(Description), Materials, Slots, Options);
-			}
+			CreateEnclosureMeshes(EnclosureBuilder, CeilingBuilder);
 			UE_LOG(LogLBA2, Display, TEXT("Grid %d enclosure: %d rooms, %d spaces, %d triangles, %d frame cells removed"), GridIndex, Rooms.Num(), Spaces.Num(),
 				EnclosureBuilder.NumTriangles() + CeilingBuilder.NumTriangles(), RemovedFrames.Num());
 			{

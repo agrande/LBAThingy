@@ -45,6 +45,8 @@ public:
 		int32 Width = 0;
 		int32 Height = 0;
 		UMaterialInterface* FillMaterial = nullptr;
+		/** The texture's pixels (to build finishes from its bricks). */
+		TArray<FColor> Pixels;
 	};
 
 private:

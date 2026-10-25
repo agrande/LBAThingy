@@ -81,6 +81,42 @@ it to `Saved/LookDev/enclosure/cells/gridNNN.txt` with its air ("C x z room floo
 per connector column) and its walls. `Tools/room_plan.py <grid ...>` prints and draws the same plan (in
 `Saved/LookDev/plans`), so a rule can be tried and checked on any grid before it is ported.
 
+### Enclosed interiors: what holds the roof
+
+One idea covers the layouts that are not houses: **a roof spans between what holds it, and rises with the distance
+from it** (`FLBAVault`). Each point of a vault is its spring height plus a cove, a quarter ellipse **VaultRadius**
+columns across and **VaultRise** cells high, of its distance to the nearest support, then level. So a corridor
+narrower than twice the radius gets a pointed arch, a rectangle a cloister vault, a wide hall a coved, level crown,
+and a pillar standing in it brings the roof down onto it. A flat ceiling is the vault of radius 0: houses. What holds
+the roof is the **Structure** of an interior (library setting, per-grid overrides):
+
+- **Rooms** (houses, offices; the plan above). With a vault radius, each space's ceiling becomes a vault springing
+  from its walls at its ceiling height (with the connectors that reach it), in the stone the walls are crowned with:
+  stone halls (the School of Magic's nave, sewer chambers).
+- **Hollow** (`FLBAHollow`): caves, a temple carved in a mountain, a cistern. A cave has no walls in the builder's
+  sense: its walkable floor is a hollow in the rock, and the rock rises from the hollow's edge and closes over it.
+  The **hollow** is the columns of the big walkable floors (any height, stepping one cell at a time) and of any
+  walkable floor at an exit's zone (the way out is never walled off), closed over gaps up to 6 columns across (a chasm
+  a bridge crosses, a pit, a ridge between galleries). Its roof **springs** RoomHeight cells over the highest floor
+  within **SpringReach** columns, smoothed over 4 (short reach: the roof follows the ground; long: one level, a
+  cistern). A column without floor whose drawn top comes within 2 cells of the roof **holds it** (a pillar, a rock wall
+  between galleries); rims, railings, lamps and invisible walls stand under it. Walls rise on its edge from what the
+  original drew there (a rim, a rampart; nothing: from the grid's bottom, closing the abyss) up to the roof, dark past
+  exits; one bounce light lights the roof from its spring up. Buildings inside a cavern (Tralu's house, the temple's
+  galleries) keep their open tops under the cavern's roof. A vertical shaft (the Temple of Bu's well) has no ground,
+  so no hollow: it stays open.
+
+**Finish**: surfaces the original never drew wear the stone it crowned their supports with: the row drawn most on
+top of the walls or rims around (`FCrownFinish`), its shadowed bricks left out, rendered into a texture that tiles
+(`T_Grid_NNN_Finish`, one cell of wall per brick face) and laid by position, so a roof keeps the art's size however
+steep it gets; roofs (`T_Grid_NNN_Roof`) are pulled 40% toward the library's ceiling color, as flat ceilings are.
+**VaultNoise** makes rock rough. `-LBA2EnclosureTiles` writes the tiles to `Saved/LookDev/enclosure/tiles`.
+
+Reviewed so far: Tralu's cave (2, 19, 20), the Temple of Bu (10, 11, 12, 75), the sewers (17 a cistern; 18, 34 vaulted
+rooms) and the School of Magic (27, 28 vaulted rooms). Their libraries (1, 3) default to hollows but stay off until a
+grid is reviewed. `Saved/LookDev/enclosure/cells/gridNNN.txt` holds a hollow's summary and its "C x z 0 floor roof"
+columns. The concepts are checked on tiny made-up grids by automation tests (`Automation RunTests LBA2.Enclosure`).
+
 ### Enclosed interiors: the geometry
 
 The enclosure (`SM_Grid_NNN_Enclosure`, an `Enclosure` actor tagged `LBAEnclosure`) closes the plan's **air**:

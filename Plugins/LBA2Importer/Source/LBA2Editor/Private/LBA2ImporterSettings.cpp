@@ -164,6 +164,54 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 	Grid(139, TEXT("In the Dome (demo): a platform in a starfield"), false);
 	// Open to the sky in the original (palms, a fountain): walls, no ceiling.
 	Grid(29, TEXT("Hacienda central area (a courtyard)"), true, 0, false);
+
+	// What holds the roof. Caves and the Temple of Bu are hollows in the rock: one rough vault over the floors, springing
+	// RoomHeight cells over them and rising with the distance to the rock (libraries off: reviewed grid by grid below).
+	for (const int32 Index : { 1, 3 })
+	{
+		if (FLBALibraryEnclosure* Entry = LibraryEnclosures.FindByPredicate([Index](const FLBALibraryEnclosure& E) { return E.Library == Index; }))
+		{
+			Entry->Enclosure.Structure = ELBAEnclosureStructure::Hollow;
+			Entry->Enclosure.VaultRadius = 6.f;
+			Entry->Enclosure.VaultRise = 8.f;
+			Entry->Enclosure.VaultNoise = 1.5f;
+			Entry->Enclosure.SpringReach = 2.f;
+		}
+	}
+	auto Structure = [this, &Grid](int32 Index, const TCHAR* Note, ELBAEnclosureStructure Kind, float Radius, float Rise, float Noise, float Reach = 2.f)
+	{
+		FLBAGridEnclosure* Entry = GridEnclosures.FindByPredicate([Index](const FLBAGridEnclosure& E) { return E.Grid == Index; });
+		if (!Entry)
+		{
+			Grid(Index, Note, true);
+			Entry = &GridEnclosures.Last();
+		}
+		FLBAEnclosureOverrides& Overrides = Entry->Overrides;
+		Overrides.bOverride_Structure = Overrides.bOverride_VaultRadius = Overrides.bOverride_VaultRise = Overrides.bOverride_VaultNoise = Overrides.bOverride_SpringReach = true;
+		Overrides.Structure = Kind;
+		Overrides.VaultRadius = Radius;
+		Overrides.VaultRise = Rise;
+		Overrides.VaultNoise = Noise;
+		Overrides.SpringReach = Reach;
+	};
+	constexpr ELBAEnclosureStructure Hollow = ELBAEnclosureStructure::Hollow, Rooms = ELBAEnclosureStructure::Rooms;
+	// Buildings of those libraries keep their rooms and flat ceilings.
+	Structure(21, TEXT("Wizard's tent"), Rooms, 0.f, 0.f, 0.f);
+	Structure(32, TEXT("A roofed building in the caves"), Rooms, 0.f, 0.f, 0.f);
+	Structure(2, TEXT("Tralu's cave"), Hollow, 6.f, 8.f, 1.5f);
+	Structure(19, TEXT("Tralu's cave, small Tralus"), Hollow, 6.f, 8.f, 1.5f);
+	Structure(20, TEXT("Tralu's cave, Joe the elf"), Hollow, 6.f, 8.f, 1.5f);
+	Structure(10, TEXT("Temple of Bu: a temple carved in the rock"), Hollow, 6.f, 8.f, 1.5f);
+	Structure(11, TEXT("Temple of Bu, downstairs"), Hollow, 6.f, 8.f, 1.5f);
+	Structure(12, TEXT("Temple of Bu, spacecraft area"), Hollow, 6.f, 8.f, 1.5f);
+	Structure(75, TEXT("Temple of Bu, the well"), Hollow, 6.f, 8.f, 1.5f);
+	// A sewer cistern: masonry all round, one level vault over its highest floor.
+	Structure(17, TEXT("Sewers: a cistern"), Hollow, 8.f, 8.f, 0.f, 64.f);
+	// Stone halls: built rooms under vaults (pointed where narrow, coved where wide).
+	Structure(18, TEXT("Sewers, treasure room"), Rooms, 6.f, 6.f, 0.f);
+	Structure(34, TEXT("Sewers, Sendell's ball room"), Rooms, 8.f, 8.f, 0.f);
+	Structure(27, TEXT("School of Magic classroom: a church's nave"), Rooms, 8.f, 12.f, 0.f);
+	Structure(28, TEXT("School of Magic"), Rooms, 8.f, 10.f, 0.f);
 }
 
 void ULBA2ImporterProjectSettings::PostInitProperties()
