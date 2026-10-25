@@ -145,6 +145,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void PawnClientRestart() override;
@@ -188,6 +189,9 @@ private:
 	void HandleHurt(float Damage, FVector Location);
 	UFUNCTION()
 	void HandleDeath();
+	/** Globe mode: the world moved, maybe with the Dinofly (ULBAPlanetSubsystem::OnRecentered). */
+	void HandleWorldMoved(const FTransform& Delta, const AActor* MovedAlong);
+	FDelegateHandle WorldMovedHandle;
 	void ShowDeathScreen();
 	void DrawDebug() const;
 

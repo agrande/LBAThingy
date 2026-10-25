@@ -811,6 +811,16 @@ void ULBAFlightMovementComponent::TickAirborne(float DeltaTime)
 	SlideAlongSurface(Delta, 1.f - Hit.Time, Hit.Normal, Hit, true);
 }
 
+void ULBAFlightMovementComponent::OnWorldMoved(const FTransform& Delta)
+{
+	// Velocity is the mover's (ULBAPlanetSubsystem::MoveWorld).
+	const FVector Turned = Delta.TransformVectorNoScale(Heading).GetSafeNormal2D();
+	Heading = Turned.IsNearlyZero() ? Heading : Turned;
+	LastVelocity = Delta.TransformVectorNoScale(LastVelocity);
+	SmoothedAcceleration = Delta.TransformVectorNoScale(SmoothedAcceleration);
+	WindDrift = Delta.TransformVectorNoScale(WindDrift);
+}
+
 bool ULBAFlightMovementComponent::FindWaterSurface(const FVector& Location, float& OutSurfaceZ) const
 {
 	// On a planet the sea is everywhere (globe mode).

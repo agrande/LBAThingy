@@ -493,8 +493,9 @@ the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScene
 
 Islands placed on a planet can open on it: a small round planet (Twinsun: 2 km radius) whose sea curves away to a
 real horizon, the island sitting on it as imported. `lba.Globe.Open CITABAU` opens Citadel (sunny) that way; so does
-any travel to it with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. For now only
-Citadel is placed; the Dinofly is the sea vehicle (it floats and skims on the planet's sea).
+any travel to it with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel and
+the desert island are placed, 840 m apart: open either one and the other is out there, across the sea. The Dinofly is
+the sea vehicle (it floats and skims on the planet's sea).
 
 How it holds together:
 
@@ -508,8 +509,16 @@ How it holds together:
   (`ULBAPlanetSubsystem`). Gameplay code keeps its flat-world assumptions (gravity -Z, Z = height) within that half
   degree. The camera is tilted by the angle left (`ULBAPlanetCameraModifier`), so the turns don't show; surface
   patterns (dither dots, cartoon sea) are laid out in the island level's space, and the sea's motion vectors follow
-  the sea, so TSR and motion blur don't see them either. Back near the island, the world snaps back where the level
-  has it, taking the player along. Invisible markers (volumes, starts, target points) never move.
+  the sea, so TSR and motion blur don't see them either. Near an island again (within its flat sea and 30 m), the
+  world snaps to where that island's level has it, taking the player along: that island is the *anchor*. The snap
+  is a camera cut (no motion blur or TSR smear), and the player's pawn turns its world-space state along
+  (`OnRecentered`: the Dinofly's camera, flight heading and airflow strokes). Invisible markers (volumes, starts,
+  target points) skip the turns and are put back on their islands at each snap.
+- **Other islands stream in.** The opened island is the *home*; every other placed island's level is loaded as a
+  level instance where it is on the planet, without what the home island's level brings for the whole planet (sun
+  and lights, sky atmosphere, sky light, clouds, height fog, look volume, rain, storm, player starts) and without its
+  scenes (an empty island for now). Patterns stay laid out in the home island's space everywhere, so they don't jump
+  when the anchor changes.
 - **The sea** is a disc of rings kept under the player and bent onto the planet by its material (`M_LBA_PlanetSea`:
   single layer water with the home island's water colour, so the palette shading draws it as cartoon water); sea
   queries (`GetSeaSurface`, used by the Dinofly's floating and its altitude for air density) are analytic.
@@ -519,7 +528,9 @@ How it holds together:
   (HOLOMAP.HQR, ARROW.BIN: latitude, longitude) and is turned so its calibrated sun keeps its angles. The planet's
   sun is the direction that gives every listed island its sun's elevation (Citadel 31.3 and Desert 36.8 degrees,
   both exact). Output: `/Game/LBA2/Planets/DA_Planet_TWINSUN`, the sea disc and material, and each placed island's
-  `SM_<ISLAND>_Seabed_Globe`. The planets list is a table in `LBAPlanetBuilder.cpp`.
+  `SM_<ISLAND>_Seabed_Globe`. The planets list is a table in `LBAPlanetBuilder.cpp`; the builder warns when two
+  islands' flat seas would overlap. Twinsun: Citadel at latitude 65.1, longitude 332.4; the desert island at 89.0,
+  5.7 (heading -150.4), each with about 110 m of land and 130 m of flat sea.
 
 Measured on Citadel (`-LBA2Shots=globe`, open the level with `?Globe`): about 20 turns flying 400 m out and as many
 back; at each, the camera's path on the planet has no jerk (0.1 to 2 cm, as between ordinary frames). A frozen
@@ -527,14 +538,24 @@ frame turned 0.5 degrees differs from untouched ones by 1.1 (mean, 0-255; untouc
 frame; turned 3 degrees, by 4.8, mostly the sky near the horizon (Unreal's height fog is flat in the world). A turn
 moves about 540 actors in 4 ms; the snap back near the island takes one 36 ms frame. 140 fps on average in
 standalone game. `-LBA2GlobeQuick` stops after the turn test, `-LBA2GlobeTurn=0.5` sets its angle.
+
+Voyage (`-LBA2Shots=globe -LBA2GlobeTo=DESERT` on Citadel): the Dinofly flies from Citadel to the desert island
+(about 75 s at 8 m/s, 45 turns), the island rising over the horizon from 670 m away, until the world is held there,
+then looks at both islands from high above and lands. The desert streams in at the start (348 actors, about 150 ms
+over a few frames). The snap to the desert turns the world 115 degrees: the camera's path on the planet moves 5 cm
+and 0.002 degrees that frame, like any other. Turns stay at about 7 ms frames with both islands loaded.
 Console: `lba.Globe.Debug 1` (state on screen; 2 logs every turn, 3 their cost by class), `lba.Globe.Turns 0`
 (stops turning, the camera keeps correcting), `lba.Globe.Recenter 3` (turns the world 3 degrees: it must not show),
-`lba.Globe.SeaErrors` (the sea material's compile errors).
+`lba.Globe.Islands 0` (the next island opened comes alone), `lba.Globe.SeaErrors` (the sea material's compile
+errors).
 
-Not done yet: other islands (stubs from the holomap and LBA1, Desert), the Hamalayi belt and its passes, a boat,
-streaming more than one island, the fast travel menu landing on the globe, space; packaged builds don't cook the planet
-asset yet. Height fog stays flat in the world (it shifts with each turn: visible only on large turns); views from high
-above are hazy.
+Not done yet: the other islands (stubs from the holomap and LBA1), the Hamalayi belt and its passes, a boat, the
+other islands' scenes and looks (they borrow the home island's sun, sky, sea color and look), streaming by distance
+(every placed island is loaded), the fast travel menu landing on the globe, space; packaged builds don't cook the
+planet asset yet. Out at sea, markers stay where their island last was until the next snap. Height fog stays flat in
+the world (it shifts with each turn: visible only on large turns); views from high above are hazy (an island 1 km
+away is lost in the fog). Islands are darker on the globe than in their levels (Citadel's paving 69 instead of 124):
+the sky light captures the planet's small atmosphere, whose sky is about half as bright (sun light is unchanged).
 
 ### Tests tab, feature test map and gateways
 

@@ -59,9 +59,12 @@ private:
 	/**
 	 * -LBA2Shots=globe (open the island with ?Globe): the Dinofly flies out to sea and back while the world turns under
 	 * it; the camera's path in planet space is checked for jumps at every turn, a frozen frame is compared across a
-	 * forced turn, and the planet is shot from high above.
+	 * forced turn, and the planet is shot from high above. With -LBA2GlobeTo=ISLAND, it flies to that island instead
+	 * (until the world is held there), looks at both islands from high above and lands.
 	 */
 	bool bGlobe = false;
+	/** -LBA2GlobeTo: the island (index in the planet asset) the voyage goes to, if any. */
+	int32 GlobeDestination = INDEX_NONE;
 	int32 GlobeStep = -1;
 	double GlobeStepStart = 0.0;
 	int32 GlobeFrame = 0;

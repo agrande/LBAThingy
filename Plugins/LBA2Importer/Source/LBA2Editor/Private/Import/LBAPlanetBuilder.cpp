@@ -38,11 +38,10 @@ namespace
 
 	const TArray<FPlanetPreset>& GetPresets()
 	{
-		// Twinsun at 2 km (decided 2026-10-25): Citadel island (its sunny variant) for the prototype; the desert
-		// island isn't placed yet but already has its say in where the sun is.
+		// Twinsun at 2 km (decided 2026-10-25): Citadel island (its sunny variant) and the desert island, 840 m apart.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 200000.0, { { TEXT("CITABAU"), 0, true }, { TEXT("DESERT"), 2, false } } },
+			{ TEXT("TWINSUN"), 200000.0, { { TEXT("CITABAU"), 0, true }, { TEXT("DESERT"), 2, true } } },
 		};
 		return Presets;
 	}
@@ -340,6 +339,16 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	else
 	{
 		Asset->Islands.Add(Entry);
+	}
+	// Each island needs its flat cap: two caps can't overlap (their rings may).
+	for (const FLBAPlanetIsland& Other : Asset->Islands)
+	{
+		const double Apart = Radius * FMath::Acos(FMath::Clamp(FVector::DotProduct(Other.GetUp(), Entry.GetUp()), -1.0, 1.0));
+		if (Other.Island != Entry.Island && Apart < Other.CapRadius + Entry.CapRadius)
+		{
+			Context.Warn(FString::Printf(TEXT("Planet %s: %s and %s are %.0f m apart, their flat seas overlap (%.0f and %.0f m)"),
+				Planet->Name, *Island.Name, *Other.Island.ToString(), Apart / 100.0, Entry.CapRadius / 100.0, Other.CapRadius / 100.0));
+		}
 	}
 	Context.MarkForSave(Asset);
 

@@ -401,6 +401,9 @@ public:
 	/** Horizontal direction of travel (or facing, when still). */
 	FVector GetHeading() const { return Heading; }
 
+	/** The world was moved with the Dinofly (globe mode, ULBAPlanetSubsystem): turns its directions along. */
+	void OnWorldMoved(const FTransform& Delta);
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual float GetMaxSpeed() const override { return 4000.f; }
 	virtual bool IsFalling() const override { return !bLanded; }

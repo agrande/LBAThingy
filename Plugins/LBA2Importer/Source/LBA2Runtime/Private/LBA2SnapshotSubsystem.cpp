@@ -652,8 +652,13 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 		bool bUntilLanded;
 		/** High views: camera height above the Dinofly (cm). */
 		float Height;
+		/** What it steers to or looks at: the opened island (0) or the voyage's destination (1). */
+		int32 Target = 0;
+		/** Ends once this near the target (m along the sea), or once the world is held at it. */
+		float UntilWithin = 0.f;
+		bool bUntilHeld = false;
 	};
-	static const FStep Steps[] =
+	static const FStep HomeSteps[] =
 	{
 		{ TEXT("takeoff"), 2.5f, EGlobeStep::Fly, 0.f, 0.f, 1.f, 0.f, false, 0.f },
 		{ TEXT("climb"), 6.f, EGlobeStep::Fly, 0.f, 0.f, 0.f, 0.4f, false, 0.f },
@@ -671,7 +676,22 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 		{ TEXT("fly_home"), 40.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f },
 		{ TEXT("home"), 1.f, EGlobeStep::Fly, 1.f, 0.5f, 0.f, 1.f, false, 0.f },
 	};
-	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+	// -LBA2GlobeTo=ISLAND: across the sea to another island, until the world is held there.
+	static const FStep VoyageSteps[] =
+	{
+		{ TEXT("takeoff"), 2.5f, EGlobeStep::Fly, 0.f, 0.f, 1.f, 0.f, false, 0.f },
+		{ TEXT("climb"), 6.f, EGlobeStep::Fly, 0.f, 0.f, 0.f, 0.4f, false, 0.f },
+		{ TEXT("leave_home"), 20.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1 },
+		{ TEXT("halfway"), 120.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1, 450.f },
+		{ TEXT("destination_ahead"), 120.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1, 250.f },
+		{ TEXT("arrived"), 120.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1, 0.f, true },
+		{ TEXT("over_destination"), 4.f, EGlobeStep::HighView, 0.f, 0.f, 0.f, 0.f, false, 50000.f, 1 },
+		{ TEXT("look_back"), 4.f, EGlobeStep::HighView, 0.f, 0.f, 0.f, 0.f, false, 20000.f, 0 },
+		{ TEXT("land"), 40.f, EGlobeStep::Fly, 1.f, 0.3f, 0.f, -0.45f, true, 0.f, 1 },
+		{ TEXT("landed"), 2.f, EGlobeStep::Fly, 0.f, 0.f, 0.f, 0.f, false, 0.f, 1 },
+	};
+	const FStep* Steps = GlobeDestination != INDEX_NONE ? VoyageSteps : HomeSteps;
+	const int32 NumSteps = GlobeDestination != INDEX_NONE ? UE_ARRAY_COUNT(VoyageSteps) : UE_ARRAY_COUNT(HomeSteps);
 
 	APlayerController* PC = World->GetFirstPlayerController();
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
@@ -692,6 +712,20 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 		if (!Hero->SummonDinofly())
 		{
 			return true;
+		}
+		FString Destination;
+		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2GlobeTo="), Destination))
+		{
+			GlobeDestination = Planets->GetPlanetAsset()->Islands.IndexOfByPredicate([&Destination](const FLBAPlanetIsland& Island)
+			{
+				return Island.Island.ToString().Equals(Destination, ESearchCase::IgnoreCase);
+			});
+			if (GlobeDestination == INDEX_NONE || GlobeDestination == Planets->GetHome())
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots globe: %s isn't another island of the planet"), *Destination);
+				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+				return false;
+			}
 		}
 		GlobeStep = 0;
 		GlobeStepStart = Elapsed;
@@ -717,8 +751,12 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 	}
 	const double StepTime = Elapsed - GlobeStepStart;
 	ALBADinofly* Dinofly = Cast<ALBADinofly>(Pawn);
-	const FLBAPlanetIsland* Island = Planets->GetPlanetAsset() && Planets->GetPlanetAsset()->Islands.Num() > 0 ? &Planets->GetPlanetAsset()->Islands[0] : nullptr;
-	const FVector IslandCenter = Island ? Planets->GetLevelToWorld().TransformPosition(FVector(Island->Center, 0.0)) : FVector::ZeroVector;
+	const int32 Target = Step.Target == 1 ? GlobeDestination : Planets->GetHome();
+	const FLBAPlanetIsland& Island = Planets->GetPlanetAsset()->Islands[Target];
+	const FVector IslandCenter = Planets->GetIslandToWorld(Target).TransformPosition(FVector(Island.Center, 0.0));
+	// How far the Dinofly is from the target's center, along the sea (m).
+	const double ToTarget = Pawn ? Planets->GetPlanetAsset()->Radius / 100.0 * FMath::Acos(FMath::Clamp(FVector::DotProduct(
+		Planets->GetPlanetToWorld().InverseTransformPosition(Pawn->GetActorLocation()).GetSafeNormal(), Island.GetUp()), -1.0, 1.0)) : 0.0;
 	auto Shoot = [&](const FString& Name)
 	{
 		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Globe_%02d_%s.png"), GlobeStep, *Name), false, false);
@@ -870,6 +908,10 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 	}
 	GlobeFrameTime += DeltaTime;
 	GlobeWorstFrame = FMath::Max(GlobeWorstFrame, double(DeltaTime));
+	if (DeltaTime > 0.05f)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe slow frame (%s t=%.2f): %.1f ms"), Step.Name, StepTime, DeltaTime * 1000.f);
+	}
 	++GlobeFrames;
 	++GlobeFrame;
 
@@ -877,14 +919,17 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 	{
 		double SeaZ = 0.0;
 		Planets->GetSeaSurface(Dinofly->GetActorLocation(), SeaZ);
-		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe %s t=%.1f: %.0f m from the island, %.1f m above the sea, speed %.1f m/s, turns %d, landed %d floating %d"),
-			Step.Name, StepTime, FVector::Dist2D(Dinofly->GetActorLocation(), IslandCenter) / 100.0, (Dinofly->GetActorLocation().Z - SeaZ) / 100.0,
-			Dinofly->GetFlight()->Velocity.Size() / 100.0, Planets->GetRecenterCount(), Dinofly->GetFlight()->IsLanded() ? 1 : 0, Dinofly->GetFlight()->IsFloating() ? 1 : 0);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe %s t=%.1f: %.0f m from %s, %.1f m above the sea, speed %.1f m/s, turns %d, %s %s, landed %d floating %d"),
+			Step.Name, StepTime, ToTarget, *Island.Island.ToString(), (Dinofly->GetActorLocation().Z - SeaZ) / 100.0,
+			Dinofly->GetFlight()->Velocity.Size() / 100.0, Planets->GetRecenterCount(), Planets->IsAnchored() ? TEXT("held at") : TEXT("left"),
+			*Planets->GetPlanetAsset()->Islands[Planets->GetAnchor()].Island.ToString(), Dinofly->GetFlight()->IsLanded() ? 1 : 0, Dinofly->GetFlight()->IsFloating() ? 1 : 0);
 		NextReport = Elapsed + 1.0;
 	}
 
 	const bool bLandedEarly = Step.bUntilLanded && Dinofly->GetFlight()->IsLanded();
-	if (StepTime >= Step.Duration || bLandedEarly)
+	const bool bThere = (Step.UntilWithin > 0.f && ToTarget < Step.UntilWithin)
+		|| (Step.bUntilHeld && Planets->IsAnchored() && Planets->GetAnchor() == Target);
+	if (StepTime >= Step.Duration || bLandedEarly || bThere)
 	{
 		Shoot(Step.Name);
 		NextStep();

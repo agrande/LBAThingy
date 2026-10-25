@@ -30,6 +30,7 @@
 #include "LBAEntityAsset.h"
 #include "LBAFlightMovementComponent.h"
 #include "LBAHitPointsComponent.h"
+#include "LBAPlanetSubsystem.h"
 #include "LBATypes.h"
 #include "TimerManager.h"
 
@@ -215,6 +216,38 @@ void ALBADinofly::BeginPlay()
 	HitPoints->OnDeath.AddDynamic(this, &ALBADinofly::HandleDeath);
 	ApplyEntity();
 	CameraBase = FRotator(-15.f, GetActorRotation().Yaw, 0.f);
+	if (ULBAPlanetSubsystem* Planets = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>())
+	{
+		WorldMovedHandle = Planets->OnRecentered.AddUObject(this, &ALBADinofly::HandleWorldMoved);
+	}
+}
+
+void ALBADinofly::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ULBAPlanetSubsystem* Planets = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>())
+	{
+		Planets->OnRecentered.Remove(WorldMovedHandle);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void ALBADinofly::HandleWorldMoved(const FTransform& Delta, const AActor* MovedAlong)
+{
+	if (MovedAlong != this)
+	{
+		return;
+	}
+	// The camera's rotations are in the world (the boom's is absolute): they turn with the view.
+	const ULBAPlanetSubsystem* Planets = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>();
+	const FQuat ViewTurn = Planets ? Planets->GetViewTurn(Delta) : Delta.GetRotation();
+	const FRotator Base = (ViewTurn * CameraBase.Quaternion()).Rotator();
+	CameraBase = FRotator(Base.Pitch, Base.Yaw, 0.f);
+	CameraBoom->SetWorldRotation(ViewTurn * CameraBoom->GetComponentQuat());
+	Flight->OnWorldMoved(Delta);
+	if (Airflow)
+	{
+		Airflow->OnWorldMoved(Delta);
+	}
 }
 
 void ALBADinofly::PossessedBy(AController* NewController)

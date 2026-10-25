@@ -4,10 +4,13 @@
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
+#include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/VolumetricCloudComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/Level.h"
+#include "Engine/LevelStreamingDynamic.h"
+#include "Engine/PostProcessVolume.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/TargetPoint.h"
@@ -27,11 +30,13 @@
 #include "Kismet/GameplayStatics.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
+#include "LBAStorm.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
 #include "MaterialShared.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
+#include "NiagaraActor.h"
 #include "WaterBodyActor.h"
 #include "WaterZoneActor.h"
 
@@ -43,6 +48,8 @@ namespace
 		TEXT("1 prints the planet's state on screen, 2 also logs every move of the world."));
 	TAutoConsoleVariable<int32> CVarGlobeTurns(TEXT("lba.Globe.Turns"), 1,
 		TEXT("0 stops turning the world under the player (debug: the camera keeps correcting the tilt)."));
+	TAutoConsoleVariable<int32> CVarGlobeIslands(TEXT("lba.Globe.Islands"), 1,
+		TEXT("0: the planet's other islands aren't streamed in (debug, for the next level opened)."));
 
 	/** Actors of island levels the planet replaces (tagged by the importer). */
 	const FName SeaFloorTag(TEXT("LBA_SeaFloor"));
@@ -121,6 +128,32 @@ namespace
 		return Actor->IsA<AVolume>() || Actor->IsA<ATargetPoint>() || Actor->IsA<APlayerStart>();
 	}
 
+	/**
+	 * What an island level has for itself alone (its sky, lights, look, weather, starts): the opened island's are the
+	 * planet's, so the other islands' go. Rain is the only effect island levels have.
+	 */
+	bool IsIslandEnvironment(const AActor* Actor)
+	{
+		return Actor->IsA<APostProcessVolume>() || Actor->IsA<APlayerStart>() || Actor->IsA<ALBAStorm>() || Actor->IsA<ANiagaraActor>()
+			|| Actor->FindComponentByClass<UDirectionalLightComponent>() || Actor->FindComponentByClass<USkyLightComponent>()
+			|| Actor->FindComponentByClass<USkyAtmosphereComponent>() || Actor->FindComponentByClass<UVolumetricCloudComponent>()
+			|| Actor->FindComponentByClass<UExponentialHeightFogComponent>();
+	}
+
+	/** Moves a level's actors that turn with the world (or its markers) by Delta (old world to new). */
+	void MoveLevel(ULevel* Level, const FTransform& Delta, bool bMarkers)
+	{
+		for (AActor* Actor : Level->Actors)
+		{
+			USceneComponent* Root = Actor ? Actor->GetRootComponent() : nullptr;
+			if (Root && !Root->GetAttachParent() && !IsWorldInfrastructure(Actor) && StaysWithLevel(Actor) == bMarkers)
+			{
+				Root->SetMobility(EComponentMobility::Movable);
+				Actor->SetActorTransform(Actor->GetActorTransform() * Delta, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+		}
+	}
+
 	FLinearColor ToParameter(const FVector& Vector, double W)
 	{
 		return FLinearColor(float(Vector.X), float(Vector.Y), float(Vector.Z), float(W));
@@ -189,13 +222,14 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InAnchor)
 {
 	UWorld* World = GetWorld();
 	Asset = InAsset;
+	Home = InAnchor;
 	Anchor = InAnchor;
 	bAnchored = true;
 
 	FActorSpawnParameters Params;
 	Params.ObjectFlags |= RF_Transient;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ALBAPlanetActor* Spawned = World->SpawnActor<ALBAPlanetActor>(ALBAPlanetActor::StaticClass(), GetAnchorPlanetToWorld(), Params);
+	ALBAPlanetActor* Spawned = World->SpawnActor<ALBAPlanetActor>(ALBAPlanetActor::StaticClass(), GetIslandPlanetToWorld(Home), Params);
 	if (!Spawned)
 	{
 		return;
@@ -207,9 +241,11 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InAnchor)
 
 	for (ULevel* Level : World->GetLevels())
 	{
+		IslandLevels.Add(Level, { Home, FTransform::Identity });
 		AdaptLevel(Level);
 	}
 	LevelAddedHandle = FWorldDelegates::LevelAddedToWorld.AddUObject(this, &ULBAPlanetSubsystem::OnLevelAdded);
+	LoadIslands();
 
 	// The second sun is the first one's twin on the other side of the planet.
 	if (UDirectionalLightComponent* First = Sun.Get())
@@ -221,7 +257,7 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InAnchor)
 		Second->SetWorldRotation((-First->GetForwardVector()).Rotation());
 	}
 
-	const FLBAPlanetIsland& Island = Asset->Islands[Anchor];
+	const FLBAPlanetIsland& Island = Asset->Islands[Home];
 	UE_LOG(LogLBA2, Display, TEXT("Globe mode: %s on %s (radius %.0f m), latitude %.1f, longitude %.1f, heading %.1f, flat sea %.0f m, round from %.0f m"),
 		*Island.Island.ToString(), *Asset->GetName(), Asset->Radius / 100.0, Island.Latitude, Island.Longitude, Island.Heading,
 		Island.CapRadius / 100.0, Island.BlendRadius / 100.0);
@@ -233,7 +269,8 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level)
 	{
 		return;
 	}
-	const FLBAPlanetIsland& Island = Asset->Islands[Anchor];
+	const int32 IslandIndex = GetLevelIsland(Level);
+	const FLBAPlanetIsland& Island = Asset->Islands[IslandIndex];
 	TArray<AActor*> Replaced;
 	for (AActor* Actor : Level->Actors)
 	{
@@ -241,20 +278,12 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level)
 		{
 			continue;
 		}
-		if (Actor->IsA<AWaterBody>() || Actor->IsA<AWaterZone>() || Actor->ActorHasTag(SeaFloorTag))
+		if (Actor->IsA<AWaterBody>() || Actor->IsA<AWaterZone>() || Actor->ActorHasTag(SeaFloorTag)
+			|| (IslandIndex != Home && IsIslandEnvironment(Actor)))
 		{
 			Replaced.Add(Actor);
 			continue;
 		}
-		AStaticMeshActor* MeshActor = Cast<AStaticMeshActor>(Actor);
-		if (MeshActor && Actor->ActorHasTag(SeabedTag))
-		{
-			if (UStaticMesh* Bent = Island.Seabed.LoadSynchronous())
-			{
-				MeshActor->GetStaticMeshComponent()->SetStaticMesh(Bent);
-			}
-		}
-
 		TInlineComponentArray<USceneComponent*> Components(Actor);
 		for (USceneComponent* Component : Components)
 		{
@@ -292,6 +321,15 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level)
 				Fog = HeightFog;
 			}
 		}
+
+		AStaticMeshActor* MeshActor = Cast<AStaticMeshActor>(Actor);
+		if (MeshActor && Actor->ActorHasTag(SeabedTag))
+		{
+			if (UStaticMesh* Bent = Island.Seabed.LoadSynchronous())
+			{
+				MeshActor->GetStaticMeshComponent()->SetStaticMesh(Bent);
+			}
+		}
 	}
 	for (AActor* Actor : Replaced)
 	{
@@ -305,21 +343,71 @@ void ULBAPlanetSubsystem::OnLevelAdded(ULevel* Level, UWorld* InWorld)
 	{
 		return;
 	}
-	// Levels come in where the island has them: put them where the island is now.
-	const FTransform LevelToWorld = GetLevelToWorld();
-	if (!LevelToWorld.Equals(FTransform::Identity, 1e-6))
+	// Levels come in where their island's level has them (the opened island's sub-levels) or where the island was
+	// when they were requested (other islands): put them where it is now.
+	int32 IslandIndex = Home;
+	FTransform Placed = FTransform::Identity;
+	for (int32 Index = 0; Index < IslandStreams.Num(); ++Index)
 	{
-		for (AActor* Actor : Level->Actors)
+		if (IslandStreams[Index].IsValid() && IslandStreams[Index]->GetLoadedLevel() == Level)
 		{
-			USceneComponent* Root = Actor ? Actor->GetRootComponent() : nullptr;
-			if (Root && !Root->GetAttachParent() && !IsWorldInfrastructure(Actor) && !StaysWithLevel(Actor))
-			{
-				Root->SetMobility(EComponentMobility::Movable);
-				Actor->SetActorTransform(Actor->GetActorTransform() * LevelToWorld, false, nullptr, ETeleportType::TeleportPhysics);
-			}
+			IslandIndex = Index;
+			Placed = IslandStreams[Index]->LevelTransform;
 		}
 	}
+	const FTransform Current = GetIslandToWorld(IslandIndex);
+	const FTransform Delta = Placed.Inverse() * Current;
+	if (!Delta.Equals(FTransform::Identity, 1e-6))
+	{
+		MoveLevel(Level, Delta, false);
+		MoveLevel(Level, Delta, true);
+	}
+	IslandLevels.Add(Level, { IslandIndex, Current });
 	AdaptLevel(Level);
+	if (IslandIndex != Home)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("Globe mode: %s streamed in, %d actors"), *Asset->Islands[IslandIndex].Island.ToString(), Level->Actors.Num());
+	}
+}
+
+void ULBAPlanetSubsystem::LoadIslands()
+{
+	IslandStreams.SetNum(Asset->Islands.Num());
+	for (int32 Index = 0; Index < Asset->Islands.Num(); ++Index)
+	{
+		const FLBAPlanetIsland& Island = Asset->Islands[Index];
+		if (Index == Home || Island.Level.IsNull() || CVarGlobeIslands.GetValueOnGameThread() == 0)
+		{
+			continue;
+		}
+		bool bLoaded = false;
+		IslandStreams[Index] = ULevelStreamingDynamic::LoadLevelInstanceBySoftObjectPtr(GetWorld(), Island.Level, GetIslandToWorld(Index), bLoaded,
+			Island.Level.GetAssetName() + TEXT("_Globe"));
+		if (!bLoaded)
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("Globe mode: couldn't stream in %s (%s)"), *Island.Island.ToString(), *Island.Level.ToString());
+		}
+	}
+}
+
+int32 ULBAPlanetSubsystem::GetLevelIsland(const ULevel* Level) const
+{
+	const FIslandLevel* Entry = IslandLevels.Find(const_cast<ULevel*>(Level));
+	return Entry ? Entry->Island : Home;
+}
+
+void ULBAPlanetSubsystem::PlaceMarkers()
+{
+	for (TPair<TWeakObjectPtr<ULevel>, FIslandLevel>& Entry : IslandLevels)
+	{
+		ULevel* Level = Entry.Key.Get();
+		const FTransform Current = GetIslandToWorld(Entry.Value.Island);
+		if (Level && !Entry.Value.Markers.Equals(Current, 1e-6))
+		{
+			MoveLevel(Level, Entry.Value.Markers.Inverse() * Current, true);
+			Entry.Value.Markers = Current;
+		}
+	}
 }
 
 APawn* ULBAPlanetSubsystem::GetPlayerPawn() const
@@ -333,14 +421,19 @@ FTransform ULBAPlanetSubsystem::GetPlanetToWorld() const
 	return Planet.IsValid() ? Planet->GetActorTransform() : FTransform::Identity;
 }
 
-FTransform ULBAPlanetSubsystem::GetAnchorPlanetToWorld() const
+FTransform ULBAPlanetSubsystem::GetIslandPlanetToWorld(int32 Island) const
 {
-	return Asset->Islands[Anchor].GetLevelToPlanet(Asset->Radius).Inverse();
+	return Asset->Islands[Island].GetLevelToPlanet(Asset->Radius).Inverse();
 }
 
 FTransform ULBAPlanetSubsystem::GetLevelToWorld() const
 {
-	return IsActive() ? Asset->Islands[Anchor].GetLevelToPlanet(Asset->Radius) * GetPlanetToWorld() : FTransform::Identity;
+	return GetIslandToWorld(Home);
+}
+
+FTransform ULBAPlanetSubsystem::GetIslandToWorld(int32 Island) const
+{
+	return IsActive() && Asset->Islands.IsValidIndex(Island) ? Asset->Islands[Island].GetLevelToPlanet(Asset->Radius) * GetPlanetToWorld() : FTransform::Identity;
 }
 
 double ULBAPlanetSubsystem::GetSeaRadius(const FVector& PlanetDirection) const
@@ -416,6 +509,19 @@ bool ULBAPlanetSubsystem::GetViewCorrection(FVector& OutPivot, FQuat& OutRotatio
 	return true;
 }
 
+FQuat ULBAPlanetSubsystem::GetViewTurn(const FTransform& Delta) const
+{
+	const APawn* Pawn = IsActive() ? GetPlayerPawn() : nullptr;
+	if (!Pawn)
+	{
+		return Delta.GetRotation();
+	}
+	// Last correction, the move, then this correction undone: +Z stays +Z.
+	const FVector Up = GetUpAt(Pawn->GetActorLocation());
+	const FVector UpBefore = Delta.GetRotation().UnrotateVector(Up);
+	return FQuat::FindBetweenNormals(Up, FVector::UpVector) * Delta.GetRotation() * FQuat::FindBetweenNormals(FVector::UpVector, UpBefore);
+}
+
 void ULBAPlanetSubsystem::MoveWorld(const FTransform& Delta, bool bWithPawn)
 {
 	const double Start = FPlatformTime::Seconds();
@@ -464,6 +570,13 @@ void ULBAPlanetSubsystem::MoveWorld(const FTransform& Delta, bool bWithPawn)
 		{
 			Controller->SetControlRotation((Delta.GetRotation() * Controller->GetControlRotation().Quaternion()).Rotator());
 		}
+		// The view jumps with the world: a camera cut, so that TSR and motion blur don't smear the frame with the
+		// motion of everything.
+		const APlayerController* PlayerController = Cast<APlayerController>(Pawn->GetController());
+		if (PlayerController && PlayerController->PlayerCameraManager)
+		{
+			PlayerController->PlayerCameraManager->SetGameCameraCutThisFrame();
+		}
 		// Lagging cameras would fly across the jump: no lag for this frame.
 		TInlineComponentArray<USpringArmComponent*> Arms(Pawn);
 		for (USpringArmComponent* Arm : Arms)
@@ -485,7 +598,7 @@ void ULBAPlanetSubsystem::MoveWorld(const FTransform& Delta, bool bWithPawn)
 		UE_LOG(LogLBA2, Display, TEXT("Globe: world moved (%s), %.2f deg, %.0f cm, %d actors in %.2f ms"), bWithPawn ? TEXT("with the player") : TEXT("about the player"),
 			FMath::RadiansToDegrees(Delta.GetRotation().GetAngle()), Delta.GetTranslation().Size(), Moved, LastMoveMilliseconds);
 	}
-	OnRecentered.Broadcast(Delta);
+	OnRecentered.Broadcast(Delta, bWithPawn ? Pawn : nullptr);
 }
 
 void ULBAPlanetSubsystem::DebugTurn(float Degrees)
@@ -548,32 +661,41 @@ void ULBAPlanetSubsystem::Tick(float DeltaTime)
 
 void ULBAPlanetSubsystem::UpdateAnchor(APawn* Pawn)
 {
-	const FLBAPlanetIsland& Island = Asset->Islands[Anchor];
-	const FLBAPlanetCap Cap = Island.GetCap(Asset->Radius);
 	const FTransform PlanetToWorld = GetPlanetToWorld();
 	const FVector Pivot = Pawn->GetActorLocation();
 	const FVector Direction = PlanetToWorld.InverseTransformPosition(Pivot).GetSafeNormal();
-	const double Distance = Cap.GetDistance(FMath::Acos(FMath::Clamp(FVector::DotProduct(Direction, Island.GetUp()), -1.0, 1.0)));
+	// How far the player is from an island's cap center, along the sea, and how near the island holds the world.
+	auto GetDistance = [&](int32 Index)
+	{
+		const FLBAPlanetIsland& Island = Asset->Islands[Index];
+		return Island.GetCap(Asset->Radius).GetDistance(FMath::Acos(FMath::Clamp(FVector::DotProduct(Direction, Island.GetUp()), -1.0, 1.0)));
+	};
+	auto GetEnter = [&](int32 Index) { return Asset->Islands[Index].CapRadius + Asset->AnchorMargin; };
 
-	const double Enter = Cap.CapRadius + Asset->AnchorMargin;
-	if (bAnchored && Distance > Enter + Asset->AnchorHysteresis)
+	if (bAnchored && GetDistance(Anchor) > GetEnter(Anchor) + Asset->AnchorHysteresis)
 	{
 		bAnchored = false;
 	}
-	else if (!bAnchored && Distance < Enter)
+	for (int32 Index = 0; !bAnchored && Index < Asset->Islands.Num(); ++Index)
 	{
-		bAnchored = true;
+		if (GetDistance(Index) < GetEnter(Index))
+		{
+			bAnchored = true;
+			Anchor = Index;
+		}
 	}
 
 	if (bAnchored)
 	{
-		// Back where the island's level has it, taking the player along.
-		const FTransform Target = GetAnchorPlanetToWorld();
+		// Where the island's level has it, taking the player along; markers go back on their islands.
+		const FTransform Target = GetIslandPlanetToWorld(Anchor);
 		const bool bInPlace = FVector::Dist(Target.GetLocation(), PlanetToWorld.GetLocation()) < 0.5
 			&& Target.GetRotation().AngularDistance(PlanetToWorld.GetRotation()) < 1e-6;
 		if (!bInPlace)
 		{
 			MoveWorld(PlanetToWorld.Inverse() * Target, true);
+			PlaceMarkers();
+			UE_LOG(LogLBA2, Display, TEXT("Globe mode: the world is held at %s"), *Asset->Islands[Anchor].Island.ToString());
 		}
 		return;
 	}
@@ -684,8 +806,9 @@ void ULBAPlanetSubsystem::UpdateParameters()
 			Island ? FLinearColor(FMath::Max(Island->BlendRadius, Island->CapRadius), Island ? 1.f : 0.f, 0.f, 0.f) : FLinearColor::Transparent);
 	}
 
-	// World to the anchor island's level, where surface patterns (dither dots, cartoon sea) are laid out, so they
-	// stay put when the world turns. Identity (and off) while the world is where the level has it.
+	// World to the opened island's level, where surface patterns (dither dots, cartoon sea) are laid out, so they
+	// stay put when the world turns. One layout for the whole planet, so they don't jump when the world is held at
+	// another island. Identity (and off) while the world is where the opened island's level has it.
 	const FMatrix WorldToLevel = GetLevelToWorld().Inverse().ToMatrixNoScale();
 	const bool bPattern = !WorldToLevel.Equals(FMatrix::Identity, 1e-6);
 	for (int32 Axis = 0; Axis < 3; ++Axis)
@@ -693,7 +816,7 @@ void ULBAPlanetSubsystem::UpdateParameters()
 		Instance->SetVectorParameterValue(*FString::Printf(TEXT("PlanetPattern%c"), TEXT('X') + Axis),
 			FLinearColor(float(WorldToLevel.M[0][Axis]), float(WorldToLevel.M[1][Axis]), float(WorldToLevel.M[2][Axis]), float(WorldToLevel.M[3][Axis])));
 	}
-	const FLBAPlanetIsland& Island = Asset->Islands[Anchor];
+	const FLBAPlanetIsland& Island = Asset->Islands[Home];
 	Instance->SetVectorParameterValue(TEXT("PlanetPattern"), FLinearColor(float(Island.Center.X), float(Island.Center.Y), float(Asset->Radius), bPattern ? 1.f : 0.f));
 	Instance->SetVectorParameterValue(TEXT("PlanetPatternCap"), FLinearColor(Island.CapRadius, FMath::Max(Island.BlendRadius, Island.CapRadius), 1.f, 0.f));
 }
@@ -704,18 +827,26 @@ void ULBAPlanetSubsystem::DrawDebug(const APawn* Pawn) const
 	{
 		return;
 	}
-	const FLBAPlanetIsland& Island = Asset->Islands[Anchor];
 	const FTransform PlanetToWorld = GetPlanetToWorld();
 	const FVector Location = Pawn->GetActorLocation();
 	const FVector Local = PlanetToWorld.InverseTransformPosition(Location);
+	const FLBAPlanetIsland* Nearest = &Asset->Islands[Anchor];
+	for (const FLBAPlanetIsland& Candidate : Asset->Islands)
+	{
+		if (FVector::DotProduct(Local, Candidate.GetUp()) > FVector::DotProduct(Local, Nearest->GetUp()))
+		{
+			Nearest = &Candidate;
+		}
+	}
+	const FLBAPlanetIsland& Island = *Nearest;
 	const double Angle = FMath::Acos(FMath::Clamp(FVector::DotProduct(Local.GetSafeNormal(), Island.GetUp()), -1.0, 1.0));
 	double SeaZ = 0.0;
 	GetSeaSurface(Location, SeaZ);
 	const FVector Up = GetUpAt(Location);
 	GEngine->AddOnScreenDebugMessage(uint64(0x6C6261676C6F6265), 0.f, FColor::Cyan, FString::Printf(
-		TEXT("Globe %s: %s, %.0f m from the island (%.2f deg), %.1f m above the sea, tilt %.2f deg, turns %d (last %d actors, %.2f ms)"),
-		*Island.Island.ToString(), bAnchored ? TEXT("anchored") : TEXT("at sea"), Island.GetCap(Asset->Radius).GetDistance(Angle) / 100.0,
-		FMath::RadiansToDegrees(Angle), (Location.Z - SeaZ) / 100.0, FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Up.Z, -1.0, 1.0))),
+		TEXT("Globe: %s, %.0f m from %s (%.2f deg), %.1f m above the sea, tilt %.2f deg, turns %d (last %d actors, %.2f ms)"),
+		bAnchored ? *FString::Printf(TEXT("held at %s"), *Asset->Islands[Anchor].Island.ToString()) : TEXT("at sea"), Island.GetCap(Asset->Radius).GetDistance(Angle) / 100.0,
+		*Island.Island.ToString(), FMath::RadiansToDegrees(Angle), (Location.Z - SeaZ) / 100.0, FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Up.Z, -1.0, 1.0))),
 		RecenterCount, LastMovedActors, LastMoveMilliseconds));
 }
 
