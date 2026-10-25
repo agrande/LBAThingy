@@ -81,6 +81,14 @@ struct LBA2RUNTIME_API FLBAPlanetIsland
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Island")
 	double Heading = 0.0;
 
+	/**
+	 * Its sky light's intensity on the planet, relative to its level's, when it is the opened island. A small planet's
+	 * sky is as bright overhead but darker towards the horizon (its air is thin along low rays) and has fewer clouds
+	 * there, so its sky light, captured from that sky, gives less light than the island's lights were calibrated for.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Island", meta = (ClampMin = "0"))
+	float SkyLightGain = 1.f;
+
 	/** The island's seabed bent with the sea (replaces the level's flat one in globe mode). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Island")
 	TSoftObjectPtr<UStaticMesh> Seabed;
@@ -134,12 +142,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sky", meta = (ClampMin = "0.1"))
 	float AtmosphereHeight = 20.f;
 
-	/** The clouds' layer, above the sea (km). */
+	/**
+	 * The clouds' layer, above the sea (km); 0 keeps the island level's (Unreal's default, 5 km up and 10 km thick).
+	 * The level's cloud material only forms clouds in a layer that high: one lower than 2 km stays empty.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sky", meta = (ClampMin = "0"))
-	float CloudBottom = 0.6f;
+	float CloudBottom = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sky", meta = (ClampMin = "0.1"))
-	float CloudHeight = 0.8f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sky", meta = (ClampMin = "0"))
+	float CloudHeight = 0.f;
+
 
 	/** The world turns under the player whenever their up is this far from the world's (degrees). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe", meta = (ClampMin = "0.05", ClampMax = "10"))

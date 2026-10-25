@@ -25,6 +25,13 @@ namespace
 		int32 HolomapIsland;
 		/** On the globe; otherwise it only steers where the planet's sun is. */
 		bool bPlaced;
+		/**
+		 * Its sky light's intensity on the planet relative to its level's (FLBAPlanetIsland::SkyLightGain): measured by
+		 * opening it alone on the planet (lba.Globe.Islands 0) and trying gains (lba.Globe.SkyLightGain) until its
+		 * ground is as light as in its level, shot from the same poses (Citadel: harbour paving and park grass, 0.88 and
+		 * 1.02 of the globe's light; desert: sand and town, 0.93; the clouds vary from run to run).
+		 */
+		float SkyLightGain = 1.f;
 	};
 
 	struct FPlanetPreset
@@ -41,7 +48,7 @@ namespace
 		// Twinsun at 2 km (decided 2026-10-25): Citadel island (its sunny variant) and the desert island, 840 m apart.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 200000.0, { { TEXT("CITABAU"), 0, true }, { TEXT("DESERT"), 2, true } } },
+			{ TEXT("TWINSUN"), 200000.0, { { TEXT("CITABAU"), 0, true, 1.55f }, { TEXT("DESERT"), 2, true, 1.35f } } },
 		};
 		return Presets;
 	}
@@ -256,6 +263,7 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 		Elevations.Add({ PlanetDirection(Latitude, Longitude), Sun.Z });
 		if (Island.Name.Equals(Listed.Island, ESearchCase::IgnoreCase))
 		{
+			Entry.SkyLightGain = Listed.SkyLightGain;
 			Entry.Latitude = Latitude;
 			Entry.Longitude = Longitude;
 			LevelSun = Sun;

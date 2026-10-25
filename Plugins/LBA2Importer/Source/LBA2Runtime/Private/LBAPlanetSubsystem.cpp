@@ -48,6 +48,8 @@ namespace
 		TEXT("1 prints the planet's state on screen, 2 also logs every move of the world."));
 	TAutoConsoleVariable<int32> CVarGlobeTurns(TEXT("lba.Globe.Turns"), 1,
 		TEXT("0 stops turning the world under the player (debug: the camera keeps correcting the tilt)."));
+	TAutoConsoleVariable<float> CVarGlobeSkyLightGain(TEXT("lba.Globe.SkyLightGain"), -1.f,
+		TEXT("Overrides the opened island's sky light gain on the planet (debug, for tuning; negative: the island's, see FLBAPlanetIsland)."));
 	TAutoConsoleVariable<int32> CVarGlobeIslands(TEXT("lba.Globe.Islands"), 1,
 		TEXT("0: the planet's other islands aren't streamed in (debug, for the next level opened)."));
 
@@ -86,6 +88,26 @@ namespace
 			if (ULBAPlanetSubsystem* Planets = World ? World->GetSubsystem<ULBAPlanetSubsystem>() : nullptr)
 			{
 				Planets->DebugTurn(Args.IsEmpty() ? 1.f : FCString::Atof(*Args[0]));
+			}
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs GlobeCloudsCommand(TEXT("lba.Globe.Clouds"),
+		TEXT("Sets the cloud layer: lba.Globe.Clouds BOTTOM HEIGHT (km above the sea; debug, for tuning)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			for (TObjectIterator<UVolumetricCloudComponent> It; It && World; ++It)
+			{
+				if (It->GetWorld() != World)
+				{
+					continue;
+				}
+				if (Args.Num() >= 2)
+				{
+					It->SetLayerBottomAltitude(FCString::Atof(*Args[0]));
+					It->SetLayerHeight(FCString::Atof(*Args[1]));
+				}
+				UE_LOG(LogLBA2, Display, TEXT("lba.Globe.Clouds: %s, layer from %.2f km, %.2f km high, tracing start max %.1f km, max %.1f km"),
+					*It->GetOwner()->GetName(), It->LayerBottomAltitude, It->LayerHeight, It->TracingStartMaxDistance, It->TracingMaxDistance);
 			}
 		}));
 
@@ -306,8 +328,16 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level)
 			}
 			else if (UVolumetricCloudComponent* Clouds = Cast<UVolumetricCloudComponent>(Component))
 			{
-				Clouds->SetLayerBottomAltitude(Asset->CloudBottom);
-				Clouds->SetLayerHeight(Asset->CloudHeight);
+				if (Asset->CloudBottom > 0.f && Asset->CloudHeight > 0.f)
+				{
+					Clouds->SetLayerBottomAltitude(Asset->CloudBottom);
+					Clouds->SetLayerHeight(Asset->CloudHeight);
+				}
+			}
+			else if (USkyLightComponent* SkyLight = Cast<USkyLightComponent>(Component))
+			{
+				const float Override = CVarGlobeSkyLightGain.GetValueOnGameThread();
+				SkyLight->SetIntensity(SkyLight->Intensity * (Override >= 0.f ? Override : Island.SkyLightGain));
 			}
 			else if (UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Component))
 			{

@@ -523,7 +523,15 @@ How it holds together:
   single layer water with the home island's water colour, so the palette shading draws it as cartoon water); sea
   queries (`GetSeaSurface`, used by the Dinofly's floating and its altitude for air density) are analytic.
 - **Sky:** the island's sky atmosphere becomes the planet's (centered on it, 2 km ground radius); a second sun on
-  the other side of the planet lights the other hemisphere (each sun is switched off below its horizon).
+  the other side of the planet lights the other hemisphere (each sun is switched off below its horizon). Its clouds
+  keep their level's layer (5 to 15 km up: the cloud material forms nothing in a layer lower than 2 km). Such a small
+  planet's sky is as bright overhead as the level's, but twice as dark 40 degrees up and three to four times near the
+  horizon, with fewer clouds there: low rays leave its air almost as fast as rays going straight up, where on an
+  Earth-sized planet they cross about 28 times more. Its sky light, captured from that sky, would light the island
+  half as much, so it is made brighter by the island's `SkyLightGain` (Citadel 1.55, desert 1.35, in the builder's
+  table), measured until the ground is as light as in the level from the same poses (now within 4 to 17 percent,
+  a little bright and bluer; the sun's own light is the same on the globe). The sky itself stays darker towards the
+  horizon. The clouds cost about 10 fps in the voyage (141 to 129 on average).
 - **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
   (HOLOMAP.HQR, ARROW.BIN: latitude, longitude) and is turned so its calibrated sun keeps its angles. The planet's
   sun is the direction that gives every listed island its sun's elevation (Citadel 31.3 and Desert 36.8 degrees,
@@ -546,16 +554,16 @@ over a few frames). The snap to the desert turns the world 115 degrees: the came
 and 0.002 degrees that frame, like any other. Turns stay at about 7 ms frames with both islands loaded.
 Console: `lba.Globe.Debug 1` (state on screen; 2 logs every turn, 3 their cost by class), `lba.Globe.Turns 0`
 (stops turning, the camera keeps correcting), `lba.Globe.Recenter 3` (turns the world 3 degrees: it must not show),
-`lba.Globe.Islands 0` (the next island opened comes alone), `lba.Globe.SeaErrors` (the sea material's compile
-errors).
+`lba.Globe.Islands 0` (the next island opened comes alone), `lba.Globe.SkyLightGain 1.4` (overrides the island's
+sky light gain, for the next island opened), `lba.Globe.Clouds 5 10` (sets the cloud layer, km),
+`lba.Globe.SeaErrors` (the sea material's compile errors).
 
 Not done yet: the other islands (stubs from the holomap and LBA1), the Hamalayi belt and its passes, a boat, the
 other islands' scenes and looks (they borrow the home island's sun, sky, sea color and look), streaming by distance
 (every placed island is loaded), the fast travel menu landing on the globe, space; packaged builds don't cook the
 planet asset yet. Out at sea, markers stay where their island last was until the next snap. Height fog stays flat in
 the world (it shifts with each turn: visible only on large turns); views from high above are hazy (an island 1 km
-away is lost in the fog). Islands are darker on the globe than in their levels (Citadel's paving 69 instead of 124):
-the sky light captures the planet's small atmosphere, whose sky is about half as bright (sun light is unchanged).
+away is lost in the fog). A streamed island is lit by the opened island's sky light and gain.
 
 ### Tests tab, feature test map and gateways
 
