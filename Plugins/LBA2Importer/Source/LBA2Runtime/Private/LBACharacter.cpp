@@ -19,6 +19,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "LBAControls.h"
 #include "InputModifiers.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
@@ -962,32 +963,36 @@ void ALBACharacter::CreateInput()
 		MapStick(LookAction, EKeys::Gamepad_Right2D).Modifiers.Add(InvertY);
 	}
 
+	auto MapKeys = [this](UInputAction* Action, const TArray<FKey>& Keys)
+	{
+		for (const FKey& Key : Keys)
+		{
+			InputContext->MapKey(Action, Key);
+		}
+	};
+
 	// Space: the behaviour action in authentic mode, jump in modern mode.
 	ActionAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Action"));
 	ActionAction->ValueType = EInputActionValueType::Boolean;
-	InputContext->MapKey(ActionAction, EKeys::SpaceBar);
-	InputContext->MapKey(ActionAction, EKeys::Gamepad_FaceButton_Bottom);
+	MapKeys(ActionAction, LBAControls::Jump());
 
 	// E: the behaviour action (search, punch/kick, crouch).
 	UseAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Use"));
 	UseAction->ValueType = EInputActionValueType::Boolean;
-	InputContext->MapKey(UseAction, EKeys::E);
-	InputContext->MapKey(UseAction, EKeys::Gamepad_FaceButton_Left);
+	MapKeys(UseAction, LBAControls::Use());
 
 	// Gamepad B, left mouse button: punch/kick in any behaviour.
 	AttackAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Attack"));
 	AttackAction->ValueType = EInputActionValueType::Boolean;
-	InputContext->MapKey(AttackAction, EKeys::LeftMouseButton);
-	InputContext->MapKey(AttackAction, EKeys::Gamepad_FaceButton_Right);
+	MapKeys(AttackAction, LBAControls::Attack());
 
 	ToggleModeAction = NewObject<UInputAction>(this, TEXT("IA_LBA_ToggleMode"));
 	ToggleModeAction->ValueType = EInputActionValueType::Boolean;
-	InputContext->MapKey(ToggleModeAction, EKeys::Tab);
+	MapKeys(ToggleModeAction, LBAControls::ToggleControlMode());
 
 	SummonDinoflyAction = NewObject<UInputAction>(this, TEXT("IA_LBA_SummonDinofly"));
 	SummonDinoflyAction->ValueType = EInputActionValueType::Boolean;
-	InputContext->MapKey(SummonDinoflyAction, EKeys::F);
-	InputContext->MapKey(SummonDinoflyAction, EKeys::Gamepad_FaceButton_Top);
+	MapKeys(SummonDinoflyAction, LBAControls::Dinofly());
 
 	// F5-F8 like the original game, 1-4 as an alternative.
 	const FKey BehaviourKeys[4][2] = { { EKeys::F5, EKeys::One }, { EKeys::F6, EKeys::Two }, { EKeys::F7, EKeys::Three }, { EKeys::F8, EKeys::Four } };

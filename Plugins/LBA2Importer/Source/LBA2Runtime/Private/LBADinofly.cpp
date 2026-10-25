@@ -18,6 +18,7 @@
 #include "HAL/IConsoleManager.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "LBAControls.h"
 #include "InputModifiers.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
@@ -1010,7 +1011,7 @@ void ALBADinofly::CreateInput()
 		Mapping.Modifiers.Add(Rate);
 	}
 
-	auto MakeButton = [this](const TCHAR* Name, std::initializer_list<FKey> Keys)
+	auto MakeButton = [this](const TCHAR* Name, const TArray<FKey>& Keys)
 	{
 		UInputAction* Action = NewObject<UInputAction>(this, Name);
 		Action->ValueType = EInputActionValueType::Boolean;
@@ -1020,15 +1021,12 @@ void ALBADinofly::CreateInput()
 		}
 		return Action;
 	};
-	AscendAction = MakeButton(TEXT("IA_LBA_Dinofly_Ascend"), { EKeys::SpaceBar, EKeys::Gamepad_FaceButton_Bottom, EKeys::Gamepad_RightTrigger });
-	DescendAction = MakeButton(TEXT("IA_LBA_Dinofly_Descend"), { EKeys::LeftControl, EKeys::C, EKeys::Gamepad_FaceButton_Right, EKeys::Gamepad_LeftTrigger });
-	DiveAction = MakeButton(TEXT("IA_LBA_Dinofly_Dive"), { EKeys::LeftShift, EKeys::Gamepad_FaceButton_Left, EKeys::Gamepad_RightShoulder });
-	ModeAction = MakeButton(TEXT("IA_LBA_Dinofly_Mode"), { EKeys::Tab, EKeys::Gamepad_Special_Left });
-
-	DismountAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Dinofly_Dismount"));
-	DismountAction->ValueType = EInputActionValueType::Boolean;
-	InputContext->MapKey(DismountAction, EKeys::F);
-	InputContext->MapKey(DismountAction, EKeys::Gamepad_FaceButton_Top);
+	AscendAction = MakeButton(TEXT("IA_LBA_Dinofly_Ascend"), LBAControls::DinoflyClimb());
+	DescendAction = MakeButton(TEXT("IA_LBA_Dinofly_Descend"), LBAControls::DinoflyBrake());
+	DiveAction = MakeButton(TEXT("IA_LBA_Dinofly_Dive"), LBAControls::DinoflyDive());
+	ModeAction = MakeButton(TEXT("IA_LBA_Dinofly_Mode"), LBAControls::DinoflyMode());
+	// The key that summoned it.
+	DismountAction = MakeButton(TEXT("IA_LBA_Dinofly_Dismount"), LBAControls::Dinofly());
 }
 
 void ALBADinofly::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

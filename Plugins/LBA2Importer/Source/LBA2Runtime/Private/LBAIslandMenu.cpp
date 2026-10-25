@@ -23,6 +23,7 @@
 #include "GameFramework/Pawn.h"
 #include "Widgets/SViewport.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "LBAControls.h"
 #include "LBAPlayerController.h"
 
 #define LOCTEXT_NAMESPACE "LBAIslandMenu"
@@ -281,11 +282,11 @@ void ULBAIslandMenu::BuildTree()
 	// Footer: controls, Quit (the game) or Play (the editor).
 	UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Footer"));
 	Content->AddChildToVerticalBox(Footer)->SetPadding(FMargin(16.f, 6.f, 8.f, 6.f));
-	const FText HintText = bEditorMode
-		? LOCTEXT("EditorHint", "Opens the level in the editor and frames the place.    Q / E: change tab")
-		: LOCTEXT("Hint", "M / Start: close    Q / E, LB / RB: change tab");
-	UTextBlock* Hint = MakeText(WidgetTree, HintText, 12, FLinearColor(0.6f, 0.6f, 0.6f), ETextJustify::Left);
+	UTextBlock* Hint = MakeText(WidgetTree, FText::GetEmpty(), 12, FLinearColor(0.6f, 0.6f, 0.6f), ETextJustify::Left);
 	Hint->SetAutoWrapText(true);
+	FooterHint = Hint;
+	FooterHintLayout = INDEX_NONE;
+	UpdateFooterHint();
 	UHorizontalBoxSlot* HintSlot = Footer->AddChildToHorizontalBox(Hint);
 	HintSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	HintSlot->SetVerticalAlignment(VAlign_Center);
@@ -675,9 +676,38 @@ bool ULBAIslandMenu::HasMenuFocus(const UButton* Button) const
 	return bEditorMode ? Button->HasKeyboardFocus() : Button->HasUserFocus(GetOwningPlayer());
 }
 
+void ULBAIslandMenu::UpdateFooterHint()
+{
+	const ELBAControlsLayout Layout = ULBAControlsSubsystem::GetLayout(this);
+	if (!FooterHint || FooterHintLayout == int32(Layout))
+	{
+		return;
+	}
+	FooterHintLayout = int32(Layout);
+	FText HintText;
+	if (bEditorMode)
+	{
+		HintText = LOCTEXT("EditorHint", "Opens the level in the editor and frames the place.    Q / E: change tab");
+	}
+	else if (Layout == ELBAControlsLayout::KeyboardMouse)
+	{
+		HintText = LOCTEXT("KeyboardHint", "M / Esc: close    Q / E: change tab");
+	}
+	else if (Layout == ELBAControlsLayout::Gamepad)
+	{
+		HintText = LOCTEXT("GamepadHint", "Menu / B: close    LB / RB: change tab");
+	}
+	else
+	{
+		HintText = LOCTEXT("Hint", "M / Start: close    Q / E, LB / RB: change tab");
+	}
+	FooterHint->SetText(HintText);
+}
+
 void ULBAIslandMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	UpdateFooterHint();
 
 	// One selection: pointing at a button focuses it, so mouse and keyboard/gamepad never highlight two buttons.
 	// Only when the mouse moves: a cursor resting where the menu opens (or where a list is rebuilt) takes nothing.

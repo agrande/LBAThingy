@@ -106,7 +106,10 @@ private:
 	{
 		FVector Location;
 		FRotator Rotation;
+		/** Input sent through Slate when the pose starts: a key name, Key=value for an axis, or MouseMove. */
+		FString Press;
 	};
+	void SendPress(const FString& Press);
 	TArray<FPose> Poses;
 	FString ShotDirectory;
 	bool bAuto = false;

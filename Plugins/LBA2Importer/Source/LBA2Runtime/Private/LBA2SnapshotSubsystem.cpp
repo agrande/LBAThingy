@@ -157,7 +157,7 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 			if (Parts.Num() >= 5)
 			{
 				Poses.Add({ FVector(FCString::Atod(*Parts[0]), FCString::Atod(*Parts[1]), FCString::Atod(*Parts[2])),
-					FRotator(FCString::Atod(*Parts[3]), FCString::Atod(*Parts[4]), 0.0) });
+					FRotator(FCString::Atod(*Parts[3]), FCString::Atod(*Parts[4]), 0.0), Parts.IsValidIndex(5) ? Parts[5] : FString() });
 			}
 		}
 		bPosesReady = true;
@@ -1374,6 +1374,32 @@ bool ULBA2SnapshotSubsystem::TickAttack(UWorld* World, float DeltaTime)
 	return true;
 }
 
+void ULBA2SnapshotSubsystem::SendPress(const FString& Press)
+{
+	if (Press.IsEmpty() || !FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+	FSlateApplication& Slate = FSlateApplication::Get();
+	FString KeyName, Value;
+	if (Press.Equals(TEXT("MouseMove"), ESearchCase::IgnoreCase))
+	{
+		const FVector2D At = Slate.GetCursorPos();
+		Slate.ProcessMouseMoveEvent(FPointerEvent(Slate.CursorPointerIndex, At, At, FVector2D(20.0, 0.0), TSet<FKey>(), FModifierKeysState()));
+	}
+	else if (Press.Split(TEXT("="), &KeyName, &Value))
+	{
+		Slate.ProcessAnalogInputEvent(FAnalogInputEvent(FKey(*KeyName), FModifierKeysState(), 0, false, 0, 0, FCString::Atof(*Value)));
+	}
+	else
+	{
+		const FKeyEvent Event(FKey(*Press), FModifierKeysState(), 0, false, 0, 0);
+		Slate.ProcessKeyDownEvent(Event);
+		Slate.ProcessKeyUpEvent(Event);
+	}
+	UE_LOG(LogLBA2, Display, TEXT("LBA2Shots: pressed %s"), *Press);
+}
+
 bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr;
@@ -1466,6 +1492,7 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 		Camera->SetActorLocationAndRotation(Poses[NextPose].Location, Poses[NextPose].Rotation);
 		PC->SetViewTarget(Camera.Get());
 		PoseStart = Elapsed;
+		SendPress(Poses[NextPose].Press);
 	}
 	else if (Elapsed - PoseStart > 2.5)
 	{

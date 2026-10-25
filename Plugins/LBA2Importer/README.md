@@ -493,6 +493,17 @@ dark boards on posts whose text uses `M_LBA_SignText`: the engine's text materia
 blur, so neither the light nor the palette shading touches it (measured 15-18:1 against its board; the lit default
 text came out at 1.1-1.5:1 against the scene).
 
+Signs that explain controls (the start, Jumps, Arena, Dinofly) are `ALBAControlsSign` actors: a title, lines of key
+glyphs with what they do, then notes. They show the device in use: keyboard keycaps and the mouse with its pressed
+button, or the gamepad's colored face buttons, bumpers, triggers and sticks (Xbox layout), with the device named in
+the corner, so a recording shows which one is played. `ULBAControlsSubsystem` watches Slate's input and switches on
+a key, a click or a real mouse move, or on a gamepad button or a stick past its dead zone; the travel menu's footer
+follows it too. The editor shows both, gamepad on the left and keyboard and mouse on the right.
+`lba.Controls.Device 0|1|2|3` = automatic, keyboard and mouse, gamepad, both. Glyphs are drawn by Slate
+(`SLBAKeyGlyph`), no textures, on a world-space widget whose material (`M_LBA_SignPanel`) is drawn after motion blur
+like the sign text; the board sizes itself to them. Key lists live in `LBAControls` (`LBAControls.h`), shared by
+the input mappings of Twinsen, the Dinofly and the menu and by the signs, so they can't drift apart.
+
 Stations are `ALBATestStation` actors: player starts whose *Player Start Tag* names the station, so going there is
 Unreal's URL portal (`L_FeatureTest#Arena`) and `ALBAGameMode` never starts at one otherwise. Levels list their
 stations in an asset registry tag (`LBATestStations`), so the menu shows them without loading the level; place more

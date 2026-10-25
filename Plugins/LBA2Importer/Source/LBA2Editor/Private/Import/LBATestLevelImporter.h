@@ -10,6 +10,7 @@ class FLBAImportContext;
 class UMaterialInterface;
 class UStaticMesh;
 class UWorld;
+struct FLBAControlHint;
 
 /**
  * Tests layer: builds the feature test map, <Content Root>/Tests/L_FeatureTest (ULBA2Settings::FeatureLevel), a tight
@@ -54,6 +55,9 @@ private:
 	 */
 	void AddSign(const FVector& Foot, double Yaw, double Height, const FText& Title, const FText& Body, const FLinearColor& Color,
 		const FName& Folder, float TitleSize = 70.f, float BodySize = 26.f);
+	/** A sign explaining controls with the glyphs of the device in use (ALBAControlsSign), Notes under them. */
+	void AddControlsSign(const FVector& Foot, double Yaw, double Height, const FText& Title, TArray<FLBAControlHint> Hints, const FText& Notes,
+		const FLinearColor& Color, const FName& Folder, float TitleSize = 70.f, float TextSize = 26.f);
 	/** Text that ignores light (M_LBA_SignText), readable from the side Yaw faces. */
 	void AddText(const FVector& Location, double Yaw, const FText& Text, float Size, const FLinearColor& Color, const FName& Folder);
 	ALBATestStation* AddStation(FName Tag, int32 Order, const FText& Name, const FText& Description, const FVector& Feet, double Yaw);
@@ -74,6 +78,7 @@ private:
 
 	/** Generated materials (Tests/Materials). */
 	UMaterialInterface* SignText = nullptr;
+	UMaterialInterface* SignPanel = nullptr;
 	UMaterialInterface* SignBoard = nullptr;
 	UMaterialInterface* Ground = nullptr;
 	UMaterialInterface* Hub = nullptr;

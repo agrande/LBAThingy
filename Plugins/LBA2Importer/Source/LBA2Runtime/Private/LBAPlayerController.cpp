@@ -8,6 +8,7 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "LBA2Runtime.h"
+#include "LBAControls.h"
 #include "LBAIslandMenu.h"
 #include "LBAIslandTravelSubsystem.h"
 
@@ -39,8 +40,10 @@ void ALBAPlayerController::SetupInputComponent()
 	ToggleMenuAction->ValueType = EInputActionValueType::Boolean;
 	// The menu pauses the game; it must still be able to close itself.
 	ToggleMenuAction->bTriggerWhenPaused = true;
-	MenuContext->MapKey(ToggleMenuAction, EKeys::M);
-	MenuContext->MapKey(ToggleMenuAction, EKeys::Gamepad_Special_Right);
+	for (const FKey& Key : LBAControls::Menu())
+	{
+		MenuContext->MapKey(ToggleMenuAction, Key);
+	}
 
 	if (UEnhancedInputComponent* Input = Cast<UEnhancedInputComponent>(InputComponent))
 	{

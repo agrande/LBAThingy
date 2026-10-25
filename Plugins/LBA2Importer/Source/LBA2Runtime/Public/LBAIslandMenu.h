@@ -241,6 +241,14 @@ private:
 	UPROPERTY(Transient)
 	TArray<FLBAMenuButton> FooterButtons;
 
+	/** The footer's controls, for the device in use (ELBAControlsLayout shown, -1 before the first tick). */
+	void UpdateFooterHint();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FooterHint;
+
+	int32 FooterHintLayout = INDEX_NONE;
+
 	TWeakObjectPtr<UButton> LastFocused;
 	TOptional<FVector2D> LastCursor;
 

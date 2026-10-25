@@ -15,6 +15,8 @@
 #include "Import/LBAImportContext.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
+#include "LBAControls.h"
+#include "LBAControlsSign.h"
 #include "LBAEntityAsset.h"
 #include "LBASceneActor.h"
 #include "LBASceneAsset.h"
@@ -118,6 +120,21 @@ void FLBATestLevelImporter::CreateMaterials()
 			SignText = Material;
 		}
 	}
+	// Controls signs' panels: the engine's widget material, one-sided translucent and drawn after motion blur like the
+	// sign text.
+	if (UMaterial* EngineWidget = LoadObject<UMaterial>(nullptr, TEXT("/Engine/EngineMaterials/Widget3DPassThrough.Widget3DPassThrough")))
+	{
+		if (UMaterial* Material = Context.DuplicateAsset(EngineWidget, Folder, TEXT("M_LBA_SignPanel")))
+		{
+			Material->BlendMode = BLEND_Translucent;
+			Material->TwoSided = false;
+			Material->TranslucencyPass = MTP_AfterMotionBlur;
+			Material->bUseTranslucencyVertexFog = false;
+			UMaterialEditingLibrary::RecompileMaterial(Material);
+			Context.MarkForSave(Material);
+			SignPanel = Material;
+		}
+	}
 
 	// Surfaces: the template's prototype grid in the zone's color, its lines a darker shade.
 	UMaterialInterface* GridMaster = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/M_PrototypeGrid.M_PrototypeGrid"));
@@ -197,8 +214,13 @@ void FLBATestLevelImporter::BuildStart()
 	Context.SpawnGeneratedActor<APlayerStart>(World, FTransform(FRotator::ZeroRotator, FVector(0.0, 0.0, StationHalfHeight)), TEXT("PlayerStart"), Folder);
 	AddBlock(FVector(0.0, 0.0, 1.0), FVector(500.0, 500.0, 2.0), FRotator::ZeroRotator, Hub, TEXT("StartPad"), Folder);
 	// To the left, out of the view of the course.
-	AddSign(FVector(150.0, -650.0, 0.0), FacingStart(FVector(150.0, -650.0, 0.0)), 120.0, LOCTEXT("Title", "LBA2 FEATURE TEST"),
-		LOCTEXT("TitleBody", "Every feature in sight. M / Start > Tests: go to a zone.\nGateways to the game behind you. Red floors hurt."),
+	AddControlsSign(FVector(150.0, -650.0, 0.0), FacingStart(FVector(150.0, -650.0, 0.0)), 120.0, LOCTEXT("Title", "LBA2 FEATURE TEST"),
+		{
+			{ LOCTEXT("StartMove", "Run (tilt the stick a little to walk)"), LBAControls::Move() },
+			{ LOCTEXT("StartLook", "Look around"), LBAControls::Look() },
+			{ LOCTEXT("StartMenu", "Travel menu: Tests > go to a zone"), LBAControls::Menu() },
+		},
+		LOCTEXT("TitleBody", "Every feature in sight. Gateways to the game behind you.\nRed floors hurt."),
 		SignTitleWhite, Folder, 50.f, 22.f);
 
 	// Gateways behind the start: islands, places of the game, sandboxes.
@@ -240,8 +262,9 @@ void FLBATestLevelImporter::BuildJumps(const FVector& Origin, double Yaw)
 		LOCTEXT("JumpsDesc", "Gaps of 1, 2 and 3 m over a burning floor, ledges of 50 to 125 cm. Space / A: jump, running jump when moving."),
 		Origin, Yaw);
 	AddBlock(At(1000.0, 150.0, 1.0), FVector(2400.0, 1100.0, 2.0), At.Rotation(), Jumps.Floor, TEXT("ZoneFloor"), Folder);
-	AddSign(At(150.0, -330.0, 0.0), FacingStart(At(150.0, -330.0, 0.0)), 100.0, LOCTEXT("JumpsTitle", "JUMPS"),
-		LOCTEXT("JumpsBody", "Space / A: jump\nThe red floor burns"), Jumps.Color, Folder);
+	AddControlsSign(At(150.0, -330.0, 0.0), FacingStart(At(150.0, -330.0, 0.0)), 100.0, LOCTEXT("JumpsTitle", "JUMPS"),
+		{ { LOCTEXT("JumpsJump", "Jump (running jump when moving)"), LBAControls::Jump() } },
+		LOCTEXT("JumpsBody", "The red floor burns"), Jumps.Color, Folder);
 
 	// Steps up to 1 m, platforms over a burning pit, then down.
 	for (int32 StepIndex = 1; StepIndex <= 4; ++StepIndex)
@@ -358,8 +381,12 @@ void FLBATestLevelImporter::BuildArena(const FVector& Origin, double Yaw)
 			Door->AutoCloseDistance = 500.0;
 		}
 	}
-	AddSign(At(Front - 20.0, 0.0, 0.0), Yaw + 180.0, WallHeight + 10.0, LOCTEXT("ArenaTitle", "ARENA"),
-		LOCTEXT("ArenaBody", "E / X: open a door   Left mouse / B: attack\nEnemies hurt on touch"), Arena.Color, Folder);
+	AddControlsSign(At(Front - 20.0, 0.0, 0.0), Yaw + 180.0, WallHeight + 10.0, LOCTEXT("ArenaTitle", "ARENA"),
+		{
+			{ LOCTEXT("ArenaUse", "Open a door"), LBAControls::Use() },
+			{ LOCTEXT("ArenaAttack", "Punch, kick"), LBAControls::Attack() },
+		},
+		LOCTEXT("ArenaBody", "Enemies hurt on touch"), Arena.Color, Folder);
 	AddHazard(At(700.0, 0.0, 0.0), FVector2D(200.0, 200.0), Yaw, TEXT("BurningTile"), Folder);
 	AddCrates(At(800.0, -300.0, 0.0), 150.0, 3, 37, Crate, Folder);
 
@@ -464,8 +491,15 @@ void FLBATestLevelImporter::BuildDinofly(const FVector& Origin, double Yaw)
 		LOCTEXT("DinoflyDesc", "F / Y: summon and ride the Dinofly. Pump Space / A to climb, hold Shift / X to dive, tap Ctrl / B to brake. Crashes hurt it; a fall from the 25 m tower kills Twinsen."),
 		Origin, Yaw);
 	AddBlock(At(1200.0, 0.0, 1.0), FVector(2800.0, 2400.0, 2.0), At.Rotation(), Dinofly.Floor, TEXT("ZoneFloor"), Folder);
-	AddSign(At(200.0, 300.0, 0.0), FacingStart(At(200.0, 300.0, 0.0)), 100.0, LOCTEXT("DinoflyTitle", "DINOFLY"),
-		LOCTEXT("DinoflyBody", "F / Y: ride   Space / A: climb   Shift / X: dive\nCrashes hurt. Gateways to the storm behind you."), Dinofly.Color, Folder);
+	AddControlsSign(At(200.0, 300.0, 0.0), FacingStart(At(200.0, 300.0, 0.0)), 100.0, LOCTEXT("DinoflyTitle", "DINOFLY"),
+		{
+			{ LOCTEXT("DinoflyRide", "Summon and ride, get off"), LBAControls::Dinofly() },
+			{ LOCTEXT("DinoflySteer", "Steer"), LBAControls::Move() },
+			{ LOCTEXT("DinoflyClimb", "Climb: pump it, faster climbs higher"), LBAControls::DinoflyClimb() },
+			{ LOCTEXT("DinoflyDive", "Dive: hold, longer dives steeper"), LBAControls::DinoflyDive() },
+			{ LOCTEXT("DinoflyBrake", "Brake: tap to land softly"), LBAControls::DinoflyBrake() },
+		},
+		LOCTEXT("DinoflyBody", "Crashes hurt. Gateways to the storm behind you."), Dinofly.Color, Folder);
 
 	// A 25 m tower to land on (and fall from), pillars close together to thread, a wall to crash into.
 	AddBlock(At(2200.0, -300.0, 1250.0), FVector(600.0, 600.0, 2500.0), At.Rotation(), Dinofly.Material, TEXT("Tower_25m"), Folder);
@@ -558,6 +592,27 @@ void FLBATestLevelImporter::AddSign(const FVector& Foot, double Yaw, double Heig
 	{
 		AddText(Top - FVector(0.0, 0.0, Margin + TitleSize * 1.1 + (Index + 0.5) * BodySize * 1.25), Yaw, FText::FromString(Lines[Index]), BodySize, FLinearColor::White, Folder);
 	}
+}
+
+void FLBATestLevelImporter::AddControlsSign(const FVector& Foot, double Yaw, double Height, const FText& Title, TArray<FLBAControlHint> Hints,
+	const FText& Notes, const FLinearColor& Color, const FName& Folder, float TitleSize, float TextSize)
+{
+	ALBAControlsSign* Sign = Context.SpawnGeneratedActor<ALBAControlsSign>(World, FTransform(FRotator(0.0, Yaw, 0.0), Foot),
+		TEXT("Sign_") + FLBAImportContext::SanitizeName(Title.ToString()), Folder);
+	if (!Sign)
+	{
+		return;
+	}
+	Sign->Title = Title;
+	Sign->TitleColor = Color;
+	Sign->Hints = MoveTemp(Hints);
+	Sign->Notes = Notes;
+	Sign->PostHeight = Height;
+	Sign->TitleSize = TitleSize;
+	Sign->TextSize = TextSize;
+	Sign->BoardMaterial = SignBoard;
+	Sign->PanelMaterial = SignPanel;
+	Sign->RerunConstructionScripts();
 }
 
 void FLBATestLevelImporter::AddText(const FVector& Location, double Yaw, const FText& Text, float Size, const FLinearColor& Color, const FName& Folder)
