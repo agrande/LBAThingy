@@ -208,6 +208,11 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::Interior()
 	Preset.RemakeBeacons.Halo = 0.f;
 	Preset.RemakeBeacons.bShadows = true;
 	Preset.RemakeBeacons.FalloffExponent = 2.f;
+	// The sewers' blue globes are the lamps of their stone halls (dark stone bounces little of the overhead light): a
+	// room's worth of light each. At 0.6, surfaces near them in caves and the cistern went white; 10 m starved the
+	// School of Magic's hall.
+	Preset.RemakeGlobes = Preset.RemakeBeacons;
+	Preset.RemakeGlobes.Light = 0.45f;
 	return Preset;
 }
 

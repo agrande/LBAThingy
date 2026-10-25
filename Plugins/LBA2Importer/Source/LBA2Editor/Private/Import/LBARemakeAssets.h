@@ -29,11 +29,12 @@ public:
 	 * A lamp of a model, in mesh space: its bulb (glTF node named "...bulb...", or a "keepMat_light..." material) or,
 	 * without one, its lampshade ("LampTexture..." material). Both glow; the lamp's light sits at the bulb's center.
 	 * Pools are glowing water ("keepMat_water..." materials, the Temple of Bu's magic fonts) and beacons blue glass
-	 * domes ("keepMat_blue_light...", its cosmodrome): both shine in their own colors, each kind with its own preset.
+	 * domes ("keepMat_blue_light...", its cosmodrome), globes the blue glass balls on the sewers' pillars (node
+	 * "crystal_ball"): they shine in their own colors, each kind with its own preset.
 	 */
 	struct FLamp
 	{
-		enum class EKind : uint8 { Lamp, Pool, Beacon };
+		enum class EKind : uint8 { Lamp, Pool, Beacon, Globe };
 
 		FVector Position = FVector::ZeroVector;
 		FLinearColor Color = FLinearColor::White;

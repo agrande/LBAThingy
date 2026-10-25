@@ -2054,8 +2054,9 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				CreateEnclosureMeshes(EnclosureBuilder, CeilingBuilder);
 				UE_LOG(LogLBA2, Display, TEXT("Grid %d enclosure: hollow, %d triangles"), GridIndex, EnclosureBuilder.NumTriangles() + CeilingBuilder.NumTriangles());
 
-				// One bounce light, from the roof's lowest spring up (lighting the roof as its lit floors would, not the undersides
-				// of what stands under it); the hollow for the plugin's Tools: "C x z 0 floor top" per floor column.
+				// One bounce light, from halfway up to the roof's lowest spring (lighting the roof as its lit floors would, not the
+				// undersides of what stands low under it; at the spring itself it glared on a cistern's vault); the hollow for the
+				// plugin's Tools: "C x z 0 floor top" per floor column.
 				FRoomBox& Box = RoomBoxes.AddDefaulted_GetRef();
 				int32 FloorCount = 0;
 				FString Dump = Hollow.Describe();
@@ -2069,7 +2070,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 					}
 					const int32 Top = FMath::FloorToInt(Hollow.GetRoof(Column.X + 0.5f, Column.Y + 0.5f));
 					Dump += FString::Printf(TEXT("C %d %d 0 %d %d\n"), Column.X, Column.Y, Floor, Top);
-					Box.Min = Box.Min.ComponentMin(FIntVector(Column.X, FMath::FloorToInt(Hollow.GetSpring(Column.X + 0.5f, Column.Y + 0.5f)), Column.Y));
+					Box.Min = Box.Min.ComponentMin(FIntVector(Column.X, FMath::FloorToInt(Hollow.GetSpring(Column.X + 0.5f, Column.Y + 0.5f)) - Settings.RoomHeight / 2, Column.Y));
 					Box.Max = Box.Max.ComponentMax(FIntVector(Column.X, Top - 1, Column.Y));
 					if (const TStaticArray<FColor, 3>* Colors = Atlas->FaceColors.Find(Query.BrickAt(Column.X, Floor, Column.Y)))
 					{
@@ -2501,7 +2502,8 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			for (const FLBARemakeAssets::FLamp& Lamp : Placement.Lamps)
 			{
 				const FLBADecorLight& Light = Lamp.Kind == FLBARemakeAssets::FLamp::EKind::Pool ? Preset.RemakePools
-					: Lamp.Kind == FLBARemakeAssets::FLamp::EKind::Beacon ? Preset.RemakeBeacons : Preset.RemakeLamps;
+					: Lamp.Kind == FLBARemakeAssets::FLamp::EKind::Beacon ? Preset.RemakeBeacons
+					: Lamp.Kind == FLBARemakeAssets::FLamp::EKind::Globe ? Preset.RemakeGlobes : Preset.RemakeLamps;
 				if (Light.Light > 0.f)
 				{
 					LBAEnvironment::SpawnDecorLight(Context, Actor, Light, Lamp.Position, Lamp.Color, Lamp.SourceRadius);

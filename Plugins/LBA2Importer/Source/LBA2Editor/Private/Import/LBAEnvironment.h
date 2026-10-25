@@ -176,9 +176,10 @@ struct FLBAEnvironmentPreset
 	 * Halo and bShadows as in FLBADecorLight. Light 0: lamps off.
 	 */
 	FLBADecorLight RemakeLamps = { 0, 0, 0.f };
-	/** Light of the glowing pools and beacons of lba2remake models (FLBARemakeAssets::FLamp::EKind), as RemakeLamps. */
+	/** Light of the glowing pools, beacons and globes of lba2remake models (FLBARemakeAssets::FLamp::EKind), as RemakeLamps. */
 	FLBADecorLight RemakePools = { 0, 0, 0.f };
 	FLBADecorLight RemakeBeacons = { 0, 0, 0.f };
+	FLBADecorLight RemakeGlobes = { 0, 0, 0.f };
 
 	/** Preset for an island file name (CITABAU, DESERT, EMERAUDE...). */
 	static FLBAEnvironmentPreset ForIsland(const FString& IslandName);
