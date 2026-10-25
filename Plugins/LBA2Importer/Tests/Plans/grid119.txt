@@ -1,0 +1,173 @@
+Grid 119 L_Grid_119_RogerDeLaFontainesHouse, library 15: rooms, not enclosed, room height 8, door height 7
+Levels 0 7
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 9 x4-17 z4-25 (14x22) floors 203 furniture 105
+   -X: wallx21  openx1
+   +X: openx1  wallx21
+   -Z: wallx13  openx1
+   +Z: openx1  wallx4  wallx1  openx2  wallx2  wallx4
+S0 level 0 ceiling 9 rooms R0
+10 pockets (columns out of reach)
+
+Level 0 rooms
+    0      1
+    3456789012345678
+z03 ##############
+z04 #AAAAAAAAAAAAAA
+z05 #AAAAAAAAAAAAAA#
+z06 #AAAAAAAAAAAAAA#
+z07 #AAAAAAAAAAAAAA#
+z08 #AAAAAAAAAAAAAA#
+z09 #AAAAAAAAAAAAAA#
+z10 #AAAAAAAAAAAAAA#
+z11 #AAAAAAAAAAAAAA#
+z12 #AAAAAAAAAAAAAA#
+z13 #AAAAAAAAAAAAAA#
+z14 #AAAAAAAAAAAAAA#
+z15 #AAAAAAAAAAAAAA#
+z16 #AAAAAAAAAAAAAA#
+z17 #AAAAAAAAAAAAAA#
+z18 #AAAAAAAAAAAAAA#
+z19 #AAAAAAAAAAAAAA#
+z20 #AAAAAAAAAAAAAA#
+z21 #AAAAAAAAAAAAAA#
+z22 #AAAAAAAAAAAAAA#
+z23 #AAAAAAAAAAAAAA#
+z24 #AAAAAAAAAAAAAA#
+z25  AAAAAAAAAAAAAA#
+z26   #####  ######,
+Level 0 columns
+    0      1
+    3456789012345678
+z03 EEEEEEEEEEEEEE
+z04 Efffffffffffffo
+z05 Eff...p...p...fE
+z06 Eff...........fE
+z07 Eff...........fE
+z08 Eff...........fE
+z09 Ef............fE
+z10 Ef....fffff...fE
+z11 Ef....fffff...fE
+z12 Ef....fffff...fE
+z13 Eff...fffff...fE
+z14 Eff...........fE
+z15 Eff...........fE
+z16 Eff...........fE
+z17 Ef............fE
+z18 Ef............fE
+z19 Ef............fE
+z20 Ef..........f.fE
+z21 Ef..........fffE
+z22 Ef..........fffE
+z23 Ef.........ffffE
+z24 Ef.p..........fE
+z25  offffo..oofffoE
+z26   EEEEJ  JJEEEEf
+Level 0 air
+    0      1
+    3456789012345678
+z03
+z04  88888888888888
+z05  88888888888888
+z06  88888888888888
+z07  88888888888888
+z08  88888888888888
+z09  88888888888888
+z10  88888888888888
+z11  88888888888888
+z12  88888888888888
+z13  88888888888888
+z14  88888888888888
+z15  88888888888888
+z16  88888888888888
+z17  88888888888888
+z18  88888888888888
+z19  88888888888888
+z20  88888888888888
+z21  88888888888888
+z22  88888888888888
+z23  88888888888888
+z24  88888888888888
+z25  88888888888888
+z26
+
+Level 7 rooms
+    0    1
+    56789012345678
+z05 ,   ,   ,   ,,
+z06 ,           ,,
+z07 ,           ,,
+z08 ,           ,,
+z09
+z10     ,,,,,
+z11     ,,,,,
+z12     ,,,,,
+z13 ,   ,,,,,   ,,
+z14 ,           ,,
+z15 ,           ,,
+z16 ,           ,,
+z17
+z18
+z19
+z20
+z21             ,,
+z22             ,,
+z23             ,,
+z24  ,          ,,
+z25 ,,,,    ,,,,,,
+z26 ,,,,    ,,,,,
+Level 7 columns
+    0    1
+    56789012345678
+z05 .   .   .   ff
+z06 .           ff
+z07 .           ff
+z08 .           ff
+z09
+z10     .....
+z11     .....
+z12     .....
+z13 .   .....   ff
+z14 .           ff
+z15 .           ff
+z16 .           ff
+z17
+z18
+z19
+z20
+z21             ff
+z22             ff
+z23             ff
+z24  .          ff
+z25 ffff    offfpf
+z26 ffff    offff
+Level 7 air
+    0    1
+    56789012345678
+z05
+z06
+z07
+z08
+z09
+z10
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26

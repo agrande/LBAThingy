@@ -42,6 +42,7 @@ public class LBA2Editor : ModuleRules
 			"AnimationBlueprintLibrary",
 			"Water",
 			"Niagara",
+			"RenderCore",
 		});
 	}
 }

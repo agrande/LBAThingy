@@ -1,80 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "LBAGridPlan.h"
 
 /** A box of grid cells, both corners included. */
 struct FLBACellBox
 {
 	FIntVector Min = FIntVector::ZeroValue;
 	FIntVector Max = FIntVector::ZeroValue;
-};
-
-/** What a grid column is at one level of a plan (FLBARoomPlan). */
-enum class ELBAColumn : uint8
-{
-	/** Nothing of this level: a drop, the void, another level's floor. */
-	Other,
-	/** Walkable floor at the level. */
-	Floor,
-	/** A flight of stairs' column. */
-	Stairs,
-	/** Something standing on the level's floor that is not a wall: furniture, a step, a post. */
-	Furniture,
-	Wall,
-};
-
-/** The rule that made a column a wall (or kept it from being one). */
-enum class ELBAWallRule : uint8
-{
-	None,
-	/** Collision goes on above what is drawn, or what is drawn is topped by a cut-wall frame: the original cut the wall
-	 * down for the camera. */
-	Cut,
-	/** Next to an exit. */
-	Jamb,
-	/** Nothing drawn at all: invisible collision (the plugs behind exits, hidden walls). */
-	Invisible,
-	/** Only while learning the wall bricks: TallWall cells high. */
-	Tall,
-	/** Drawn mostly with the library's wall bricks. */
-	Masonry,
-	/** TallWall cells high with the outside behind it. */
-	Exterior,
-	/** Wall-like, but alone in the room: furniture. */
-	Pillar,
-	/** A wall column in no straight run of MinWallRun: a post (furniture, or nothing of this level). */
-	Post,
-	/** Furniture standing against the wall behind it. */
-	Against,
-};
-
-/** What a connector joins (FLBARoomPlan). */
-enum class ELBAConnector : uint8
-{
-	/** Rooms of two levels: stairs, with the landings and doorways at their ends. */
-	Stairs,
-	/** Two rooms of one level: a door, an arch. */
-	Passage,
-	/** One room, holding a scene-change zone: the way out. */
-	Exit,
-	/** One room: a niche, part of its space. */
-	Alcove,
-	/** No room: out of reach. */
-	Pocket,
-};
-
-/** What lies past one column of a room's side. */
-enum class ELBARoomSide : uint8
-{
-	Wall,
-	/** A room of the same level with no wall between: the same space. */
-	OpenSide,
-	/** A connector (FLBAPlanConnector). */
-	Connector,
-	/** A room or floor of another level. */
-	Step,
-	/** A drop, the void, the grid's edge: nothing to build. */
-	Open,
 };
 
 /** A room: a rectangle of a level's floor and the furniture on it. */
@@ -278,6 +211,8 @@ public:
 	void CountBricks(FLBAWallBrickCounts& Counts) const;
 	/** The plan as text: rooms with their sides, spaces, connectors (as Tools/room_plan.py prints it). */
 	FString Describe() const;
+	/** The plan as saved (FLBAGridPlan): levels, rooms with their sides, spaces, connectors, flights (not the air). */
+	void ToGridPlan(FLBAGridPlan& Out) const;
 
 	static bool IsInGrid(const FIntPoint& Column) { return Column.X >= 0 && Column.Y >= 0 && Column.X < SizeXZ && Column.Y < SizeXZ; }
 	static int32 ToColumnIndex(const FIntPoint& Column) { return Column.Y * SizeXZ + Column.X; }

@@ -1,0 +1,138 @@
+Grid 127 L_Grid_127_ProtectionSpellCave, library 3: hollow, not enclosed, room height 6, door height 7
+hollow 1710 columns (1482 with floor), 16 supports, 1694 under the roof; spring 6.0-27.4, roof up to 34.9
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+
+Hollow floor
+    0         1         2         3
+    0123456789012345678901234567890123456
+z00                  kee         000 3
+z01                  kee         000 3
+z02                  kee         000 3
+z03                __keeSS     S_000_3
+z04             kkkkkkee00000111S000_3
+z05              __kleee00000111S000_3
+z06               _kjeee000001110000_3
+z07               _kjeee000000000000_3
+z08               _kleee000000000000_3
+z09              __klkee001100000000_3_
+z10             kkkkkkee021100001110_333
+z11              __klkee020000001110_333
+z12               _kjjee220000001110_333
+z13               _kjjee220000000000_333
+z14               _klkee211100000000_333
+z15              __klkee211100000000_333
+z16             kkkkkkee011100000000_333
+z17              __kjeee000000000000_333
+z18              __kjeee000001100000_333
+z19              __kjeee000001100000___
+z20             ___kj___1110000000000_3
+z21            ____klm__1110000000000_3
+z22 mmlllllllllllllllm22111000_000000_3
+z23 mmllllllllllllllln__S____S_000000_3
+z24 ll6666____aaaaaaaa2222222__000000_3
+z25 ll6666____aaaaaaaa2222222_0000000_3
+z26 ll6666____aaaaaaaa2222222_0000000_3
+z27  m6666____aaaaaaa_2222222_0000000_3_
+z28    S__2222222222222222222_0000000_333
+z29   22222222222222222222222_0000000_333
+z30   22222222222222222222222_0000000_333
+z31    SS_2222222222222222222_0000000_3_
+z32   66662222222222222222222_0000000_3_
+z33   66662222222222222222222_0000000_3_
+z34   66662222222222222222222_0000000_333
+z35   66662222222222222222222_0000000_333
+z36   66662222222222222222222_0000000_333
+z37   556622222222222222______0000000_3__
+z38   222222222222222222_2222_0000000_333
+z39   222222222222222222_222200000000_333
+z40   222222222222222222_111100000000_333
+z41    S2222222222222222_000000000000_3_
+z42    S2222222222222222_000000000000_3_
+z43   222222222222222222_000000000000_3_
+z44    SS________________000000000000_333
+z45   0000000000000000000000000000000_333
+z46   0000000000000000000000000000000_333
+z47   0000S00000000000000000000000000_3_
+z48   0_00S00000000000000000000000000_3
+z49   0_0e_00000000000000000000000000_3
+z50    _0e000000000000000000000000000_3
+z51    00e000000000000000000000000000_3
+z52  0000e0000000000000000000000000__33
+z53  011ee00000000000000000_________333
+z54  01eee0000000000000__00_33333333333
+z55    eee0000000000000_____3333333__33
+z56    eee00000000000___33333__
+z57    eee000000000__33333333_
+z58     ee0000000___33333__33
+z59     ee0000000_333__33
+z60     ee00000___3
+z61     ee000
+z62     ee00033
+z63       00033
+Hollow roof
+    0         1         2         3
+    0123456789012345678901234567890123456
+z00                  rqo         aab b
+z01                  rro         adb b
+z02                  rro         ada b
+z03                tssroSS     Sabdbbb
+z04             ttttutroljhfdbaaSadccb
+z05              tuwwvsqomjgeecaSaddcb
+z06               twwwtrpnkhffdaabdedb
+z07               tuvvtrpnkiggdbbdeedb
+z08               tuvvurpnlihgeddefeeb
+z09              ttuvwvrpomjhgffffffecc
+z10             ttuvvwvsqpnjhgfffffgfecc
+z11              ttvwwutrpnjgfefggggffec
+z12               tvwwutrpnjgfefgggggfec
+z13               tvvwvsqomjhfdeffggfedb
+z14               tuvwvsqnljhfeeeffffdcb
+z15              tuvvvtsqnljigffffffedcc
+z16             tuvwwvtsqnlkigfffffeedcc
+z17              tvxxwusqnlkigffffffeddc
+z18              tvxxwusqnljhfeffeefedcc
+z19              uwyxvtspmkhfeddeeeffdb
+z20             uuwyxvsrpljgedccddeffdb
+z21            uvxyyxurpnljgddccceffeeb
+z22 uuutttttsssuwxxxwtpmkiifbaabceffedb
+z23 uvvuuutuuuuuvvvvusplShgebS9ceeefedb
+z24 uuvvutttttuuuuuusroligfebaacedefedb
+z25 ttuuutsrrstttvvtrpnkigfecbcdddeeedb
+z26 rqrrrqqpprrrsttrpomkihgedddeeeeeedb
+z27  oonnppooqqqqqqpomlkjhgfefffffffedcb
+z28    Slnnmmooooonnmlkjihgfefffffffeedcc
+z29   kjjkkkkmmmmmllkjijihgfeffeefffffeec
+z30   iihhhhijkkkkjjihhihhgffffeeffffeecc
+z31    SSfghhijiijjjihggggggggfeeffeeddc
+z32   ggfffghiihhiiihggffffffgfeeffeedcc
+z33   ghggghhhgffhhhggghgfffeeeeeeeffdcb
+z34   fhhhhhhhgfeggggggggffeeeeeeeeffdccb
+z35   fhhiihhhhfeeeefggggggfeeeffggfffedc
+z36   eghiihhhhffeeeegggghgfeeeffggffffdc
+z37   eghhhhhhhggffffffggggeeeeeeffffeddc
+z38   dfggghhhhhgffffffggffeeeeeeefffeddc
+z39   deeghhhhhgggghhggggfefeeedddefffedc
+z40   ccdfghhhhggghhhggggfefffeeeeefffecc
+z41    Scdeggffggggggggffggfeffeeffffedc
+z42    Sbcdffffffffggggeeffeeffeefggfedc
+z43   bbbbcfgeeffeeffffffeeeeeeddfffffeb
+z44    SSbdggeeffeeefffffedddedddeffffecc
+z45   cccdefffeeeffffffeeddddddddeefffedc
+z46   dffdddfffeeffffffeeddddddddeeeeeecc
+z47   effeSdeeeeeffeeeeeeddeeeedddeeeecc
+z48   eggeSefffeeffeeeeeeddeeeedeeeeeeb
+z49   gghgffghgfefffffeddddffeeeeffedcb
+z50    hijiiihgfeffeeeedddeffffeeggedcb
+z51    ijkjkjhgfeeeddddeeeeffffffggfeeb
+z52  ijkjkllkhgfeedddddeeeeffffffgggfec
+z53  jmmlmmmkigedddddeeeeeeggeddefggfdb
+z54  kkllnmmkigfdeeeeffeeeegfdccdeeffdb
+z55    llmmljihgfeeffffffeeffecbbbbcccc
+z56    llmlkjihhfeeffffffeeffcc
+z57    mlmlkjihgfddffffedddecc
+z58     kmlkiigfedceefedcbbcc
+z59     lllkihfecdcbcccbb
+z60     lmmkhfdcbbb
+z61     lmlkg
+z62     lkkkhfe
+z63       jigfe

@@ -1,0 +1,76 @@
+Grid 7 L_Grid_007_PaulsHouse, library 0: rooms, enclosed, room height 9, door height 8
+Levels 2
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 2 ceiling 12 x1-12 z1-14 (12x14) floors 131 furniture 37
+   -X: wallx14
+   +X: wallx14
+   -Z: wallx12
+   +Z: wallx7  wallx1  exit>C0x2  wallx1  wallx1
+S0 level 2 ceiling 12 rooms R0
+C0 exit L2 x9-10 z15-15 cols 2 rooms R0 ceiling 12
+
+Level 2 rooms
+    0         1
+    01234567890123
+z00 ##############
+z01 #AAAAAAAAAAAA#
+z02 #AAAAAAAAAAAA#
+z03 #AAAAAAAAAAAA#
+z04 #AAAAAAAAAAAA#
+z05 #AAAAAAAAAAAA#
+z06 #AAAAAAAAAAAA#
+z07 #AAAAAAAAAAAA#
+z08 #AAAAAAAAAAAA#
+z09 #AAAAAAAAAAAA#
+z10 #AAAAAAAAAAAA#
+z11 #AAAAAAAAAAAA#
+z12 #AAAAAAAAAAAA#
+z13 #AAAAAAAAAAAA#
+z14 #AAAAAAAAAAAA#
+z15 #########>>###
+z16         ####
+Level 2 columns
+    0         1
+    01234567890123
+z00 CCCCCCCCCCCCCC
+z01 Cf.ff..ffff.fC
+z02 C..ff........C
+z03 C............C
+z04 C............C
+z05 C.......f....C
+z06 C......fff...C
+z07 Cf.....fff...C
+z08 Cf.....fff...C
+z09 Cf......f....C
+z10 C............C
+z11 Cffpf........C
+z12 Cffff........C
+z13 Cffff........C
+z14 Cf...........C
+z15 CCCCCCCCJggCJC
+z16         JCCC
+Level 2 air
+    0         1
+    01234567890123
+z00
+z01  999999999999
+z02  999999999999
+z03  999999999999
+z04  999999999999
+z05  999999999999
+z06  999999999999
+z07  999999999999
+z08  999999999999
+z09  999999999999
+z10  999999999999
+z11  999999999999
+z12  999999999999
+z13  999999999999
+z14  999999999999
+z15          88
+z16

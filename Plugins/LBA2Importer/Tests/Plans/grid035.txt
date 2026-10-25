@@ -1,0 +1,61 @@
+Grid 35 L_Grid_035_LeonesHouse, library 5: rooms, enclosed, room height 6, door height 7
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 7 x1-10 z1-9 (10x9) floors 74 furniture 16
+   -X: wallx3  wallx2  wallx4
+   +X: wallx9
+   -Z: wallx10
+   +Z: wallx5  wallx1  exit>C0x2  wallx2
+S0 level 0 ceiling 7 rooms R0
+C0 exit L0 x7-8 z10-10 cols 2 rooms R0 ceiling 7
+
+Level 0 rooms
+    0         1
+    012345678901
+z00 ############
+z01 #AAAAAAAAAA#
+z02 #AAAAAAAAAA#
+z03 #AAAAAAAAAA#
+z04 #AAAAAAAAAA#
+z05 #AAAAAAAAAA#
+z06 #AAAAAAAAAA#
+z07 #AAAAAAAAAA#
+z08 #AAAAAAAAAA#
+z09 #AAAAAAAAAA#
+z10 #######>>###
+z11       ####
+Level 0 columns
+    0         1
+    012345678901
+z00 MMMMMMMMMMMM
+z01 M..afffaf..M
+z02 Mf.........M
+z03 Mff........M
+z04 Eff........M
+z05 Eff........M
+z06 Mff........M
+z07 Mf.........M
+z08 M..........M
+z09 M..........M
+z10 MMMMMMJggJJM
+z11       CCCC
+Level 0 air
+    0         1
+    012345678901
+z00
+z01  6666666666
+z02  6666666666
+z03  6666666666
+z04  6666666666
+z05  6666666666
+z06  6666666666
+z07  6666666666
+z08  6666666666
+z09  6666666666
+z10        66
+z11

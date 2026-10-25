@@ -1,0 +1,178 @@
+Grid 120 L_Grid_120_AccessToIslandCX, library 12: rooms, not enclosed, room height 8, door height 6
+Levels 0 8
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 9 x37-40 z24-41 (4x18) floors 49 furniture 23
+   -X: alcove>C1x1  step>R1x3  wallx14
+   +X: wallx15  wallx1  wallx2
+   -Z: wallx1  wallx3
+   +Z: wallx4
+R1 B space S1 level 8 ceiling 17 x33-36 z24-27 (4x4) floors 16 furniture 0
+   -X: wallx4
+   +X: openx4
+   -Z: wallx1  alcove>C3x2  wallx1
+   +Z: wallx4
+S0 level 0 ceiling 9 rooms R0
+S1 level 8 ceiling 17 rooms R1
+C1 alcove L0 x36-36 z24-24 cols 1 rooms R0 ceiling 9
+C3 alcove L8 x34-35 z23-23 cols 2 rooms R1 ceiling 17
+3 pockets (columns out of reach)
+
+Level 0 rooms
+    3       4
+    23456789012
+z22 ,
+z23 ,##########
+z24 #   ~AAAA#
+z25 #    AAAA#
+z26 #    AAAA#
+z27 #    AAAA#
+z28     #AAAA#
+z29     #AAAA#
+z30     #AAAA#
+z31     #AAAA#
+z32     #AAAA#
+z33     #AAAA#
+z34     #AAAA#
+z35     #AAAA#
+z36     #AAAA#
+z37     #AAAA#
+z38     #AAAA#
+z39     #AAAA#
+z40     #AAAA#
+z41     #AAAA#
+z42      #####
+Level 0 columns
+    3       4
+    23456789012
+z22 +
+z23 +JJJJJMMMME
+z24 M   offffM
+z25 M    ffffM
+z26 M    ffffM
+z27 M    ffffM
+z28     M.ff.M
+z29     M.ff.M
+z30     M....M
+z31     M....M
+z32     M....M
+z33     M....M
+z34     M....M
+z35     M....M
+z36     M....M
+z37     M....M
+z38     Mf...M
+z39     M....E
+z40     Mf...J
+z41     Mo...J
+z42      CCCCC
+Level 0 air
+    3       4
+    23456789012
+z22
+z23
+z24     88888
+z25      8888
+z26      8888
+z27      8888
+z28      8888
+z29      8888
+z30      8888
+z31      8888
+z32      8888
+z33      8888
+z34      8888
+z35      8888
+z36      8888
+z37      8888
+z38      8888
+z39      8888
+z40      8888
+z41      8888
+z42
+
+Level 8 rooms
+    3       4
+    2345678901
+z19 #####
+z20 #,###
+z21 ##  #
+z22 ##  #
+z23 ##~~######
+z24 #BBBB    #
+z25 #BBBB    #
+z26 #BBBB    #
+z27 #BBBB    #
+z28 #####    #
+z29          #
+z30          #
+z31          #
+z32          #
+z33          #
+z34          #
+z35          #
+z36          #
+z37          #
+z38          #
+z39
+z40     ,
+z41     ,
+z42      #####
+Level 8 columns
+    3       4
+    2345678901
+z19 EEEEM
+z20 MfJJJ
+z21 MJ  J
+z22 MJ  J
+z23 MJ..JJMMMM
+z24 M....    M
+z25 M....    M
+z26 M....    M
+z27 M....    M
+z28 MMMMM    M
+z29          M
+z30          M
+z31          M
+z32          M
+z33          M
+z34          M
+z35          M
+z36          M
+z37          M
+z38          M
+z39
+z40     .
+z41     .
+z42      CCCCC
+Level 8 air
+    3       4
+    2345678901
+z19
+z20
+z21
+z22
+z23   66
+z24  8888
+z25  8888
+z26  8888
+z27  8888
+z28
+z29
+z30
+z31
+z32
+z33
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41
+z42

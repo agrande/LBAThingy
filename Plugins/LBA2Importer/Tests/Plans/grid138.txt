@@ -1,0 +1,105 @@
+Grid 138 L_Grid_138_DEMOTwinsensHouseDEMOCellar, library 0: rooms, enclosed, room height 9, door height 8
+Levels 3
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 3 ceiling 13 x2-10 z2-21 (9x20) floors 159 furniture 21
+   -X: alcove>C0x2  openx2  alcove>C1x16
+   +X: open_side>R1x5  wallx15
+   -Z: alcove>C0x2  openx5  passage>C2x2
+   +Z: wallx9
+R1 B space S0 level 3 ceiling 13 x11-18 z1-6 (8x6) floors 42 furniture 6
+   -X: passage>C2x1  open_side>R0x5
+   +X: exit>C3x2  wallx1  wallx1  wallx2
+   -Z: wallx8
+   +Z: wallx8
+S0 level 3 ceiling 13 rooms R0,R1
+C0 alcove L3 x1-3 z1-3 cols 5 rooms R0 ceiling 13
+C1 alcove L3 x1-1 z6-21 cols 16 rooms R0 ceiling 13
+C2 passage L3 x9-10 z1-1 cols 2 rooms R0,R1 ceiling 13 width 1 (door)
+C3 exit L3 x19-19 z1-2 cols 2 rooms R1 ceiling 13
+
+Level 3 rooms
+    0         1         2
+    012345678901234567890
+z00 #####################
+z01 #~~~     ==BBBBBBBB>#
+z02 #~AAAAAAAAABBBBBBBB>#
+z03 #~AAAAAAAAABBBBBBBB##
+z04 # AAAAAAAAABBBBBBBB#
+z05 # AAAAAAAAABBBBBBBB##
+z06 #~AAAAAAAAABBBBBBBB##
+z07 #~AAAAAAAAA##########
+z08 #~AAAAAAAAA##########
+z09 #~AAAAAAAAA##
+z10 #~AAAAAAAAA##
+z11 #~AAAAAAAAA##
+z12 #~AAAAAAAAA##
+z13 #~AAAAAAAAA##
+z14 #~AAAAAAAAA##
+z15 #~AAAAAAAAA##
+z16 #~AAAAAAAAA##
+z17 #~AAAAAAAAA##
+z18 #~AAAAAAAAA##
+z19 #~AAAAAAAAA##
+z20 #~AAAAAAAAA##
+z21 #~AAAAAAAAA##
+z22 #############
+z23   ###########
+Level 3 columns
+    0         1         2
+    012345678901234567890
+z00 CCCCCCCCCCCCCCCCCCCCM
+z01 Cfff     fffff.....fJ
+z02 C...ffffffffff.....fJ
+z03 C..................CM
+z04 C .................M
+z05 C .................CM
+z06 C..................CM
+z07 Cf.........CCCCCCCCCM
+z08 C..........CMMMMMMMMM
+z09 Cf.........CM
+z10 Cf.......pfCM
+z11 Cf.......ffCM
+z12 C..........CM
+z13 C.........fCM
+z14 C..........CM
+z15 C........pfCM
+z16 C........ffCM
+z17 C..........CM
+z18 Cff........CM
+z19 Cff........CM
+z20 C..........CM
+z21 C......fff.CM
+z22 CCCCCCCCCCCCM
+z23   MMMMMMMMMMM
+Level 3 air
+    0         1         2
+    012345678901234567890
+z00
+z01  996     99999999999
+z02  9999999999999999999
+z03  999999999999999999
+z04   99999999999999999
+z05   99999999999999999
+z06  999999999999999999
+z07  9999999999
+z08  9999999999
+z09  9999999999
+z10  6999999999
+z11  9999999999
+z12  9999999999
+z13  9999999999
+z14  9999999999
+z15  9999999999
+z16  9999999999
+z17  9999999999
+z18  9999999999
+z19  9999999999
+z20  9999999999
+z21  9999999999
+z22
+z23

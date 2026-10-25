@@ -66,6 +66,8 @@ public:
 	 * which models to place (Unreal space, same origin as the generated grid mesh).
 	 */
 	FGridResult ProcessGrid(FLBAGrid& Grid, const FLBALibrary& Library);
+	/** Only the grids.json patches (fixes of the original's cells): to make a grid's plan as the import does. */
+	void ApplyPatches(FLBAGrid& Grid, FGridResult& Out) const;
 
 	/** A sprite's 3D replacement (model_replacements.json "sprites"): a model of www/models/lba2/sprites, or hidden. */
 	struct FSpriteReplacement

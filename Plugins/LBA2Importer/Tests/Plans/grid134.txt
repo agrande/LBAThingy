@@ -1,0 +1,163 @@
+Grid 134 L_Grid_134_StatueMiddleLava, library 10: rooms, not enclosed, room height 7, door height 9
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 8 x32-55 z21-54 (24x34) floors 738 furniture 78
+   -X: alcove>C0x10  wallx20  open_side>R1x4
+   +X: openx6  alcove>C1x28
+   -Z: alcove>C0x22  openx2
+   +Z: openx24
+R1 B space S0 level 0 ceiling 8 x28-31 z51-54 (4x4) floors 16 furniture 0
+   -X: openx4
+   +X: open_side>R0x4
+   -Z: wallx4
+   +Z: openx4
+S0 level 0 ceiling 8 rooms R0,R1
+C0 alcove L0 x18-53 z11-31 cols 335 rooms R0 ceiling 8
+C1 alcove L0 x56-59 z27-54 cols 112 rooms R0 ceiling 8
+
+Level 0 rooms
+    1 2         3         4         5
+    890123456789012345678901234567890123456789
+z11      ~~~~~~~~~~~~~~~~
+z12    ~~~~~~~~~~~~~~~~~~~~
+z13    ~~~~~~~~~~~~~~~~~~~~~
+z14  ~~~~~~~~~~~~~~~~~~~~~~~~~~
+z15  ~~~~~~~~~~~~~~~~~~~~~~~~~~
+z16  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+z17 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+z18 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+z19  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+z20    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+z21     ~~~~~~~~~~AAAAAAAAAAAAAAAAAAAAAAAA
+z22     ~~~~~~~~~~AAAAAAAAAAAAAAAAAAAAAAAA
+z23       ~~~~~~~~AAAAAAAAAAAAAAAAAAAAAAAA
+z24        ~~~~~~~AAAAAAAAAAAAAAAAAAAAAAAA
+z25         ~~~~~~AAAAAAAAAAAAAAAAAAAAAAAA
+z26          ~~~~~AAAAAAAAAAAAAAAAAAAAAAAA
+z27          ~~~~~AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z28          ~~~~~AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z29           ~~~~AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z30           ~~~~AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z31             ~#AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z32              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z33              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z34              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z35              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z36              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z37              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z38              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z39              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z40              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z41              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z42              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z43              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z44              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z45              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z46              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z47              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z48              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z49              #AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z50           ####AAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z51           BBBBAAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z52           BBBBAAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z53           BBBBAAAAAAAAAAAAAAAAAAAAAAAA~~~~
+z54           BBBBAAAAAAAAAAAAAAAAAAAAAAAA~~~~
+Level 0 columns
+    1 2         3         4         5
+    890123456789012345678901234567890123456789
+z11      ........+.......
+z12    ..........+.........
+z13    ..........+..........
+z14  ............+.............
+z15  ............+.............
+z16  ............+...............
+z17 .............+.................
+z18 .............+....................
+z19  ............+......................
+z20    ..........+......................
+z21     .........+........................
+z22     .........+........................
+z23       .......+........................
+z24        ..f...+............f...........
+z25         .f.f.+...........f............
+z26          f...+............ff..........
+z27          ..fff..........fff.f.............
+z28          ....+...........ffff.f...........
+z29           ..f+f.............f.f...........
+z30           ..f+................f.fff.......
+z31             fM.f............fffff.........
+z32              M..............f..ff.........
+z33              M.f.............fff.ffff.....
+z34              M.f...............f...f......
+z35              M.f.............fff.fff......
+z36              M.fff............ff.f........
+z37              M.f.f...........fff..ffff....
+z38              M..................f.f.......
+z39              M..................ffffff....
+z40              M.................ff.........
+z41              M...................fff......
+z42              M................fff.........
+z43              M............................
+z44              M............................
+z45              M............................
+z46              M............................
+z47              M............................
+z48              M............................
+z49              M............................
+z50           MMMM............................
+z51           ................................
+z52           ................................
+z53           ................................
+z54           ................................
+Level 0 air
+    1 2         3         4         5
+    890123456789012345678901234567890123456789
+z11      7777777777777777
+z12    77777777777777777777
+z13    777777777777777777777
+z14  77777777777777777777777777
+z15  77777777777777777777777777
+z16  7777777777777777777777777777
+z17 7777777777777777777777777777777
+z18 7777777777777777777777777777777777
+z19  77777777777777777777777777777777777
+z20    777777777777777777777777777777777
+z21     7777777777777777777777777777777777
+z22     7777777777777777777777777777777777
+z23       77777777777777777777777777777777
+z24        7777777777777777777777777777777
+z25         777777777777777777777777777777
+z26          77777777777777777777777777777
+z27          777777777777777777777777777777777
+z28          777777777777777777777777777777777
+z29           77777777777777777777777777777777
+z30           77777777777777777777777777777777
+z31             7 7777777777777777777777777777
+z32               7777777777777777777777777777
+z33               7777777777777777777777777777
+z34               7777777777777777777777777777
+z35               7777777777777777777777777777
+z36               7777777777777777777777777777
+z37               7777777777777777777777777777
+z38               7777777777777777777777777777
+z39               7777777777777777777777777777
+z40               7777777777777777777777777777
+z41               7777777777777777777777777777
+z42               7777777777777777777777777777
+z43               7777777777777777777777777777
+z44               7777777777777777777777777777
+z45               7777777777777777777777777777
+z46               7777777777777777777777777777
+z47               7777777777777777777777777777
+z48               7777777777777777777777777777
+z49               7777777777777777777777777777
+z50               7777777777777777777777777777
+z51           77777777777777777777777777777777
+z52           77777777777777777777777777777777
+z53           77777777777777777777777777777777
+z54           77777777777777777777777777777777

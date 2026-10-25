@@ -1,0 +1,66 @@
+Grid 51 L_Grid_051_InsideTheForstress, library 7: rooms, not enclosed, room height 11, door height 7
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 12 x1-10 z4-10 (10x7) floors 63 furniture 7
+   -X: exit>C0x1  wallx6
+   +X: wallx6  wallx1
+   -Z: exit>C0x5  wallx4  alcove>C1x1
+   +Z: wallx6  wallx1  exit>C2x3
+S0 level 0 ceiling 12 rooms R0
+C0 exit L0 x0-5 z0-4 cols 21 rooms R0 ceiling 12
+C1 alcove L0 x6-10 z1-3 cols 10 rooms R0 ceiling 12
+C2 exit L0 x8-10 z11-11 cols 3 rooms R0 ceiling 12
+
+Level 0 rooms
+    0         1
+    01234567890123456789
+z00  >>>>#######
+z01 >>>>>#~~~~~#
+z02 >>>>>#~ ~~~#
+z03 >>>>>>####~#
+z04 >AAAAAAAAAA#       #
+z05 #AAAAAAAAAA#       #
+z06 #AAAAAAAAAA#       #
+z07 #AAAAAAAAAA#
+z08 #AAAAAAAAAA#
+z09 #AAAAAAAAAA#
+z10 #AAAAAAAAAA#
+z11 ########>>>#
+z12        #####
+Level 0 columns
+    0         1
+    01234567890123456789
+z00  oo..CCCCCCC
+z01 oo...J....fM
+z02 o....J. ..aM
+z03 +++++fMMMMfM
+z04 +..........M       C
+z05 Co.........M       C
+z06 C..........M       M
+z07 Cff........M
+z08 Cff........M
+z09 Cff........M
+z10 C..........J
+z11 CMMMMMMJ+++J
+z12        CCCCC
+Level 0 air
+    0         1
+    01234567890123456789
+z00  xxxx
+z01 xxxxx bbbbb
+z02 xxxxx b bbb
+z03 x88bbb    b
+z04 7bbbbbbbbbb
+z05  bbbbbbbbbb
+z06  bbbbbbbbbb
+z07  bbbbbbbbbb
+z08  bbbbbbbbbb
+z09  bbbbbbbbbb
+z10  bbbbbbbbbb
+z11         777
+z12

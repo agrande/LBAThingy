@@ -1,0 +1,93 @@
+Grid 4 L_Grid_004_ChezLucCellar, library 2: rooms, enclosed, room height 9, door height 7
+Levels 6
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 6 ceiling 16 x15-28 z1-5 (14x5) floors 51 furniture 19
+   -X: open_side>R3x2  wallx3
+   +X: wallx5
+   -Z: wallx14
+   +Z: open_side>R1x6  openx2  passage>C2x1  open_side>R2x5
+R1 B space S0 level 6 ceiling 16 x15-20 z6-11 (6x6) floors 28 furniture 8
+   -X: wallx6
+   +X: openx1  passage>C1x5
+   -Z: open_side>R0x6
+   +Z: wallx6
+R2 C space S0 level 6 ceiling 16 x24-28 z6-11 (5x6) floors 27 furniture 3
+   -X: passage>C2x1  wallx3  passage>C1x2
+   +X: wallx6
+   -Z: open_side>R0x5
+   +Z: wallx5
+R3 D space S0 level 6 ceiling 16 x6-14 z1-2 (9x2) floors 14 furniture 4
+   -X: openx2
+   +X: open_side>R0x2
+   -Z: wallx9
+   +Z: wallx9
+S0 level 6 ceiling 16 rooms R0,R1,R2,R3
+C1 passage L6 x21-23 z7-11 cols 11 rooms R1,R2 ceiling 16 width 2 (door)
+C2 passage L6 x23-23 z6-6 cols 1 rooms R0,R2 ceiling 16 width 1 (door)
+3 pockets (columns out of reach)
+
+Level 6 rooms
+    0         1         2         3
+    0123456789012345678901234567890
+z00       #########################
+z01       DDDDDDDDDAAAAAAAAAAAAAA#,
+z02       DDDDDDDDDAAAAAAAAAAAAAA#
+z03    ############AAAAAAAAAAAAAA#
+z04    #          #AAAAAAAAAAAAAA#
+z05    #          #AAAAAAAAAAAAAA#
+z06    #          #BBBBBB  =CCCCC#
+z07    #          #BBBBBB= #CCCCC#
+z08    #          #BBBBBB==#CCCCC#
+z09    #          #BBBBBB==#CCCCC#
+z10    #          #BBBBBB===CCCCC#
+z11    #          #BBBBBB===CCCCC#
+z12    #         ,,###############,
+z13    #         ,,              #,
+z14    #
+z15    #
+z16 ####
+Level 6 columns
+    0         1         2         3
+    0123456789012345678901234567890
+z00       MMMMMMMMMMMMMMMMMMMMMMMEE
+z01       ff............fffff..f.Mo
+z02       ff...........ff........M
+z03    CCCCCCCCCCCC....ff........M
+z04    C          C..fff.....ff..M
+z05    C          C..ff......ff..M
+z06    C          C.ff...  ..f...M
+z07    C          C.ff..oo Jo....M
+z08    C          C.f...oo.Jo....M
+z09    C          C........J.....M
+z10    C          C..............M
+z11    C          Cf.............M
+z12    C         ffMMMMMMMMMMMMMMMf
+z13    C         oo              Mo
+z14    C
+z15    C
+z16 JJJJ
+Level 6 air
+    0         1         2         3
+    0123456789012345678901234567890
+z00
+z01       99999999999999999999999
+z02       99999999999999999999999
+z03                99999999999999
+z04                99999999999999
+z05                99999999999999
+z06                999999  999999
+z07                9999999  99999
+z08                99999999 99999
+z09                99999999 99999
+z10                99999999999999
+z11                99999999999999
+z12
+z13
+z14
+z15
+z16

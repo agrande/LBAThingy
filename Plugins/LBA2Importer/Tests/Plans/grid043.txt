@@ -1,0 +1,142 @@
+Grid 43 L_Grid_043_CircleAirlock, library 4: rooms, enclosed, room height 9, door height 8
+Levels 1 10
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 1 ceiling 11 x22-29 z51-61 (8x11) floors 88 furniture 0
+   -X: wallx3  passage>C5x8
+   +X: wallx3  exit>C7x5  wallx1  wallx2
+   -Z: openx1  alcove>C6x7
+   +Z: wallx8
+R1 B space S1 level 1 ceiling 11 x18-20 z54-61 (3x8) floors 23 furniture 1
+   -X: wallx2  exit>C1x2  wallx4
+   +X: passage>C5x8
+   -Z: wallx1  alcove>C4x2
+   +Z: wallx3
+S0 level 1 ceiling 11 rooms R0
+S1 level 1 ceiling 11 rooms R1
+C1 exit L1 x16-17 z56-57 cols 4 rooms R1 ceiling 11
+C4 alcove L1 x18-20 z50-53 cols 11 rooms R1 ceiling 11
+C5 passage L1 x21-21 z54-61 cols 8 rooms R0,R1 ceiling 11 width 8 (arch)
+C6 alcove L1 x23-29 z50-50 cols 7 rooms R0 ceiling 11
+C7 exit L1 x30-31 z54-58 cols 9 rooms R0 ceiling 11
+4 pockets (columns out of reach)
+
+Level 1 rooms
+    1    2         3
+    567890123456789012
+z48                ##
+z49   ,##############
+z50   #~~~# ~~~~~~~##
+z51   #~~~#AAAAAAAA##
+z52   #~~~#AAAAAAAA##
+z53  ###~~#AAAAAAAA##
+z54  ,#BBB=AAAAAAAA>##
+z55 ###BBB=AAAAAAAA>>#
+z56 #>>BBB=AAAAAAAA>>#
+z57 #>>BBB=AAAAAAAA>>#
+z58 ###BBB=AAAAAAAA>>#
+z59 # #BBB=AAAAAAAA###
+z60  ,#BBB=AAAAAAAA##
+z61   #BBB=AAAAAAAA##
+z62   ###############
+z63  ################
+Level 1 columns
+    1    2         3
+    567890123456789012
+z48                CC
+z49   +CCCCCCCCCCCCCC
+z50   C...C .......CM
+z51   C...C........CM
+z52   CfffC........CM
+z53  CCCffC........CM
+z54  .C...+........fJC
+z55 CCC...+........ggC
+z56 C.....+........ggC
+z57 C.....+........ggC
+z58 CCC...+........ggC
+z59 C Cf..+........JJC
+z60  .C...+........CJ
+z61   C...+........CM
+z62   CCCCCCCCCCCCCCM
+z63  CCCCCCCCCCCCCCCM
+Level 1 air
+    1    2         3
+    567890123456789012
+z48
+z49
+z50    888  9999999
+z51    888 99999999
+z52    888 99999999
+z53     88 99999999
+z54    9999999999998
+z55    99999999999988
+z56  x899999999999988
+z57  x899999999999988
+z58    99999999999988
+z59    999999999999
+z60    999999999999
+z61    999999999999
+z62
+z63
+
+Level 10 rooms
+    1    2         3
+    567890123456789012
+z48  ,,,,,,,,,,,,,,,,
+z49  ,,,,,,,,,,,,,,,,
+z50  ,,,,,,         ,
+z51  ,,,,,,         ,
+z52  ,,,,,,         ,
+z53  ,,,,,,         ,
+z54  ,,            ,,,
+z55 ,,,              ,
+z56 ,,,              ,
+z57 ,,,              ,
+z58 ,,,              ,
+z59 ,,,            ,,,
+z60  ,,             ,
+z61  ,,             ,
+z62  ,,             ,
+z63  ,,             ,
+Level 10 columns
+    1    2         3
+    567890123456789012
+z48  ................
+z49  ................
+z50  ......         f
+z51  ......         f
+z52  ......         f
+z53  ......         f
+z54  ..            ...
+z55 ...              .
+z56 ...              .
+z57 ...              .
+z58 ...              .
+z59 ...            ...
+z60  ..             f
+z61  ..             f
+z62  ..             f
+z63  ..             f
+Level 10 air
+    1    2         3
+    567890123456789012
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+z59
+z60
+z61
+z62
+z63

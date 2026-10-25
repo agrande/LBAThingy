@@ -1,0 +1,90 @@
+Grid 42 L_Grid_042_SpiderCave, library 1: hollow, not enclosed, room height 6, door height 6
+hollow 436 columns (398 with floor), 6 supports, 430 under the roof; spring 10.0-16.4, roof up to 23.4
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+
+Hollow floor
+    0        1
+    123456789012345678
+z07       9__999999
+z08       999999999_
+z09       999999999__
+z10       9999999999Sb
+z11       99999999999
+z12       99999999999
+z13       9999999999S
+z14       9999999999_b
+z15       9999999999_
+z16       9999999999
+z17      _9999999999
+z18     999999999999
+z19    999999999999
+z20   _999999999999
+z21 99999999999_
+z22 99999999999
+z23 9999999999
+z24  9999999_
+z25  999999_
+z26 9999999
+z27 999999
+z28 99999
+z29 99999
+z30 99999
+z31 99999
+z32 99999S
+z33 8888_S_     444S6
+z34 7777__4444444444
+z35 6666___444444444
+z36 666665_44444444S
+z37  6666544444444446
+z38 6666654444444444
+z39 6666654444444444
+z40 6666___444444444
+z41 7555___4444__
+z42 6444___4444_
+z43 44444444444
+z44 44444444444
+z45 44444444444
+z46 44444444444
+Hollow roof
+    0        1
+    123456789012345678
+z07       hhiiiiiii
+z08       ijjjlljjjj
+z09       ikkkklkkljj
+z10       illlllllljSj
+z11       illmmmlkkjj
+z12       ilmmmmllkjj
+z13       ikmmlmnmljS
+z14       ikmmlmnnljjj
+z15       ijklmmmmkjj
+z16       hjklmnmlki
+z17      iijlmmmmlli
+z18     iijkmmmllkji
+z19    ijlklmmkjkki
+z20   iiklllmljiiii
+z21 iiikklmmmlji
+z22 hjklllmllji
+z23 iiklmmkkii
+z24  ikmmlkii
+z25  hkllkii
+z26 iiklkih
+z27 ikkjih
+z28 ilkjh
+z29 ilmli
+z30 ilmkh
+z31 ikkjh
+z32 ikkihS
+z33 hjkigSg     ddeSe
+z34 hjkihggfeeddeffe
+z35 hjjihhihggggggee
+z36 ghiiiiiihhhhhgeS
+z37  ghikkjihhiihgeee
+z38 gghijkjiihhhhhfd
+z39 fhhiiijiiigfggfd
+z40 fhhiiiiiihfeeddd
+z41 egiijjiiihfdd
+z42 eghijjihhgdd
+z43 eghhiihhhgd
+z44 eggghhgghgd
+z45 egggffeeffd
+z46 dddddddcddd

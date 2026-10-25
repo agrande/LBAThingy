@@ -1,0 +1,80 @@
+Grid 107 L_Grid_107_PalaceTopLeft3PigFarmers, library 9: rooms, enclosed, room height 13, door height 7
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 14 x3-17 z1-15 (15x15) floors 221 furniture 4
+   -X: wallx15
+   +X: wallx6  wallx1  exit>C1x2  wallx2  wallx4
+   -Z: wallx15
+   +Z: wallx6  wallx1  exit>C0x2  wallx2  wallx4
+S0 level 0 ceiling 14 rooms R0
+C0 exit L0 x10-11 z16-16 cols 2 rooms R0 ceiling 14
+C1 exit L0 x18-18 z8-9 cols 2 rooms R0 ceiling 14
+
+Level 0 rooms
+    0       1
+    234567890123456789
+z00 #################
+z01 #AAAAAAAAAAAAAAA#
+z02 #AAAAAAAAAAAAAAA#
+z03 #AAAAAAAAAAAAAAA#
+z04 #AAAAAAAAAAAAAAA#
+z05 #AAAAAAAAAAAAAAA#
+z06 #AAAAAAAAAAAAAAA#
+z07 #AAAAAAAAAAAAAAA##
+z08 #AAAAAAAAAAAAAAA>#
+z09 #AAAAAAAAAAAAAAA>#
+z10 #AAAAAAAAAAAAAAA##
+z11 #AAAAAAAAAAAAAAA#
+z12 #AAAAAAAAAAAAAAA#
+z13 #AAAAAAAAAAAAAAA#
+z14 #AAAAAAAAAAAAAAA#
+z15 #AAAAAAAAAAAAAAA#
+z16 ########>>#######
+z17        ####
+Level 0 columns
+    0       1
+    234567890123456789
+z00 CCCCCCCCCCCCCCCCC
+z01 C....oo....oo...M
+z02 C...............M
+z03 C...............M
+z04 C...............M
+z05 C...............M
+z06 C...............M
+z07 C...............JC
+z08 C...............gC
+z09 C...............gC
+z10 C...............JC
+z11 C...............J
+z12 C...............M
+z13 C...............M
+z14 C...............M
+z15 C...............M
+z16 CMMMMMMJggJJMMMMM
+z17        CCCC
+Level 0 air
+    0       1
+    234567890123456789
+z00
+z01  ddddddddddddddd
+z02  ddddddddddddddd
+z03  ddddddddddddddd
+z04  ddddddddddddddd
+z05  ddddddddddddddd
+z06  ddddddddddddddd
+z07  ddddddddddddddd
+z08  ddddddddddddddd7
+z09  ddddddddddddddd7
+z10  ddddddddddddddd
+z11  ddddddddddddddd
+z12  ddddddddddddddd
+z13  ddddddddddddddd
+z14  ddddddddddddddd
+z15  ddddddddddddddd
+z16         77
+z17

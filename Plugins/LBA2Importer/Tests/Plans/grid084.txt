@@ -1,0 +1,573 @@
+Grid 84 L_Grid_084_Refinery, library 14: rooms, enclosed, room height 6, door height 8
+Levels 1 3 6 7 13 16
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 1 ceiling 14 x54-59 z47-55 (6x9) floors 53 furniture 1
+   -X: passage>C5x3  open_side>R3x3  openx1  passage>C4x2
+   +X: exit>C7x3  wallx1  wallx5
+   -Z: step>R4x6
+   +Z: wallx6
+R1 B space S1 level 1 ceiling 8 x25-33 z48-50 (9x3) floors 27 furniture 0
+   -X: alcove>C0x1  wallx2
+   +X: stepx3
+   -Z: alcove>C0x6  step>R8x1  alcove>C0x1  wallx1
+   +Z: passage>C1x1  step>R8x4  passage>C1x4
+R2 C space S2 level 1 ceiling 8 x32-38 z56-58 (7x3) floors 14 furniture 7
+   -X: passage>C1x2  stepx1
+   +X: wallx2  alcove>C3x1
+   -Z: passage>C1x3  step>R9x3  alcove>C2x1
+   +Z: openx7
+R3 D space S0 level 1 ceiling 14 x50-53 z50-52 (4x3) floors 12 furniture 0
+   -X: wallx3
+   +X: open_side>R0x3
+   -Z: openx3  passage>C5x1
+   +Z: passage>C4x1  openx3
+R4 E space S0 level 3 ceiling 14 x54-59 z40-46 (6x7) floors 41 furniture 1
+   -X: wallx7
+   +X: wallx7
+   -Z: wallx6
+   +Z: step>R0x6
+R5 F space S3 level 6 ceiling 13 x31-37 z36-39 (7x4) floors 27 furniture 1
+   -X: openx3  passage>C14x1
+   +X: wallx4
+   -Z: wallx4  alcove>C18x3
+   +Z: wallx3  stepx1  wallx3
+R6 G space S4 level 6 ceiling 13 x25-27 z36-39 (3x4) floors 12 furniture 0
+   -X: wallx4
+   +X: openx3  passage>C14x1
+   -Z: wallx3
+   +Z: wallx3
+R7 H space S5 level 7 ceiling 20 x40-49 z50-55 (10x6) floors 36 furniture 24
+   -X: wallx1  wallx5
+   +X: step>R3x3  alcove>C31x1  stepx2
+   -Z: wallx10
+   +Z: alcove>C30x10
+R8 I space S6 level 13 ceiling 20 x26-31 z44-57 (6x14) floors 82 furniture 2
+   -X: stepx1  exit>C33x11  stepx1  alcove>C35x1
+   +X: wallx7  open_side>R9x5  wallx2
+   -Z: stepx1  alcove>C37x4  wallx1
+   +Z: wallx4  alcove>C39x2
+R9 J space S6 level 13 ceiling 20 x32-39 z51-55 (8x5) floors 40 furniture 0
+   -X: open_side>R8x5
+   +X: step>R7x5
+   -Z: wallx8
+   +Z: wallx8
+R10 K space S7 level 16 ceiling 23 x50-52 z40-46 (3x7) floors 21 furniture 0
+   -X: wallx6  wallx1
+   +X: wallx7
+   -Z: wallx3
+   +Z: openx3
+S0 level 1 ceiling 14 rooms R0,R3,R4 overlooked by S5 (double height)
+S1 level 1 ceiling 8 rooms R1
+S2 level 1 ceiling 8 rooms R2
+S3 level 6 ceiling 13 rooms R5
+S4 level 6 ceiling 13 rooms R6
+S5 level 7 ceiling 20 rooms R7 overlooked by S6 (double height)
+S6 level 13 ceiling 20 rooms R8,R9
+S7 level 16 ceiling 23 rooms R10
+C0 alcove L1 x24-34 z42-48 cols 37 rooms R1 ceiling 8
+C1 passage L1 x25-34 z51-58 cols 37 rooms R1,R2 ceiling 8 width 5 (arch)
+C2 alcove L1 x38-38 z52-55 cols 4 rooms R2 ceiling 8
+C3 alcove L1 x39-47 z56-58 cols 13 rooms R2 ceiling 8
+C4 passage L1 x50-53 z53-55 cols 9 rooms R0,R3 ceiling 14 width 1 (door)
+C5 passage L1 x53-53 z47-49 cols 3 rooms R0,R3 ceiling 14 width 1 (door)
+C7 exit L1 x60-60 z47-49 cols 3 rooms R0 ceiling 14
+C14 passage L6 x28-30 z39-39 cols 3 rooms R5,R6 ceiling 13 width 1 (door)
+C18 alcove L6 x35-37 z35-35 cols 3 rooms R5 ceiling 13
+C30 alcove L7 x40-49 z56-57 cols 20 rooms R7 ceiling 20
+C31 alcove L7 x50-50 z53-53 cols 1 rooms R7 ceiling 20
+C33 exit L13 x24-25 z45-55 cols 17 rooms R8 ceiling 20
+C35 alcove L13 x25-25 z57-57 cols 1 rooms R8 ceiling 20
+C37 alcove L13 x27-30 z42-43 cols 5 rooms R8 ceiling 20
+C39 alcove L13 x30-31 z58-58 cols 2 rooms R8 ceiling 20
+42 pockets (columns out of reach)
+
+Level 1 rooms
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z39                                    ,#
+z40                                     #
+z41                                     #
+z42 ~#######~~~                         #
+z43 ~~~~~~~~~~                          #
+z44 ~~    ~~~~                          #
+z45 ~~    ~ ~#                          #
+z46 ~~    ~ ~#                ####      ##
+z47 ~~~~~~~ ~#               #   =AAAAAA>#
+z48 ~BBBBBBBBB               #   =AAAAAA>#
+z49 #BBBBBBBBB               #   =AAAAAA>#
+z50 #BBBBBBBBB               #DDDDAAAAAA##
+z51 #=    ====               #DDDDAAAAAA#
+z52 #==   =   =###~#         #DDDDAAAAAA#
+z53 #==   =   =   ~#         #=   AAAAAA#
+z54 #======   =   ~#         #====AAAAAA#
+z55 #=    =====   ~#         #====AAAAAA#
+z56 #=    ==CCCCCCC#   ~~    ############
+z57 #=    ==CCCCCCC####~~#####
+z58 #=====  CCCCCCC~~~~~~~~~
+Level 1 columns
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z39                                    oM
+z40                                     C
+z41                                     C
+z42 +MMEMMEM++o                         C
+z43 +.........                          C
+z44 +.    ....                          C
+z45 +.    . fE                          C
+z46 +.    . fE                EEEM      CC
+z47 +...... fE               C   .......gC
+z48 +.........               C   .......gC
+z49 J.........               C   .......gC
+z50 J.........               M..........JC
+z51 J.    .p..               M..........C
+z52 J.o   .   .EEE.M         M..........C
+z53 J.o   .   .   .M         Mo   p.....C
+z54 J......   .   .M         E..........C
+z55 J.    .p...   .M         M..........C
+z56 J.    .........C   oo    MCCCCCCCCCCE
+z57 E.    .........CEEEffEEEEE
+z58 Mffffo  ffoffffffofffffo
+Level 1 air
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z39
+z40
+z41
+z42 6       444
+z43 6666666666
+z44 66    6666
+z45 66    6 6
+z46 66    6 6
+z47 6666666 6                    ccccccc8
+z48 6666666666                   ccccccc8
+z49  666666666                   ccccccc8
+z50  666666666                cccccccccc
+z51  6    6666                cccccccccc
+z52  66   6   4   6           cccccccccc
+z53  66   6   4   6           c   cccccc
+z54  666666   4   6           88cccccccc
+z55  6    66664   6           cccccccccc
+z56  6    666646666    66
+z57  6    666646666    66
+z58  66666  6666666666666666
+
+Level 3 rooms
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z39                              ########
+z40                              #EEEEEE#
+z41                              #EEEEEE#
+z42  #######                     #EEEEEE#
+z43                              #EEEEEE#
+z44                              #EEEEEE#
+z45                              #EEEEEE#
+z46                           ####EEEEEE##
+z47                          #           #
+z48                          #           #
+z49 #                        #           #
+z50 #                        #          ##
+z51 #      ,                 #          #
+z52 #              #         #          #
+z53 #              #         #,,,,,     #
+z54 #              #         #          #
+z55 #      ,       #         #          #
+z56 #              #   ,,    ###########,
+z57 #              #,,,,,,,,,#
+z58 #,,,,,,,,,,,,,,,,,,,,,,,
+Level 3 columns
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z39                              MMMMMMMM
+z40                              M......C
+z41                              M......C
+z42  MMEMMEM                     M......C
+z43                              Ma.....C
+z44                              M......C
+z45                              M......C
+z46                           EEEM......CC
+z47                          C           C
+z48                          C           C
+z49 J                        C           C
+z50 J                        M          JC
+z51 J      o                 M          C
+z52 J              M         M          C
+z53 J              M         Moffff     C
+z54 J              M         E          C
+z55 J      o       M         M          C
+z56 J              C   ff    MCCCCCCCCCCf
+z57 M              CofoffoofoE
+z58 M....o....o....+.o.....o
+Level 3 air
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z39
+z40                               aaaaaa
+z41                               aaaaaa
+z42                               aaaaaa
+z43                               aaaaaa
+z44                               aaaaaa
+z45                               aaaaaa
+z46                               aaaaaa
+z47
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+
+Level 6 rooms
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z34         #######
+z35 ,##########~~~#
+z36 #GGG   FFFFFFF#
+z37 #GGG   FFFFFFF#
+z38 #GGG   FFFFFFF#
+z39 #GGG===FFFFFFF#              ########
+z40 ########## ####              #      #
+z41 #                            #      #
+z42  #######            ,,       #      #
+z43                              #,     #
+z44                              #      #
+z45                              #      #
+z46                          #####      ##
+z47                          #           #
+z48                          #           #
+z49 #              #   , #####           #
+z50 #              #   , ,   ,          ##
+z51 #      ,       #   , ,   ,          #
+z52 #              #   , ,   #          #
+z53 #              #   , ,   #,         #
+z54 #              #   , ,   #          #
+z55 #      ,       #   , ,   ,          #
+z56 #              #   ,,,   ,##########
+z57 #              #,,,,,,,,,,
+z58 #    ,
+Level 6 columns
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z34         CCCCCCC
+z35 +MMMEEEMMMM+++C
+z36 M...   .......C
+z37 M...   .......C
+z38 M...   .......C
+z39 M.........p...C              MMMMMMMM
+z40 MCCCCCCCCC CCCC              M      C
+z41 M                            M      C
+z42  MMEMMEM            of       M      C
+z43                              Mo     C
+z44                              M      C
+z45                              M      C
+z46                          CEEEM      CC
+z47                          C           C
+z48                          C           C
+z49 J              E   o CCCCC           C
+z50 J              C   f f   f          JC
+z51 J      o       M   f f   f          C
+z52 J              M   f p   M          C
+z53 J              M   f f   Mo         C
+z54 J              M   p f   M          C
+z55 J      o       M   f f   f          C
+z56 J              C   fff   fCCCCCCCCCC
+z57 E              Cffffffffff
+z58 M    o
+Level 6 air
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z34
+z35            666
+z36  666   6666666
+z37  666   6666666
+z38  666   6666666
+z39  6666666666666
+z40
+z41
+z42
+z43
+z44
+z45
+z46
+z47
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+
+Level 7 rooms
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z34         #######
+z35  ##########   #
+z36 #             #
+z37 #             #
+z38 #             #
+z39 #         ,   #              ########
+z40 ##########,####              #      #
+z41 #         ,                  #      #
+z42  #######,,,,,,,,,,,,,,       #      #
+z43           ,                  #,     #
+z44   ,,,,    ,                  #      #
+z45   ,,,,    ,                  #      #
+z46   ,,,,    ,              #####      ##
+z47           ,              #           #
+z48           ,              #           #
+z49 #         ,    ###########           #
+z50 #         ,    #HHHHHHHHHH          ##
+z51 # ,,,, ,  ,    #HHHHHHHHHH          #
+z52 # ,,,,    ,,,, #HHHHHHHHHH          #
+z53 # ,,,,    ,,,, #HHHHHHHHHH~         #
+z54 #         ,,,, #HHHHHHHHHH          #
+z55 # ,,,, ,  ,,,, #HHHHHHHHHH          #
+z56 # ,,,,    ,    #~~~~~~~~~~##########
+z57 # ,,,,    ,    #~~~~~~~~~~
+z58 #    ,    ,    ###########
+Level 7 columns
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z34         CCCCCCC
+z35  MMMEEEMMMM   C
+z36 M             C
+z37 M             C
+z38 M             C
+z39 M         o   C              MMMMMMMM
+z40 MCCCCCCCCCgCCCC              M      C
+z41 M         .                  M      C
+z42  MMEMMEM++++++++++++o+       M      C
+z43           .                  Mo     C
+z44   ....    .                  M      C
+z45   ....    .                  M      C
+z46   ....    .              CEEEM      CC
+z47           .              C           C
+z48           .              C           C
+z49 J         .    ECCCCCCCCCC           C
+z50 J         .    C...fff...f          JC
+z51 J .... o  .    M...fff...f          C
+z52 J ....    .... M...ffp...f          C
+z53 J ....    .... M...fff...ff         C
+z54 J         .... M...pff...p          C
+z55 J .... o  .... M...fff...f          C
+z56 J ....    .    C+++fff+++fCCCCCCCCCC
+z57 M ....    .    Cffffffffff
+z58 M    o    .    CCCCCCCCCCC
+Level 7 air
+    2     3         4         5         6
+    45678901234567890123456789012345678901
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41
+z42
+z43
+z44
+z45
+z46
+z47
+z48
+z49
+z50                 cccccccccc
+z51                 cccccccccc
+z52                 cccccccccc
+z53                 ccccccccccc
+z54                 cccccccccc
+z55                 cccccccccc
+z56                 cccccccccc
+z57                 cccccccccc
+z58
+
+Level 13 rooms
+    2      3         4         5         6
+    34567890123456789012345678901234567890
+z34          #######
+z35  ####,,,###,   #
+z36  # ,           #
+z37  #             #
+z38  #             #
+z39  #         ,   #              ########
+z40  ########## ####              # ,    #
+z41  ########                     #,     #
+z42  ###~####            ,        #      #
+z43  #, ~~~~##                    #      #
+z44  # IIIIII#                    #      #
+z45 ##>IIIIII#                    #      #
+z46 #>>IIIIII#                #   #      #
+z47 #>>IIIIII#                #          #
+z48 #>>IIIIII#                #
+z49  #>IIIIII#      ,##########
+z50  #>IIIIII########
+z51 ##>IIIIIIJJJJJJJJ                    #
+z52 #>>IIIIIIJJJJJJJJ   ,,,   ,,,        #
+z53 #>>IIIIIIJJJJJJJJ   ,,,   ,,,        #
+z54 #>>IIIIIIJJJJJJJJ   ,,,   ,,,        #
+z55  #>IIIIIIJJJJJJJJ                    #
+z56  # IIIIII########          ##########
+z57  #~IIIIII#      #          #
+z58  ######~~#      ############
+z59        ###
+Level 13 columns
+    2      3         4         5         6
+    34567890123456789012345678901234567890
+z34          CCCCCCC
+z35  MMMMfofMMMf   C
+z36  M .           C
+z37  M             C
+z38  M             C
+z39  M         o   C              MMMMMMMM
+z40  MCCCCCCCCC CCCC              M .    C
+z41  MCCCCCCC                     M.     C
+z42  EMMfMMMM            f        M      C
+z43  M. ....CC                    M      C
+z44  M ......C                    M      C
+z45 CJ.......C                    M      C
+z46 Cg.......C                C   M      C
+z47 Cg.......C                C          C
+z48 Cg.......C                C
+z49  J.......C      fCCCCCCCCCC
+z50  Jo......CCCCCCCC
+z51 CJ......f........                    C
+z52 Cg...............   ...   ...        C
+z53 Cg...............   ...   ...        C
+z54 Cg...............   ...   ...        C
+z55  J......f........                    C
+z56  J ......CCCCCCCC          CCCCCCCCCC
+z57  M.......C      C          C
+z58  MCCCCC++C      CCCCCCCCCCCC
+z59        CCC
+Level 13 air
+    2      3         4         5         6
+    34567890123456789012345678901234567890
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41
+z42     6
+z43     6666
+z44    666666
+z45   6666666
+z46  66666666
+z47  66666666
+z48  66666666
+z49   6666666
+z50   3666666
+z51   666666666666666
+z52  6666666666666666
+z53  6666666666666666
+z54  6666666666666666
+z55   666666666666666
+z56    666666
+z57   6666666
+z58        66
+z59
+
+Level 16 rooms
+    2      3         4         5         6
+    34567890123456789012345678901234567890
+z34          ,,,,,,,
+z35  ,,,,,,,,,,,   ,
+z36  ,             ,
+z37  ,             ,
+z38  ,             ,
+z39  ,         ,   ,          ############
+z40  ,,,,,,,,,, ,,,,          #KKK#      #
+z41  ,#######                 #KKK#      #
+z42  #,,,,,,,            ,    #KKK#      #
+z43  # ,    ,#           ,    #KKK#      #
+z44  #       #           ,    #KKK#      #
+z45 ##       #           ,    #KKK#      #
+z46 #        #           ,    #KKK#      #
+z47 #        #           ,    #          #
+z48 #        #           ,    #
+z49  #       #       #####,####
+z50  #,      ########
+z51 ##                                   ,
+z52 #                                    ,
+z53 #                                    ,
+z54 #                                    ,
+z55  #                                   ,
+z56  #,      ########          ,,,,,,,,,,
+z57  #       #      #          ,
+z58  ######  #      ############
+z59        ###
+Level 16 columns
+    2      3         4         5         6
+    34567890123456789012345678901234567890
+z34          fffffff
+z35  fffffofffff   f
+z36  f             f
+z37  f             f
+z38  f             f
+z39  f         f   f          MMMMMMMMMMMM
+z40  ffffffffff ffff          M...M      C
+z41  fCCCCCCC                 M...M      C
+z42  Efffffff            .    M...M      C
+z43  M .    oC           .    M...M      C
+z44  M       C           .    M...M      C
+z45 CJ       C           .    M...M      C
+z46 C        C           .    C...M      C
+z47 C        C           .    C          C
+z48 C        C           .    C
+z49  J       C       CCCCCfCCCC
+z50  Jo      CCCCCCCC
+z51 CJ                                   f
+z52 C                                    f
+z53 C                                    f
+z54 C                                    f
+z55  J                                   f
+z56  Jo      CCCCCCCC          ffffffffff
+z57  M       C      C          f
+z58  MCCCCC  C      CCCCCCCCCCCC
+z59        CCC
+Level 16 air
+    2      3         4         5         6
+    34567890123456789012345678901234567890
+z34
+z35
+z36
+z37
+z38
+z39
+z40                            666
+z41                            666
+z42                            666
+z43                            666
+z44                            666
+z45                            666
+z46                            666
+z47
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+z59

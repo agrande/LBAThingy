@@ -1,0 +1,95 @@
+Grid 65 L_Grid_065_EndSequence1, library 11: rooms, not enclosed, room height 8, door height 7
+Levels 1
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 1 ceiling 10 x5-20 z4-17 (16x14) floors 186 furniture 38
+   -X: wallx1  alcove>C1x5  wallx1  alcove>C0x7
+   +X: wallx14
+   -Z: wallx3  alcove>C2x13
+   +Z: wallx7  open_side>R1x3  wallx6
+R1 B space S0 level 1 ceiling 10 x12-14 z18-21 (3x4) floors 12 furniture 0
+   -X: wallx3  wallx1
+   +X: wallx2  wallx2
+   -Z: open_side>R0x3
+   +Z: wallx3
+S0 level 1 ceiling 10 rooms R0,R1
+C0 alcove L1 x3-4 z11-17 cols 13 rooms R0 ceiling 10
+C1 alcove L1 x4-4 z5-9 cols 5 rooms R0 ceiling 10
+C2 alcove L1 x8-20 z3-3 cols 13 rooms R0 ceiling 10
+
+Level 1 rooms
+    0       1         2
+    23456789012345678901
+z02  ###################
+z03  #####~~~~~~~~~~~~~#
+z04  ##AAAAAAAAAAAAAAAA#
+z05  #~AAAAAAAAAAAAAAAA#
+z06  #~AAAAAAAAAAAAAAAA#
+z07  #~AAAAAAAAAAAAAAAA#
+z08  #~AAAAAAAAAAAAAAAA#
+z09 ##~AAAAAAAAAAAAAAAA#
+z10 ###AAAAAAAAAAAAAAAA#
+z11 ##~AAAAAAAAAAAAAAAA#
+z12 #~~AAAAAAAAAAAAAAAA#
+z13 #~~AAAAAAAAAAAAAAAA#
+z14 #~~AAAAAAAAAAAAAAAA#
+z15 #~~AAAAAAAAAAAAAAAA#
+z16 #~~AAAAAAAAAAAAAAAA#
+z17 #~~AAAAAAAAAAAAAAAA#
+z18 ##########BBB#######
+z19          #BBB#
+z20          #BBB#
+z21          #BBB#
+z22          #####
+Level 1 columns
+    0       1         2
+    23456789012345678901
+z02  EMMMMMMMMMMMMMMMMME
+z03  MCCCC.fooffffffff.M
+z04  MCfff........f....M
+z05  Mffff.............M
+z06  Mofff......ff.....M
+z07  Mf.........ff.....M
+z08  Mf.......fffff....M
+z09 MMff......fffff..pfM
+z10 CMCf........fff..ffM
+z11 EM.................M
+z12 Mf.................M
+z13 M+.................M
+z14 Mf.................M
+z15 Mf.............fff.M
+z16 Mf.............ff..M
+z17 M+.................M
+z18 EMMMMMMMMM...MMMMMMM
+z19          M...M
+z20          M...J
+z21          J...J
+z22          CCCCC
+Level 1 air
+    0       1         2
+    23456789012345678901
+z02
+z03       8888888888888
+z04    8888888888888888
+z05   88888888888888888
+z06   88888888888888888
+z07   88888888888888888
+z08   88888888888888888
+z09   88888888888888888
+z10    8888888888888888
+z11   88888888888888888
+z12  488888888888888888
+z13  888888888888888888
+z14  888888888888888888
+z15  888888888888888888
+z16  888888888888888888
+z17  888888888888888888
+z18           888
+z19           888
+z20           888
+z21           888
+z22

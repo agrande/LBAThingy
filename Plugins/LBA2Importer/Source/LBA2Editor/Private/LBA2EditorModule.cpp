@@ -12,6 +12,7 @@
 #include "LevelEditor.h"
 #include "LevelSelector/LBALevelSelector.h"
 #include "Modules/ModuleManager.h"
+#include "PlanView/LBAPlanViews.h"
 #include "SLBA2ImporterPanel.h"
 #include "Styling/SlateStyle.h"
 #include "Styling/SlateStyleRegistry.h"
@@ -57,6 +58,7 @@ public:
 		MapChangedHandle = LevelEditor.OnMapChanged().AddRaw(this, &FLBA2EditorModule::OnMapChanged);
 
 		UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FLBA2EditorModule::RegisterMenus));
+		LBAPlanViews::Register();
 
 		OpenSelectorCommand = MakeUnique<FAutoConsoleCommand>(TEXT("lba.LevelSelector"), TEXT("Opens the LBA2 level selector (the toolbar's Levels button)."),
 			FConsoleCommandDelegate::CreateRaw(this, &FLBA2EditorModule::OpenLevelSelector));
@@ -127,6 +129,7 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+		LBAPlanViews::Unregister();
 		FGameDelegates::Get().GetModifyCookDelegate().Remove(ModifyCookHandle);
 		if (FLevelEditorModule* LevelEditor = FModuleManager::GetModulePtr<FLevelEditorModule>(TEXT("LevelEditor")))
 		{

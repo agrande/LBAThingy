@@ -1,0 +1,101 @@
+Grid 54 L_Grid_054_SecretInTheFortress, library 7: rooms, enclosed, room height 11, door height 7
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 12 x2-5 z4-24 (4x21) floors 84 furniture 0
+   -X: wallx2  wallx19
+   +X: wallx2  wallx17  wallx2
+   -Z: wallx3  wallx1
+   +Z: wallx4
+R1 B space S1 level 0 ceiling 12 x7-10 z4-24 (4x21) floors 84 furniture 0
+   -X: wallx2  wallx17  wallx2
+   +X: wallx3  alcove>C1x16  wallx1  wallx1
+   -Z: wallx3  wallx1
+   +Z: wallx4
+S0 level 0 ceiling 12 rooms R0
+S1 level 0 ceiling 12 rooms R1
+C1 alcove L0 x11-11 z7-22 cols 16 rooms R1 ceiling 12
+1 pockets (columns out of reach)
+
+Level 0 rooms
+    0         1
+    0123456789012
+z03   #########
+z04  #AAAA#BBBB##
+z05 ,#AAAA#BBBB##
+z06 ,#AAAA#BBBB##
+z07 ,#AAAA#BBBB~#
+z08 ,#AAAA#BBBB~#
+z09 ,#AAAA#BBBB~#
+z10 ,#AAAA#BBBB~#
+z11 ,#AAAA#BBBB~#
+z12 ,#AAAA#BBBB~#
+z13 ,#AAAA#BBBB~#
+z14 ,#AAAA#BBBB~#
+z15 ,#AAAA#BBBB~#
+z16 ,#AAAA#BBBB~#
+z17 ,#AAAA#BBBB~#
+z18 ,#AAAA#BBBB~#
+z19 ,#AAAA#BBBB~#
+z20 ,#AAAA#BBBB~#
+z21 ,#AAAA#BBBB~#
+z22 ,#AAAA#BBBB~#
+z23 ,#AAAA#BBBB##
+z24 ,#AAAA#BBBB##
+z25  ###########
+Level 0 columns
+    0         1
+    0123456789012
+z03   CCCMMCCCJ
+z04  M....C....JM
+z05 oM....C....JM
+z06 oC....M....JM
+z07 fC....M....fE
+z08 fC....M....oE
+z09 oC....M....fM
+z10 fC....M....fE
+z11 fC....M....oE
+z12 oC....M....fM
+z13 fC....M....fE
+z14 fC....M....oE
+z15 oC....M....fM
+z16 fC....M....fE
+z17 fC....M....oE
+z18 oC....M....fM
+z19 fC....M....fE
+z20 fC....M....oE
+z21 oC....M....fM
+z22 fC....M....fE
+z23 fC....J....JE
+z24 oC....J....CC
+z25  CCCCCCCCCCC
+Level 0 air
+    0         1
+    0123456789012
+z03
+z04   bbbb bbbb
+z05   bbbb bbbb
+z06   bbbb bbbb
+z07   bbbb bbbb7
+z08   bbbb bbbb7
+z09   bbbb bbbb7
+z10   bbbb bbbb7
+z11   bbbb bbbb7
+z12   bbbb bbbb7
+z13   bbbb bbbb7
+z14   bbbb bbbb7
+z15   bbbb bbbb7
+z16   bbbb bbbb7
+z17   bbbb bbbb7
+z18   bbbb bbbb7
+z19   bbbb bbbb7
+z20   bbbb bbbb7
+z21   bbbb bbbb7
+z22   bbbb bbbb7
+z23   bbbb bbbb
+z24   bbbb bbbb
+z25

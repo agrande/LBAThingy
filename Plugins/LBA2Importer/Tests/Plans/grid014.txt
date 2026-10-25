@@ -1,0 +1,61 @@
+Grid 14 L_Grid_014_MrBazoosShop, library 2: rooms, enclosed, room height 9, door height 7
+Levels 3
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 3 ceiling 13 x1-14 z1-10 (14x10) floors 102 furniture 38
+   -X: wallx10
+   +X: wallx1  wallx2  wallx1  exit>C0x2  wallx2  wallx2
+   -Z: wallx14
+   +Z: wallx1  wallx13
+S0 level 3 ceiling 13 rooms R0
+C0 exit L3 x15-15 z5-6 cols 2 rooms R0 ceiling 13
+
+Level 3 rooms
+    0         1
+    01234567890123456
+z00 ################
+z01 #AAAAAAAAAAAAAA#
+z02 #AAAAAAAAAAAAAA#
+z03 #AAAAAAAAAAAAAA#
+z04 #AAAAAAAAAAAAAA##
+z05 #AAAAAAAAAAAAAA>#
+z06 #AAAAAAAAAAAAAA>#
+z07 #AAAAAAAAAAAAAA##
+z08 #AAAAAAAAAAAAAA#
+z09 #AAAAAAAAAAAAAA#
+z10 #AAAAAAAAAAAAAA#
+z11 ################
+Level 3 columns
+    0         1
+    01234567890123456
+z00 CCCCCCCCCCCCCCCC
+z01 Cfffff.foo.fff.C
+z02 Cff............M
+z03 Cf.............M
+z04 Cf.....fp......JC
+z05 Cf.....ff......gC
+z06 C.......f......gC
+z07 Cf..ff..f......JC
+z08 Cf..fffff.....fJ
+z09 Cf...........ffM
+z10 C...........fffM
+z11 CCMMMMMMMMMMMMMM
+Level 3 air
+    0         1
+    01234567890123456
+z00
+z01  99999999999999
+z02  99999999999999
+z03  99999999999999
+z04  99999999999999
+z05  999999999999997
+z06  999999999999997
+z07  99999999999999
+z08  99999999999999
+z09  99999999999999
+z10  99999999999999
+z11

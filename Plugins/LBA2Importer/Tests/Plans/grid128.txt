@@ -1,0 +1,88 @@
+Grid 128 L_Grid_128_ProtectionSpellCaveMonsterRoom, library 3: hollow, not enclosed, room height 6, door height 7
+hollow 689 columns (613 with floor), 9 supports, 680 under the roof; spring 6.0-20.6, roof up to 28.2
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+
+Hollow floor
+    0 1         2         3
+    8901234567890123456789012345678
+z16           555
+z17           5556555555555SS0
+z18           5556555555555__000
+z19            66655555555555000_
+z20            5555555555555500000
+z21            5555555555555500000
+z22            555555555555550000_
+z23            555555555555550000_
+z24            555555555555550000_
+z25            5555555555555_000000
+z26            5555555555555_000000
+z27           S5555555555555_00000
+z28          SS__55555555555_00000
+z29         eSS__55555555555_00000
+z30        _e__5555555555555_000000
+z31       eeeee____55555_555_0000_
+z32       eeeeeedcb55555_22220000_
+z33       eeeeeedcb55555_22220000_
+z34      Seeeeeedcb55555_222200000
+z35     __eeeee0000000000222200000
+z36 feeeeeeeeee0000000000111100000
+z37 feeeeeeeeee000000000000000000
+z38 __eeeeeeeee000000000000000000
+z39 __eeeeeeeee0000000000000000_
+z40 eeeeeeeeeee0000000000000000
+z41  eeeeeeeeee00000000___0___
+z42  eeeeeeeeee00000000_______
+z43        _eeS_0000000_______
+z44         ee    00000000_0000
+z45                 00000000000
+z46                  00000000000
+z47                       _00000
+z48                        00000
+z49                         00000
+z50                         0000_
+z51                         0000_
+z52                          000_
+z53                          000_3
+z54                          000_3
+Hollow roof
+    0 1         2         3
+    8901234567890123456789012345678
+z16           eee
+z17           egfeeeeeeedddSSb
+z18           efgffhhhgffgedccba
+z19            ehhhhhhhiihgeddcba
+z20            eghiiiiijjihgfedca9
+z21            efhhiijjiiiiihfeeca
+z22            efhhhijjiiiiiigfeda
+z23            fhiihhiiijjjihgffda
+z24            fhiiiiiiijjjihgffda
+z25            fgijjjjjiijjiigffdb9
+z26            ghjjkkkjihiiiigffdb9
+z27           Shikkjjkkiihhihgfeda
+z28          SSiklljjkkjihhihgfeda
+z29         lSSjmmmkkjjkjihiigedb9
+z30        mmlklnmmlkjjkjiiiigedba9
+z31       nnpoooonmllkjjjjihggfec9
+z32       npqqqqponmlkjjijihggfec9
+z33       npqrrrqponmkjihiiihgfec9
+z34      Snpqrrrqponmjihhhhhhfeec9
+z35     nnopqqqqponmlihgggggfeddc9
+z36 nnnnnqqqrqpponmlkihgfffffedca9
+z37 noopprrqqqppnlkjiihgfeeeddcc9
+z38 nopqqrsrrqponkjihhhgfedddcba9
+z39 nopqrrrrrqonlkihggggfdddcb99
+z40 nnpqqqqqrpnlkjhfeefffdddc99
+z41  nqppooopnlkjjhedcddeeddc9
+z42  nnnnmmnoljiiigecbcddeddb9
+z43        nmkShgeeedccddddcb9
+z44         mk    dbabcccddcba9
+z45                 9abbbbbccb9
+z46                  999999bcb99
+z47                       99bcb9
+z48                        9abb9
+z49                         9bb99
+z50                         9bbb9
+z51                         9acca
+z52                          9cda
+z53                          9cdbb
+z54                          9aabb

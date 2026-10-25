@@ -1,0 +1,246 @@
+Grid 77 L_Grid_077_Cave, library 11: rooms, not enclosed, room height 8, door height 7
+Levels 2 4 9
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 2 ceiling 13 x5-8 z8-16 (4x9) floors 36 furniture 0
+   -X: wallx7  alcove>C0x2
+   +X: stepx3  open_side>R1x6
+   -Z: stairs>C2x3  stepx1
+   +Z: wallx4
+R1 B space S0 level 2 ceiling 13 x9-10 z11-16 (2x6) floors 12 furniture 0
+   -X: open_side>R0x6
+   +X: step>R2x6
+   -Z: stepx2
+   +Z: wallx2
+R2 C space S0 level 4 ceiling 13 x11-17 z9-16 (7x8) floors 50 furniture 6
+   -X: stairs>C2x2  step>R1x6
+   +X: wallx8
+   -Z: openx3  alcove>C5x4
+   +Z: wallx3  wallx1  exit>C6x3
+S0 level 2 ceiling 13 rooms R0,R1,R2
+C0 alcove L2 x4-4 z15-16 cols 2 rooms R0 ceiling 13
+C2 stairs L2+L4+flight x5-10 z5-10 cols 18 rooms R0,R2 ceiling 13
+C5 alcove L4 x14-17 z8-8 cols 4 rooms R2 ceiling 13
+C6 exit L4 x15-17 z17-19 cols 9 rooms R2 ceiling 13
+5 pockets (columns out of reach)
+F0 flight levels 2,4 x5-7 z6-6 steps 3-3 cells 3
+
+Level 2 rooms
+    0      1
+    3456789012345678
+z00                #
+z01                #
+z02                #
+z03   ###          #
+z04   ,,,,         #
+z05  #,,,,         #
+z06  #///          #
+z07  #///          #
+z08  #AAAA         #
+z09  #AAAA         #
+z10  #AAAA         #
+z11  #AAAABB       #
+z12  #AAAABB       #
+z13  #AAAABB       #
+z14 ##AAAABB       #
+z15 #~AAAABB       #
+z16 #~AAAABB       #
+z17 ##########     #
+z18    ,,,,,       #
+z19    ,,,,,
+Level 2 columns
+    0      1
+    3456789012345678
+z00                M
+z01                M
+z02                M
+z03   EEE          M
+z04   offf         M
+z05  Efffp         M
+z06  M///          M
+z07  M...          M
+z08  M....         M
+z09  M....         M
+z10  M....         M
+z11  M......       M
+z12  M......       M
+z13  M......       M
+z14 MM......       M
+z15 M+......       M
+z16 M+......       M
+z17 MMMMMMMMCC     J
+z18    .....       J
+z19    .....
+Level 2 air
+    0      1
+    3456789012345678
+z00
+z01
+z02
+z03
+z04
+z05
+z06   999
+z07   aaa
+z08   aaaa
+z09   aaaa
+z10   aaaa
+z11   aaaaaa
+z12   aaaaaa
+z13   aaaaaa
+z14   aaaaaa
+z15  aaaaaaa
+z16  aaaaaaa
+z17
+z18
+z19
+
+Level 4 rooms
+    0      1
+    34567890123456789
+z00                #
+z01                #
+z02                #
+z03   ###          #
+z04   # #          #
+z05  ######/       #
+z06  #//////       #
+z07  #   ///   #####
+z08  #    /    ~~~~#
+z09  #    //CCCCCCC#
+z10  #    //CCCCCCC#
+z11  #      CCCCCCC#
+z12  #      CCCCCCC#
+z13  #      CCCCCCC#
+z14 ##      CCCCCCC#
+z15 #       CCCCCCC#
+z16 #       CCCCCCC#
+z17 ############>>>#
+z18         ,,,#>>>#
+z19         ,,,#>>>#
+z20            ######
+Level 4 columns
+    0      1
+    34567890123456789
+z00                M
+z01                M
+z02                M
+z03   EEE          M
+z04   E E          M
+z05  EEEEMMf       M
+z06  M///.ff       M
+z07  M   ..f   MMMMM
+z08  M    .    fff.M
+z09  M    .....fff.M
+z10  M    .....fff.M
+z11  M      .......M
+z12  M      .......M
+z13  M      .......M
+z14 MM      .......M
+z15 M       .......M
+z16 M       .......M
+z17 MMMMMMMMCCCM...J
+z18         fffJ...J
+z19         ...J...J
+z20            CCCCCC
+Level 4 air
+    0      1
+    34567890123456789
+z00
+z01
+z02
+z03
+z04
+z05        8
+z06      888
+z07      888
+z08       8    8888
+z09       888888888
+z10       888888888
+z11         8888888
+z12         8888888
+z13         8888888
+z14         8888888
+z15         8888888
+z16         8888888
+z17             888
+z18             xxx
+z19             xxx
+z20
+
+Level 9 rooms
+    0      1
+    34567890123456789
+z00      ###########
+z01      #,,,   ,,,#
+z02      # ,,,,,,, #
+z03      #, ,,,,,, #
+z04      #, ,,,,,, #
+z05  #   #,        #
+z06  #             #
+z07  #             #
+z08  #             #
+z09  #             #
+z10  #             #
+z11  #             #
+z12  #             #
+z13  #             #
+z14 ##             #
+z15 #              #
+z16 #              #
+z17 ########   #   #
+z18            #   #
+z19            #   #
+z20            ######
+Level 9 columns
+    0      1
+    34567890123456789
+z00      MMMMMMMMMMM
+z01      M...   ...M
+z02      M f...... M
+z03      M. ...... M
+z04      M. ...... M
+z05  E   M.        M
+z06  M///          M
+z07  M             M
+z08  M             M
+z09  M             M
+z10  M             M
+z11  M             M
+z12  M             M
+z13  M             M
+z14 MM             M
+z15 M              M
+z16 M              M
+z17 MMMMMMMM   M   J
+z18            J   J
+z19            J   J
+z20            CCCCCC
+Level 9 air
+    0      1
+    34567890123456789
+z00
+z01
+z02
+z03
+z04
+z05
+z06
+z07
+z08
+z09
+z10
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20

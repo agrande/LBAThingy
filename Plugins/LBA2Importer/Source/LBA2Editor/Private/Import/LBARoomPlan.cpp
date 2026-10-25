@@ -1495,3 +1495,98 @@ FString FLBARoomPlan::Describe() const
 	}
 	return Result;
 }
+
+void FLBARoomPlan::ToGridPlan(FLBAGridPlan& Out) const
+{
+	auto Sorted = [](const TSet<FIntPoint>& Columns)
+	{
+		TArray<FIntPoint> Result = Columns.Array();
+		Result.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y != B.Y ? A.Y < B.Y : A.X < B.X; });
+		return Result;
+	};
+	Out.Levels.Reset();
+	for (const FLBAPlanLevel& Level : Levels)
+	{
+		FLBAGridPlanLevel& Saved = Out.Levels.AddDefaulted_GetRef();
+		Saved.Height = Level.Height;
+		Saved.Columns = Level.Columns;
+		Saved.Rules = Level.Rules;
+		for (const TArray<FIntPoint>& Run : Level.Runs)
+		{
+			Saved.WallRuns.AddDefaulted_GetRef().Columns = Run;
+		}
+		Saved.Gaps = Sorted(Level.Gaps);
+		Saved.PartitionLines = Sorted(Level.PartitionLines);
+	}
+	Out.Levels.Sort([](const FLBAGridPlanLevel& A, const FLBAGridPlanLevel& B) { return A.Height < B.Height; });
+
+	Out.Rooms.Reset();
+	for (int32 RoomIndex = 0; RoomIndex < Rooms.Num(); ++RoomIndex)
+	{
+		const FLBAPlanRoom& Room = Rooms[RoomIndex];
+		FLBAGridPlanRoom& Saved = Out.Rooms.AddDefaulted_GetRef();
+		Saved.Level = Room.Level;
+		Saved.Min = Room.Min;
+		Saved.Max = Room.Max;
+		Saved.Ceiling = Room.Ceiling;
+		Saved.Space = Room.Space;
+		Saved.Floors = Room.Floors;
+		Saved.Furniture = Room.Furniture;
+		// Each side's columns from its lowest to its highest, in runs with the same thing past them (as Describe groups them).
+		for (int32 Side = 0; Side < 4; ++Side)
+		{
+			const bool bX = Sides[Side].X != 0;
+			const int32 From = bX ? Room.Min.Y : Room.Min.X, To = bX ? Room.Max.Y : Room.Max.X;
+			TArray<FLBAGridPlanSideRun>& Runs = Saved.GetSide(Side).Runs;
+			for (int32 A = From; A <= To; ++A)
+			{
+				const FIntPoint Column = bX ? FIntPoint(Side == 0 ? Room.Min.X - 1 : Room.Max.X + 1, A) : FIntPoint(A, Side == 2 ? Room.Min.Y - 1 : Room.Max.Y + 1);
+				FLBAGridPlanSideRun Run;
+				Run.Kind = GetSide(RoomIndex, Column, Side, &Run.Other);
+				if (Run.Kind == ELBARoomSide::Wall)
+				{
+					Run.Rule = FindLevel(Room.Level)->GetRule(Column);
+				}
+				if (Run.Kind == ELBARoomSide::Wall || Run.Kind == ELBARoomSide::Open)
+				{
+					Run.Other = INDEX_NONE;
+				}
+				if (Runs.Num() > 0 && Runs.Last().Kind == Run.Kind && Runs.Last().Rule == Run.Rule && Runs.Last().Other == Run.Other)
+				{
+					++Runs.Last().Count;
+					continue;
+				}
+				Run.Count = 1;
+				Runs.Add(Run);
+			}
+		}
+	}
+
+	Out.Spaces.Reset();
+	for (const FLBAPlanSpace& Space : Spaces)
+	{
+		FLBAGridPlanSpace& Saved = Out.Spaces.AddDefaulted_GetRef();
+		Saved.Rooms = Space.Rooms;
+		Saved.Level = Space.Level;
+		Saved.Ceiling = Space.Ceiling;
+		Saved.OverlookedBy = Space.OverlookedBy;
+	}
+	Out.Connectors.Reset();
+	for (const FLBAPlanConnector& Connector : Connectors)
+	{
+		FLBAGridPlanConnector& Saved = Out.Connectors.AddDefaulted_GetRef();
+		Saved.Kind = Connector.Kind;
+		Saved.Columns = Connector.Columns;
+		Saved.Rooms = Connector.Rooms;
+		Saved.Levels = Connector.Levels;
+		Saved.Width = Connector.Width;
+		Saved.Ceiling = Connector.Ceiling;
+	}
+	Out.Flights.Reset();
+	for (const FLBAPlanFlight& Flight : Flights)
+	{
+		FLBAGridPlanFlight& Saved = Out.Flights.AddDefaulted_GetRef();
+		Saved.Cells = Flight.Cells;
+		Saved.Levels = Flight.Levels;
+	}
+}

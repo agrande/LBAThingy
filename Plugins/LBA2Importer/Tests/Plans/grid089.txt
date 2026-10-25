@@ -1,0 +1,288 @@
+Grid 89 L_Grid_089_RefineryGasTanksRoom, library 14: rooms, enclosed, room height 6, door height 8
+Levels 6 11
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 6 ceiling 13 x6-9 z4-9 (4x6) floors 24 furniture 0
+   -X: openx3  alcove>C0x3
+   +X: wallx6
+   -Z: openx4
+   +Z: wallx4
+S0 level 6 ceiling 13 rooms R0
+C0 alcove L6 x3-5 z7-9 cols 9 rooms R0 ceiling 13
+3 pockets (columns out of reach)
+
+Level 6 rooms
+    0         1         2         3         4         5
+    012345678901234567890123456789012345678901234567890123456
+z00   #########
+z01           #
+z02           #
+z03           #
+z04       AAAA#
+z05       AAAA#
+z06       AAAA#
+z07    ~~~AAAA#
+z08    ~~~AAAA#
+z09    ~~~AAAA#
+z10 ###########
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28
+z29
+z30
+z31                                                         #
+z32                                                         #
+z33                                                         #
+z34                                                         #
+z35                                                         #
+z36                                                         #
+z37                                                         #
+z38                                                         #
+z39                                                         #
+z40                                                         #
+z41                                               ###########
+Level 6 columns
+    0         1         2         3         4         5
+    012345678901234567890123456789012345678901234567890123456
+z00   CECEECEEC
+z01           C
+z02           C
+z03           C
+z04       ....C
+z05       ....C
+z06       ....C
+z07    fff....C
+z08    fff....C
+z09    fff....C
+z10 CCCCCCCCCCC
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28
+z29
+z30
+z31                                                         C
+z32                                                         C
+z33                                                         C
+z34                                                         C
+z35                                                         C
+z36                                                         C
+z37                                                         C
+z38                                                         C
+z39                                                         C
+z40                                                         C
+z41                                               CCCCCCCCCCC
+Level 6 air
+    0         1         2         3         4         5
+    012345678901234567890123456789012345678901234567890123456
+z00
+z01
+z02
+z03
+z04       6666
+z05       6666
+z06       6666
+z07    6666666
+z08    6666666
+z09    6666666
+z10
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28
+z29
+z30
+z31
+z32
+z33
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41
+
+Level 11 rooms
+    0         1         2         3         4         5
+    012345678901234567890123456789012345678901234567890123456
+z00   , ,, ,  #
+z01 ,,,       #
+z02 ,,,       #
+z03 ,,,       #
+z04 ,,,       #
+z05 ,,,       #
+z06 ,,,       #
+z07 ,,,       #
+z08 ,,,       #
+z09 ,,,       #
+z10 ###########
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28
+z29
+z30
+z31                                                         #
+z32                                                         #
+z33                                                         #
+z34                                                         #
+z35                                                         #
+z36                                                         #
+z37                                                         #
+z38                                                         #
+z39                                                         #
+z40                                                         #
+z41                                               ###########
+Level 11 columns
+    0         1         2         3         4         5
+    012345678901234567890123456789012345678901234567890123456
+z00   o of o  C
+z01 ...       C
+z02 ...       C
+z03 ...       C
+z04 ...       C
+z05 ...       C
+z06 ...       C
+z07 ...       C
+z08 ...       C
+z09 ...       C
+z10 CCCCCCCCCCC
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28
+z29
+z30
+z31                                                         C
+z32                                                         C
+z33                                                         C
+z34                                                         C
+z35                                                         C
+z36                                                         C
+z37                                                         C
+z38                                                         C
+z39                                                         C
+z40                                                         C
+z41                                               CCCCCCCCCCC
+Level 11 air
+    0         1         2         3         4         5
+    012345678901234567890123456789012345678901234567890123456
+z00
+z01
+z02
+z03
+z04
+z05
+z06
+z07
+z08
+z09
+z10
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28
+z29
+z30
+z31
+z32
+z33
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41

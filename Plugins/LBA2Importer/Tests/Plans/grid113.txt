@@ -1,0 +1,59 @@
+Grid 113 L_Grid_113_HotelWomansRoom, library 8: rooms, enclosed, room height 11, door height 8
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 12 x1-8 z2-10 (8x9) floors 54 furniture 18
+   -X: wallx9
+   +X: wallx4  wallx5
+   -Z: wallx3  wallx1  wallx3  wallx1
+   +Z: wallx4  wallx1  exit>C1x3
+S0 level 0 ceiling 12 rooms R0
+C1 exit L0 x6-8 z11-11 cols 3 rooms R0 ceiling 12
+1 pockets (columns out of reach)
+
+Level 0 rooms
+    0
+    0123456789
+z01 ,#########
+z02 #AAAAAAAA#
+z03 #AAAAAAAA#
+z04 #AAAAAAAA#
+z05 #AAAAAAAA#
+z06 #AAAAAAAA#
+z07 #AAAAAAAA#
+z08 #AAAAAAAA#
+z09 #AAAAAAAA#
+z10 #AAAAAAAA#
+z11 ######>>>#
+Level 0 columns
+    0
+    0123456789
+z01 +CCCECCCJJ
+z02 C.ooff...J
+z03 C.ffff...J
+z04 Cf.......J
+z05 Cf.......J
+z06 Cff......M
+z07 Cff......M
+z08 C........M
+z09 Cff......M
+z10 Cff......M
+z11 MMMMMJ++oJ
+Level 0 air
+    0
+    0123456789
+z01
+z02  bbbbbbbb
+z03  bbbbbbbb
+z04  bbbbbbbb
+z05  bbbbbbbb
+z06  bbbbbbbb
+z07  bbbbbbbb
+z08  bbbbbbbb
+z09  bbbbbbbb
+z10  bbbbbbbb
+z11       88b

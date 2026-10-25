@@ -1,0 +1,73 @@
+Grid 9 L_Grid_009_NeighboursHouse, library 0: rooms, enclosed, room height 9, door height 8
+Levels 2
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 2 ceiling 12 x1-12 z1-14 (12x14) floors 124 furniture 44
+   -X: wallx14
+   +X: wallx5  wallx1  wallx1  exit>C0x2  wallx1  wallx1  wallx3
+   -Z: wallx12
+   +Z: wallx12
+S0 level 2 ceiling 12 rooms R0
+C0 exit L2 x13-13 z8-9 cols 2 rooms R0 ceiling 12
+
+Level 2 rooms
+    0         1
+    012345678901234
+z00 ##############
+z01 #AAAAAAAAAAAA#
+z02 #AAAAAAAAAAAA#
+z03 #AAAAAAAAAAAA#
+z04 #AAAAAAAAAAAA#
+z05 #AAAAAAAAAAAA#
+z06 #AAAAAAAAAAAA#
+z07 #AAAAAAAAAAAA##
+z08 #AAAAAAAAAAAA>#
+z09 #AAAAAAAAAAAA>#
+z10 #AAAAAAAAAAAA##
+z11 #AAAAAAAAAAAA#
+z12 #AAAAAAAAAAAA#
+z13 #AAAAAAAAAAAA#
+z14 #AAAAAAAAAAAA#
+z15 ##############
+Level 2 columns
+    0         1
+    012345678901234
+z00 CCCCCCCCCCCCCC
+z01 Cfff..offff..C
+z02 Cfff..ffff...C
+z03 Coff.......pfC
+z04 Cfff.......ffC
+z05 C............C
+z06 Cf...........M
+z07 Cf...........JJ
+z08 Cf...........gC
+z09 C........f...gC
+z10 C.......fff..CC
+z11 C.......fff..J
+z12 C.......fff..C
+z13 C...pf...f...C
+z14 Cf..ff.......C
+z15 CCCCCCCCCCCCCC
+Level 2 air
+    0         1
+    012345678901234
+z00
+z01  999999999999
+z02  999999999999
+z03  999999999999
+z04  999999999999
+z05  999999999999
+z06  999999999999
+z07  999999999999
+z08  9999999999998
+z09  9999999999998
+z10  999999999999
+z11  999999999999
+z12  999999999999
+z13  999999999999
+z14  999999999999
+z15

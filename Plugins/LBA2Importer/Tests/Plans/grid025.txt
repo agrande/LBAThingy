@@ -1,0 +1,131 @@
+Grid 25 L_Grid_025_HaciendaWomensBath, library 5: rooms, enclosed, room height 6, door height 7
+Levels 3 4
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 3 ceiling 11 x5-8 z4-7 (4x4) floors 16 furniture 0
+   -X: step>R2x1  alcove>C1x1  step>R2x2
+   +X: step>R1x4
+   -Z: stepx4
+   +Z: step>R3x4
+R1 B space S0 level 4 ceiling 11 x9-11 z1-10 (3x10) floors 27 furniture 3
+   -X: passage>C2x3  step>R0x4  open_side>R3x3
+   +X: wallx10
+   -Z: openx3
+   +Z: wallx3
+R2 C space S0 level 4 ceiling 11 x2-4 z1-10 (3x10) floors 15 furniture 15
+   -X: openx10
+   +X: passage>C2x3  step>R0x4  open_side>R3x3
+   -Z: openx3
+   +Z: wallx2  wallx1
+R3 D space S0 level 4 ceiling 11 x5-8 z8-10 (4x3) floors 12 furniture 0
+   -X: open_side>R2x3
+   +X: open_side>R1x3
+   -Z: step>R0x4
+   +Z: exit>C3x2  wallx2
+S0 level 3 ceiling 11 rooms R0,R1,R2,R3
+C1 alcove L3 x4-4 z5-5 cols 1 rooms R0 ceiling 11
+C2 passage L4 x5-8 z1-3 cols 12 rooms R1,R2 ceiling 11 width 3 (arch)
+C3 exit L4 x5-6 z11-11 cols 2 rooms R3 ceiling 11
+1 pockets (columns out of reach)
+
+Level 3 rooms
+    0         1
+    0123456789012
+z00             #
+z01   ,,,,,,,,,,#
+z02   ,         #
+z03   ,         #
+z04   ,  AAAA   #
+z05   , ~AAAA   #
+z06   ,  AAAA   #
+z07   ,  AAAA   #
+z08   ,         #
+z09   ,         #
+z10   ,,,       #
+z11 #####  ######
+z12     ####
+Level 3 columns
+    0         1
+    0123456789012
+z00             E
+z01   ffffffffffM
+z02   f         M
+z03   f         M
+z04   f  ....   M
+z05   f f....   M
+z06   f  ....   M
+z07   f  ....   M
+z08   f         M
+z09   f         M
+z10   fff       M
+z11 EMMMJ  JJMMMM
+z12     CCCC
+Level 3 air
+    0         1
+    0123456789012
+z00
+z01
+z02
+z03
+z04      7777
+z05     77777
+z06      7777
+z07      7777
+z08
+z09
+z10
+z11
+z12
+
+Level 4 rooms
+    0         1
+    0123456789012
+z00             #
+z01   CCC====BBB#
+z02   CCC====BBB#
+z03   CCC====BBB#
+z04   CCC    BBB#
+z05   CCC    BBB#
+z06   CCC    BBB#
+z07   CCC    BBB#
+z08   CCCDDDDBBB#
+z09   CCCDDDDBBB#
+z10   CCCDDDDBBB#
+z11 #####>>######
+z12     ####
+Level 4 columns
+    0         1
+    0123456789012
+z00             E
+z01   ffffffffffM
+z02   f.........M
+z03   f.........M
+z04   f..    ...M
+z05   f.f    ...M
+z06   f..    ...M
+z07   f..    ...M
+z08   f.........M
+z09   f.........M
+z10   fff.......M
+z11 EMMMJggJJMMMM
+z12     CCCC
+Level 4 air
+    0         1
+    0123456789012
+z00
+z01   6666666666
+z02   6666666666
+z03   6666666666
+z04   666    666
+z05   666    666
+z06   666    666
+z07   666    666
+z08   6666666666
+z09   6666666666
+z10   6666666666
+z11      66
+z12

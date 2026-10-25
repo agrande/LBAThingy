@@ -1,0 +1,958 @@
+Grid 67 L_Grid_067_TwinsensHouseDestroyed, library 11: rooms, not enclosed, room height 8, door height 7
+Levels 0 3 6 8 10 14
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 15 x22-24 z46-61 (3x16) floors 36 furniture 12
+   -X: wallx15  wallx1
+   +X: open_side>R2x6  open_side>R1x3  wallx5  wallx2
+   -Z: alcove>C1x2  stepx1
+   +Z: wallx3
+R1 B space S0 level 0 ceiling 15 x25-32 z52-54 (8x3) floors 24 furniture 0
+   -X: open_side>R0x3
+   +X: wallx3
+   -Z: open_side>R2x2  wallx4  wallx2
+   +Z: wallx5  wallx3
+R2 C space S0 level 0 ceiling 15 x25-26 z46-51 (2x6) floors 12 furniture 0
+   -X: open_side>R0x6
+   +X: wallx6
+   -Z: stepx1  alcove>C2x1
+   +Z: open_side>R1x2
+R3 D space S1 level 3 ceiling 12 x46-54 z26-28 (9x3) floors 27 furniture 0
+   -X: stairs>C4x3
+   +X: wallx3
+   -Z: wallx7  wallx1  exit>C5x1
+   +Z: wallx7  wallx1  exit>C6x1
+R4 E space S2 level 6 ceiling 23 x24-33 z27-37 (10x11) floors 89 furniture 21
+   -X: alcove>C10x6  wallx1  passage>C11x4
+   +X: open_side>R6x2  wallx9
+   -Z: stepx2  passage>C13x8
+   +Z: open_side>R5x3  wallx7
+R5 F space S2 level 6 ceiling 23 x22-26 z38-44 (5x7) floors 30 furniture 5
+   -X: wallx7
+   +X: wallx7
+   -Z: passage>C11x2  open_side>R4x3
+   +Z: openx1  stepx1  alcove>C12x2  stepx1
+R6 G space S2 level 6 ceiling 23 x34-42 z26-28 (9x3) floors 23 furniture 4
+   -X: passage>C13x1  open_side>R4x2
+   +X: stepx1  stairs>C4x2
+   -Z: wallx1  exit>C14x4  wallx4
+   +Z: wallx9
+R7 H space S3 level 8 ceiling 17 x3-8 z33-35 (6x3) floors 18 furniture 0
+   -X: wallx3
+   +X: stairs>C17x3
+   -Z: wallx2  wallx1  stairs>C17x3
+   +Z: wallx3  wallx3
+R8 I space S4 level 10 ceiling 19 x11-20 z31-35 (10x5) floors 43 furniture 7
+   -X: openx1  stairs>C17x4
+   +X: wallx1  alcove>C29x4
+   -Z: wallx2  exit>C26x3  wallx1  wallx4
+   +Z: wallx10
+R9 J space S5 level 14 ceiling 23 x22-26 z15-25 (5x11) floors 48 furniture 7
+   -X: wallx11
+   +X: wallx11
+   -Z: wallx1  wallx1  exit>C40x3
+   +Z: openx1  stepx1  alcove>C41x2  stepx1
+S0 level 0 ceiling 15 rooms R0,R1,R2 overlooked by S2 (double height)
+S1 level 3 ceiling 12 rooms R3
+S2 level 6 ceiling 23 rooms R4,R5,R6 overlooked by S5 (double height)
+S3 level 8 ceiling 17 rooms R7
+S4 level 10 ceiling 19 rooms R8
+S5 level 14 ceiling 23 rooms R9
+C1 alcove L0 x22-23 z45-45 cols 2 rooms R0 ceiling 15
+C2 alcove L0 x26-26 z45-45 cols 1 rooms R2 ceiling 15
+C4 stairs L3+L6+flight x43-45 z26-28 cols 9 rooms R3,R6 ceiling 23
+C5 exit L3 x54-55 z25-25 cols 2 rooms R3 ceiling 12
+C6 exit L3 x54-54 z29-29 cols 1 rooms R3 ceiling 12
+C10 alcove L6 x22-23 z26-32 cols 14 rooms R4 ceiling 23
+C11 passage L6 x22-23 z34-37 cols 7 rooms R4,R5 ceiling 23 width 2 (door)
+C12 alcove L6 x24-25 z45-45 cols 2 rooms R5 ceiling 23
+C13 passage L6 x26-33 z26-26 cols 8 rooms R4,R6 ceiling 23 width 1 (door)
+C14 exit L6 x35-38 z22-25 cols 13 rooms R6 ceiling 23
+C17 stairs L8+L10+flight x6-11 z31-35 cols 17 rooms R7,R8 ceiling 19
+C26 exit L10 x13-15 z28-30 cols 9 rooms R8 ceiling 19
+C29 alcove L10 x21-22 z32-35 cols 6 rooms R8 ceiling 19
+C40 exit L14 x24-26 z12-14 cols 9 rooms R9 ceiling 23
+C41 alcove L14 x24-25 z26-26 cols 2 rooms R9 ceiling 23
+31 pockets (columns out of reach)
+F0 flight levels 8,10 x9-9 z32-35 steps 9-9 cells 4
+F1 flight levels 3,6 x44-45 z27-28 steps 4-5 cells 4
+
+Level 0 rooms
+    01         2         3         4         5
+    90123456789012345678901234567890123456789012345
+z25                                               #
+z26                                               #
+z27                                               #
+z28                                               #
+z29                          ######################
+z30                          #
+z31                          #
+z32                          #
+z33                          #
+z34                          #
+z35                          #
+z36                          #
+z37                          #
+z38                   ########
+z39                   #
+z40                   #
+z41                   #
+z42                   #
+z43                   #
+z44             #######
+z45            ,#~~  ~#
+z46             #AAACC#
+z47             #AAACC#
+z48             #AAACC#
+z49             #AAACC#
+z50             #AAACC#
+z51             #AAACC#######
+z52             #AAABBBBBBBB#
+z53             #AAABBBBBBBB#
+z54             #AAABBBBBBBB#
+z55             #AAA#########
+z56             #AAA#
+z57             #AAA#
+z58             #AAA#
+z59             #AAA#
+z60             #AAA#
+z61             #AAA#
+z62             #####
+Level 0 columns
+    01         2         3         4         5
+    90123456789012345678901234567890123456789012345
+z25                                               J
+z26                                               C
+z27                                    //         C
+z28                                    //         C
+z29                          MMMMMMMMMMMMMMMMMMMJJC
+z30                          M
+z31                          M
+z32 /                        M
+z33 /                        M
+z34 /                        M
+z35 /                        M
+z36                          M
+z37                          M
+z38                   MMMMMMMM
+z39                   M
+z40                   M
+z41                   M
+z42                   M
+z43                   M
+z44             MMMMMMM
+z45            oMf.  .M
+z46             Mf....M
+z47             Mf....M
+z48             Mf....M
+z49             Mf....M
+z50             Mf....M
+z51             Mf....MMMMJJC
+z52             Mf..........C
+z53             Mf..........C
+z54             Mf..........C
+z55             M...MMMMMJJJC
+z56             Mf..M
+z57             Mf..M
+z58             Mf..M
+z59             M...M
+z60             M...J
+z61             J...J
+z62             CCCCC
+Level 0 air
+    01         2         3         4         5
+    90123456789012345678901234567890123456789012345
+z25
+z26
+z27
+z28
+z29
+z30
+z31
+z32
+z33
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41
+z42
+z43
+z44
+z45              ee  e
+z46              eeeee
+z47              eeeee
+z48              eeeee
+z49              eeeee
+z50              eeeee
+z51              eeeee
+z52              eeeeeeeeeee
+z53              eeeeeeeeeee
+z54              eeeeeeeeeee
+z55              eee
+z56              eee
+z57              eee
+z58              eee
+z59              eee
+z60              eee
+z61              eee
+z62
+
+Level 3 rooms
+    01         2         3         4         5
+    90123456789012345678901234567890123456789012345
+z25                                  ############>>
+z26                                   ///DDDDDDDDD#
+z27                                  # //DDDDDDDDD#
+z28                                  # //DDDDDDDDD#
+z29                          ####################>#
+z30                          #                    #
+z31                          #
+z32                          #
+z33                          #
+z34                          #
+z35                          #
+z36                          #
+z37                          #
+z38                   ########
+z39                   #
+z40                   #
+z41                   #
+z42                   #
+z43                   #
+z44             #######
+z45            ,#     #
+z46             #     #
+z47             #     #
+z48             #     #
+z49             #     #
+z50             #     #
+z51             #     #######
+z52             #           #
+z53             #           #
+z54             #           #
+z55             #   #########
+z56             #   #
+z57             #   #
+z58             #   #
+z59             #   #
+z60             #   #
+z61             #   #
+z62             #####
+Level 3 columns
+    01         2         3         4         5
+    90123456789012345678901234567890123456789012345
+z25                                  MMMMMMMMMMMJ++
+z26                                   ............C
+z27                                  M //.........C
+z28                                  M //.........C
+z29                          MMMMMMMMMMMMMMMMMMMJ+C
+z30                          M                    C
+z31                          M
+z32 /                        M
+z33 /                        M
+z34 /                        M
+z35 /                        M
+z36                          M
+z37                          M
+z38                   MMMMMMMM
+z39                   M
+z40                   M
+z41                   M
+z42                   M
+z43                   M
+z44             MMMMMMM
+z45            oM     M
+z46             M     M
+z47             M     M
+z48             M     M
+z49             M     M
+z50             M     M
+z51             M     MMMMJJC
+z52             M           C
+z53             M           C
+z54             M           C
+z55             M   MMMMMJJJC
+z56             M   M
+z57             M   M
+z58             M   M
+z59             M   M
+z60             M   J
+z61             J   J
+z62             CCCCC
+Level 3 air
+    01         2         3         4         5
+    90123456789012345678901234567890123456789012345
+z25                                              8x
+z26                                   jjj888888888
+z27                                    hi888888888
+z28                                    hi888888888
+z29                                              8
+z30
+z31
+z32
+z33
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41
+z42
+z43
+z44
+z45
+z46
+z47
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+z59
+z60
+z61
+z62
+
+Level 6 rooms
+    0      1         2         3         4         5
+    34567890123456789012345678901234567890123456789012345
+z21                                #####
+z22                                #>>>#
+z23                                #>>>#
+z24                                #>>>#,
+z25                   ,#############>>>>###############
+z26                   #~~  ========GGGGGGGGG            #
+z27                   #~~EEEEEEEEEEGGGGGGGGG///         #
+z28                   #~~EEEEEEEEEEGGGGGGGGG///         #
+z29                   #~~EEEEEEEEEE#################### #
+z30                   #~~EEEEEEEEEE#                    #
+z31                   #~~EEEEEEEEEE#
+z32                   #~~EEEEEEEEEE#
+z33                   ###EEEEEEEEEE#
+z34                   # =EEEEEEEEEE#
+z35                   #==EEEEEEEEEE#
+z36 ###################==EEEEEEEEEE#
+z37                   #==EEEEEEEEEE#
+z38                   #FFFFF########
+z39                   #FFFFF#
+z40                   #FFFFF#
+z41        ,          #FFFFF#
+z42      ,,,          #FFFFF#
+z43      ,,,          #FFFFF#
+z44                  ,#FFFFF#
+z45                  ,#  ~~ #
+z46                   #     #
+z47                   #     #
+z48                   #     #
+z49                   #     #
+z50                   #     #
+z51                   #     ### ###
+z52                   #           #
+z53                   #           #
+z54                   #           #
+z55                   #   #########
+z56                   #   #
+z57                   #   #
+z58                   #   #
+z59                   #   #
+z60                   #   #
+z61                   #   #
+z62                   #####
+Level 6 columns
+    0      1         2         3         4         5
+    34567890123456789012345678901234567890123456789012345
+z21                                CCCCC
+z22                                J...J
+z23                                J...J
+z24                                M...Jo
+z25                   +MMMMMMMMMMMMMggggMMMMMMMMMMMMMMJ
+z26                   Mf.  .......f.....ffff            C
+z27                   Mf.....................//         C
+z28                   M......................//         C
+z29                   Mf...........MMMMMMMMMMMMMMMMMMMJ C
+z30                   Mf......ff...M                    C
+z31                   Cf......ff...M
+z32       /           M........fff.M
+z33       /           MMMff...ffff.M
+z34       /           M fff....fff.M
+z35       /           M........fff.M
+z36 JJJMMMMMMMMMMMMMMMM............M
+z37                   M............M
+z38                   M.....MMMMMMMM
+z39                   Mf....M
+z40                   Mf....M
+z41        f          Mf....M
+z42      fff          Mf....M
+z43      fff          Mf....M
+z44                  oM.....M
+z45                  oM  .. M
+z46                   M     M
+z47                   M     M
+z48                   M     M
+z49                   M     M
+z50                   M     M
+z51                   M     MMM JJC
+z52                   M           C
+z53                   M           C
+z54                   M           C
+z55                   M   MMMMMJJJC
+z56                   M   M
+z57                   M   M
+z58                   M   M
+z59                   M   M
+z60                   M   J
+z61                   J   J
+z62                   CCCCC
+Level 6 air
+    0      1         2         3         4         5
+    34567890123456789012345678901234567890123456789012345
+z21
+z22                                 xxx
+z23                                 xxx
+z24                                 xxx
+z25                                 7777
+z26                    eg  ggggggggggggggggg
+z27                    gggggggggggggggggggggg
+z28                    gggggggggggggggggggggg
+z29                    gggggggggggg
+z30                    gggggggggggg
+z31                    gggggggggggg
+z32                    gggggggggggg
+z33                      gggggggggg
+z34                     ggggggggggg
+z35                    gggggggggggg
+z36                    gggggggggggg
+z37                    gggggggggggg
+z38                    ggggg
+z39                    ggggg
+z40                    ggggg
+z41                    ggggg
+z42                    ggggg
+z43                    ggggg
+z44                    ggggg
+z45                      gg
+z46
+z47
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+z59
+z60
+z61
+z62
+
+Level 8 rooms
+    0       1         2         3         4         5
+    234567890123456789012345678901234567890123456789012345
+z12                          #
+z13                          #
+z14                          #
+z15                          #
+z16                          #
+z17                          #
+z18                          #
+z19                          #
+z20                          #
+z21                          #      #####
+z22                          #      #   #
+z23                          #      #   #
+z24                          #      #   #,
+z25                     #############    ###############
+z26                    #,                   ,            #
+z27                    #,                                #
+z28                    #                                 #
+z29                    #            #################### #
+z30   ,#######         #            #                    #
+z31 #,,#//////         #            #
+z32 ####////                        #
+z33 #HHHHHH/             ,,         #
+z34 #HHHHHH/             ,,         #
+z35 #HHHHHH/                        #
+z36 ####################            #
+z37                    #            #
+z38                    #     ########
+z39                    #,    #
+z40                    #,    #
+z41                    #     #
+z42                    #     #
+z43                    #     #
+z44                    #     #
+z45                   ,#     #
+z46                    #     #
+z47                    #     #
+z48                    #     #
+z49                    #     #
+z50                    #     #
+z51                    #     ###,###
+z52                    #         # #
+z53                    #         # #
+z54                    #         # #
+z55                    #   #########
+z56                    #   #
+z57                    #   #
+z58                    #   #
+z59                    #
+z60                    #
+z61
+z62                    #####
+Level 8 columns
+    0       1         2         3         4         5
+    234567890123456789012345678901234567890123456789012345
+z12                          J
+z13                          J
+z14                          J
+z15                          M
+z16                          M
+z17                          M
+z18                          M
+z19                          M
+z20                          M
+z21                          M      CCCCC
+z22                          M      J   J
+z23                          M      J   J
+z24                          M      M   Jo
+z25                     MMMMMMMMMMMMM    MMMMMMMMMMMMMMJ
+z26                    M.                   .            C
+z27                    M.                     //         C
+z28                    M                      //         C
+z29                    M            MMMMMMMMMMMMMMMMMMMJ C
+z30   .MMMMMMM         M            M                    C
+z31 CoaM..f..o         C            M
+z32 CJJM.../                        M
+z33 C....../             f.         M
+z34 C....../             f.         M
+z35 C....../                        M
+z36 CJJJMMMMMMMMMMMMMMMM            M
+z37                    M            M
+z38                    M     MMMMMMMM
+z39                    M.    M
+z40                    M.    M
+z41                    M     M
+z42                    M     M
+z43                    M     M
+z44                    M     M
+z45                   oM     M
+z46                    M     M
+z47                    M     M
+z48                    M     M
+z49                    M     M
+z50                    M     M
+z51                    M     MMMgJJC
+z52                    M         J C
+z53                    M         J C
+z54                    M         J C
+z55                    M   MMMMMJJJC
+z56                    M   M
+z57                    M   M
+z58                    M   M
+z59                    M
+z60                    M
+z61
+z62                    CCCCC
+Level 8 air
+    0       1         2         3         4         5
+    234567890123456789012345678901234567890123456789012345
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28
+z29
+z30
+z31     aaaaaa
+z32     aaa9
+z33  8888889
+z34  8888889
+z35  8888889
+z36
+z37
+z38
+z39
+z40
+z41
+z42
+z43
+z44
+z45
+z46
+z47
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+z59
+z60
+z61
+z62
+
+Level 10 rooms
+    0       1         2         3         4         5
+    234567890123456789012345678901234567890123456789012345
+z12                          #
+z13                          #
+z14                          #
+z15                          #
+z16                          #
+z17                          #
+z18                          #
+z19                          #
+z20                          #
+z21                          #      #####
+z22                          #      #   #
+z23                          #      #   #
+z24                          #      #   #,
+z25                     #############    ###############
+z26                    #                                 ,
+z27           #####    #                                 ,
+z28           #>>>##   #                                 ,
+z29           #>>>##   #            #################### ,
+z30    ########>>>######            #                    ,
+z31 ####  ,  IIIIIIIIII#            #
+z32 ####   //IIIIIIIIII~            #
+z33 #      //IIIIIIIIII~~           #
+z34 #      //IIIIIIIIII~~           #
+z35 #      //IIIIIIIIII~            #
+z36 ####################            #
+z37                    #            #
+z38                    #     ########
+z39                    #     #
+z40                    #     #
+z41                    #     #
+z42                   ,#     #
+z43                    #     #
+z44                    #     #
+z45                   ,#     #
+z46                    #     #
+z47                    #     #
+z48                    #     #
+z49                    #     #
+z50                    #     #
+z51                    #     ###   #
+z52                    #           #
+z53                    #           #
+z54                    #           #
+z55                    #   #####   #
+z56                    #   #
+z57                    #   #
+z58                    #   #
+z59                    #   ,
+z60                    #,,,,
+z61                        ,
+z62                    #####
+Level 10 columns
+    0       1         2         3         4         5
+    234567890123456789012345678901234567890123456789012345
+z12                          J
+z13                          J
+z14                          J
+z15                          M
+z16                          M
+z17                          M
+z18                          M
+z19                          M
+z20                          M
+z21                          M      CCCCC
+z22                          M      J   J
+z23                          M      J   J
+z24                          M      M   Jo
+z25                     MMMMMMMMMMMMM    MMMMMMMMMMMMMMJ
+z26                    M                                 f
+z27           CCCCC    M                      //         f
+z28           J...JC   M                      //         f
+z29           J...JC   M            MMMMMMMMMMMMMMMMMMMJ f
+z30    MMMMMMMM...JMMMMM            M                    f
+z31 CCMM  .  of...ffffoC            M
+z32 CJJM   /...........g            M
+z33 C      /...........g.           M
+z34 C      /...........g.           M
+z35 C      /...........g            M
+z36 CJJJMMMMMMMMMMMMMMMM            M
+z37                    M            M
+z38                    M     MMMMMMMM
+z39                    M     M
+z40                    M     M
+z41                    M     M
+z42                   oM     M
+z43                    M     M
+z44                    M     M
+z45                   oM     M
+z46                    M     M
+z47                    M     M
+z48                    M     M
+z49                    M     M
+z50                    M     M
+z51                    M     MMM   C
+z52                    M           C
+z53                    M           C
+z54                    M           C
+z55                    M   MMMMM   C
+z56                    M   M
+z57                    M   M
+z58                    M   M
+z59                    M   .
+z60                    M....
+z61                        .
+z62                    CCCCC
+Level 10 air
+    0       1         2         3         4         5
+    234567890123456789012345678901234567890123456789012345
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28            xxx
+z29            xxx
+z30            888
+z31          8888888888
+z32         888888888887
+z33         8888888888878
+z34         8888888888878
+z35         888888888887
+z36
+z37
+z38
+z39
+z40
+z41
+z42
+z43
+z44
+z45
+z46
+z47
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+z59
+z60
+z61
+z62
+
+Level 14 rooms
+    0       1         2         3         4         5
+    2345678901234567890123456789012345678901234567890123
+z11                      #####
+z12                    ,##>>>#
+z13                    ###>>>#
+z14                    ###>>>#
+z15                    #JJJJJ#
+z16                    #JJJJJ#
+z17                    #JJJJJ#
+z18                    #JJJJJ#
+z19                    #JJJJJ#
+z20                    #JJJJJ#
+z21                    #JJJJJ#      ,,,,,
+z22                    #JJJJJ#      ,
+z23                   ,#JJJJJ#
+z24                    #JJJJJ#           ,
+z25                    #JJJJJ########    #############,,
+z26                    #  ~~
+z27           #####   ,#
+z28           #   ##   #
+z29           #   ##   #            #################,,,
+z30    ###    #   ######            #
+z31 #,               , #            #
+z32 #                               #
+z33 #                               #
+z34 #                               #
+z35 #                               #
+z36 ####################            #
+z37                    #            #
+z38                    #     ########
+z39                    #     #
+z40                    #     #
+z41                    #     #
+z42                    #     #
+z43                    ,     #
+z44                   ,,     #
+z45                   ,#     #
+z46                    #     #
+z47                    #     #
+z48                    #     #
+z49                    #     #
+z50                    #     #
+z51                    #     ###
+z52                    #
+z53                    #
+z54                    #
+z55                    #   #####
+z56                    #   #
+z57                    #   #
+z58                    #   #
+z59                    #
+z60                    #
+z61
+z62                    ,,,,,
+Level 14 columns
+    0       1         2         3         4         5
+    2345678901234567890123456789012345678901234567890123
+z11                      CCCCC
+z12                    .MJ...J
+z13                    EMJ...J
+z14                    MCM...J
+z15                    Mf....M
+z16                    Mf....M
+z17                    Mf....M
+z18                    Mf....M
+z19                    Mf....M
+z20                    M.....M
+z21                    Mf....M      fffff
+z22                    M.....M      .
+z23                   oM.....M
+z24                    Mf....M           f
+z25                    M.....MMMMMMMM    MMMMMMMMMMMMM++
+z26                    M  ..
+z27           CCCCC   oM                      //
+z28           J   JC   M                      //
+z29           J   JC   M            MMMMMMMMMMMMMMMMM+++
+z30    MMM    M   JMMMMM            M
+z31 Cf               f C            M
+z32 C      /                        M
+z33 C      /                        M
+z34 C      /                        M
+z35 C      /                        M
+z36 CJJJMMMMMMMMMMMMMMMM            M
+z37                    M            M
+z38                    M     MMMMMMMM
+z39                    M     M
+z40                    M     M
+z41                    M     M
+z42                    M     M
+z43                    g     M
+z44                   .g     M
+z45                   oM     M
+z46                    M     M
+z47                    M     M
+z48                    M     M
+z49                    M     M
+z50                    M     M
+z51                    M     MMM
+z52                    M
+z53                    M
+z54                    M
+z55                    M   MMMMM
+z56                    M   M
+z57                    M   M
+z58                    M   M
+z59                    M
+z60                    M
+z61
+z62                    .....
+Level 14 air
+    0       1         2         3         4         5
+    2345678901234567890123456789012345678901234567890123
+z11
+z12                       xxx
+z13                       xxx
+z14                       888
+z15                     88888
+z16                     88888
+z17                     88888
+z18                     88888
+z19                     88888
+z20                     88888
+z21                     88888
+z22                     88888
+z23                     88888
+z24                     88888
+z25                     88888
+z26                       88
+z27
+z28
+z29
+z30
+z31
+z32
+z33
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41
+z42
+z43
+z44
+z45
+z46
+z47
+z48
+z49
+z50
+z51
+z52
+z53
+z54
+z55
+z56
+z57
+z58
+z59
+z60
+z61
+z62

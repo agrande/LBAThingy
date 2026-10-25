@@ -1,0 +1,267 @@
+Grid 64 L_Grid_064_EsmerSpacecraft, library 6: rooms, enclosed, room height 8, door height 7
+Levels 5 6 13
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 5 ceiling 22 x8-13 z7-13 (6x7) floors 42 furniture 0
+   -X: passage>C3x2  step>R2x1  passage>C4x4
+   +X: wallx1  wallx6
+   -Z: passage>C3x2  step>R3x4
+   +Z: passage>C4x4  wallx2
+R1 B space S1 level 5 ceiling 14 x4-6 z3-11 (3x9) floors 20 furniture 7
+   -X: wallx9
+   +X: wallx2  passage>C3x4  step>R2x1  passage>C4x2
+   -Z: wallx3
+   +Z: alcove>C2x1  step>R2x2
+R2 C space S2 level 13 ceiling 22 x4-7 z8-14 (4x7) floors 20 furniture 8
+   -X: wallx7
+   +X: alcove>C18x1  step>R0x1  wallx4  stepx1
+   -Z: step>R1x2  passage>C17x2
+   +Z: wallx4
+R3 D space S3 level 13 ceiling 22 x9-15 z3-6 (7x4) floors 20 furniture 8
+   -X: stepx2  passage>C17x2
+   +X: wallx4
+   -Z: wallx7
+   +Z: step>R0x5  wallx1  alcove>C19x1
+S0 level 5 ceiling 22 rooms R0 overlooked by S2,S3 (double height)
+S1 level 5 ceiling 14 rooms R1
+S2 level 13 ceiling 22 rooms R2
+S3 level 13 ceiling 22 rooms R3
+C2 alcove L5 x4-5 z12-14 cols 5 rooms R1 ceiling 14
+C3 passage L5 x7-12 z3-8 cols 19 rooms R0,R1 ceiling 22 width 4 (arch)
+C4 passage L5 x7-11 z10-16 cols 16 rooms R0,R1 ceiling 22 width 2 (door)
+C17 passage L13 x6-8 z3-7 cols 10 rooms R2,R3 ceiling 22 width 2 (door)
+C18 alcove L13 x8-9 z8-8 cols 2 rooms R2 ceiling 22
+C19 alcove L13 x15-15 z7-7 cols 1 rooms R3 ceiling 22
+14 pockets (columns out of reach)
+
+Level 5 rooms
+    0         1
+    0123456789012345678
+z00                 ###
+z01                 ###
+z02    ,############  #
+z03    #BBB#===== ,,#
+z04    #BBB#===== ,,#
+z05    #BBB====   ,,#
+z06    #BBB===    ,,#
+z07    #BBB=AAAAAA#,#
+z08    #BBB=AAAAAA###
+z09    #BBB AAAAAA###
+z10    #BBB=AAAAAA###
+z11    #BBB=AAAAAA###
+z12    #~  =AAAAAA###
+z13    #~~ =AAAAAA###
+z14    #~~ =====#####
+z15 ,## ####====##### #
+z16 ,##     ===       #
+z17 ,###            ###
+z18        #,,,,#
+z19        #    #
+z20        #    #
+z21        ######
+Level 5 columns
+    0         1
+    0123456789012345678
+z00                 MMM
+z01                 MMM
+z02    +MMMMMMMMMMMM  E
+z03    Mf..M...oo ..M
+z04    Mf..M...ff ..M
+z05    Mf..a...   ..M
+z06    M......    ..M
+z07    M..........MfM
+z08    M..........CCM
+z09    M... ......CCM
+z10    Mff........CCM
+z11    Mff........CCM
+z12    M.  .......CCM
+z13    M.f .......CCM
+z14    Mff affffCCCCM
+z15 .MM MMMMffffMMMMM E
+z16 .MM     fff       E
+z17 .MME            EEE
+z18        C....C
+z19        C    C
+z20        C    C
+z21        CCCCCC
+Level 5 air
+    0         1
+    0123456789012345678
+z00
+z01
+z02
+z03     888 77777
+z04     888 77777
+z05     887g777
+z06     887777
+z07     8877gggggg
+z08     7777gggggg
+z09     777 gggggg
+z10     8877gggggg
+z11     8877gggggg
+z12     7  7gggggg
+z13     77 7gggggg
+z14     88 ggggg
+z15         7777
+z16         ggg
+z17
+z18
+z19
+z20
+z21
+
+Level 6 rooms
+    0        1
+    123456789012345678
+z00                ###
+z01                ###
+z02    ############,,#
+z03   ##  #   ###  #,#
+z04   ##  #   ,,#  ###
+z05   ##  #     #  #,#
+z06   #      ####  #,#
+z07   #          ###,#
+z08   #          ###,#
+z09   #   ,      ###,#
+z10   #,,        ###,#
+z11   #,,        ###,#
+z12   #          ###,#
+z13   # ,        ###,#
+z14   #,, ,,,,,#####,#
+z15 ##,####,,,,#####,#
+z16 ##,,#,,,,,,,,,,,,#
+z17 ######,,,,,,######
+z18       #    #
+z19       #    #
+z20       #    #
+z21       ######
+Level 6 columns
+    0        1
+    123456789012345678
+z00                MMM
+z01                MMM
+z02    MMMMMMMMMMMMffE
+z03   ME  M   CCE  MfE
+z04   ME  M   ffE  MME
+z05   ME  M     E  MfE
+z06   M      MEEM  MfE
+z07   M          MEMfE
+z08   M          CCMfE
+z09   M   o      CCMfE
+z10   Mff        CCMfE
+z11   Mff        CCMfE
+z12   M          CCMfE
+z13   M f        CCMfE
+z14   Mof o....CCCCMfE
+z15 MMfMMMMggggMMMMMfE
+z16 MMffMff....ffffffE
+z17 MMEEEEfggggfEEEEEE
+z18       C    C
+z19       C    C
+z20       C    C
+z21       CCCCCC
+Level 6 air
+    0        1
+    123456789012345678
+z00
+z01
+z02
+z03
+z04
+z05
+z06
+z07
+z08
+z09
+z10
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+
+Level 13 rooms
+    0        1
+    123456789012345678
+z00                ,,,
+z01                ,,,
+z02   ,#############,,
+z03   #,  = DDDDDDD#,,
+z04   #,  = DDDDDDD#,,
+z05   #, ===DDDDDDD#,,
+z06   #  ===DDDDDDD#,,
+z07   #  ==      #~#,,
+z08   #CCCC~~    ###,,
+z09   #CCCC      ###,,
+z10   #CCCC#     ###,,
+z11   #CCCC#     ###,,
+z12   #CCCC#     ###,,
+z13   #CCCC#     ###,,
+z14   #CCCC    #####,,
+z15 ,,######   #####,,
+z16 ,,,,,,,    ,,,,,,,
+z17 ,,,,,,,    ,,,,,,,
+z18       ,    ,
+z19       ,    ,
+z20       ,    ,
+z21       ,,,,,,
+Level 13 columns
+    0        1
+    123456789012345678
+z00                ...
+z01                ...
+z02   +MMMMMMMMMMMMM..
+z03   Mf  o ..of.ffM..
+z04   Mf  a ..ff.ffM..
+z05   Mf ..........M..
+z06   M  ..........M..
+z07   M  ..      MfM..
+z08   M....oo    CCM..
+z09   M....      CCM..
+z10   Mff..M     CCM..
+z11   Mff..M     CCM..
+z12   M....M     CCM..
+z13   Mof..M     CCM..
+z14   Mff..    CCCCM..
+z15 ..MMMMMM   MMMMM..
+z16 .......    .......
+z17 .......    .......
+z18       .    .
+z19       .    .
+z20       .    .
+z21       ......
+Level 13 air
+    0        1
+    123456789012345678
+z00
+z01
+z02
+z03       8 8888888
+z04       8 8888888
+z05      8888888888
+z06      8888888888
+z07      88       8
+z08    888888
+z09    8888
+z10    8888
+z11    8888
+z12    8888
+z13    8888
+z14    8888
+z15
+z16
+z17
+z18
+z19
+z20
+z21

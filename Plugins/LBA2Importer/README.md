@@ -81,6 +81,34 @@ it to `Saved/LookDev/enclosure/cells/gridNNN.txt` with its air ("C x z room floo
 per connector column) and its walls. `Tools/room_plan.py <grid ...>` prints and draws the same plan (in
 `Saved/LookDev/plans`), so a rule can be tried and checked on any grid before it is ported.
 
+### Enclosed interiors: the saved plan, its views and golden tests
+
+What the importer understood of each grid is saved as **`FLBAGridPlan`** (runtime module, `LBAGridPlan.h`), the
+foundation for tools that edit rooms later: the levels (what each column is there and the rule that made a wall a
+wall, the wall runs, gaps and partition lines), the rooms (level, rectangle, ceiling, space, and for each of their
+four sides the runs of what lies past it), spaces, connectors, flights, the air the enclosure closes column by
+column, and for caves the hollow (floor, spring and roof per column, supports). Every grid gets one, open-air
+grids too (marked not enclosed). It is saved three ways by each import of the interiors:
+
+- **`DA_Grid_NNN_Plan`** (`ULBAGridPlanAsset`, `Interiors/Grids/Plans`), every field visible in the editor.
+- A **GridPlan** actor in the grid's level (editor only) draws it over the geometry: room floors and their air up to
+  the ceiling, each side colored by what lies past it (wall red, open side green, connector its kind's color, step
+  orange, open gray), connectors (stairs yellow, passage cyan, exit magenta, alcove blue), wall columns by rule (cut
+  orange, jamb yellow, invisible pale blue, masonry brown, exterior gray), labels. Show it with **Show > Developer >
+  LBA2 Grid Plan**; with the actor selected, click a room or connector to select it and see its data in Details.
+- **Text** in the plugin's `Tests/Plans/gridNNN.txt`, kept in git: the rooms with their sides, spaces, connectors and
+  flights, then top-down maps of each level (X across, Z down: which room or connector holds each column, what each
+  column is, the cells of air over it). After an import, `git diff Tests/Plans` shows what a change did to the plans.
+
+**Tools > LBA2 Plan Browser** (console `lba.PlanBrowser [grid]`) lists every grid's plan and draws it top-down, one
+level at a time, with the same colors; hovering a column tells what it is at every level, clicking a room or
+connector shows its data, **Show in Level** opens the grid's level with its overlay on and frames the selection.
+
+The golden tests **`LBA2.Enclosure.Plans.<level>`** (`Automation RunTests LBA2.Enclosure.Plans`, needs the game's
+data) make each grid's plan afresh with the current code and settings and compare it with its `Tests/Plans` file:
+a difference is a change in how a grid is understood. The fresh plan goes to `Saved/LookDev/plans_actual` to diff;
+if the change is meant, reimport the interiors and commit the files.
+
 ### Enclosed interiors: what holds the roof
 
 One idea covers the layouts that are not houses: **a roof spans between what holds it, and rises with the distance

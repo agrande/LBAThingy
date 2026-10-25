@@ -1,0 +1,82 @@
+Grid 82 L_Grid_082_BarOffice, library 13: rooms, enclosed, room height 6, door height 8
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 7 x5-15 z12-17 (11x6) floors 56 furniture 10
+   -X: wallx6
+   +X: wallx6
+   -Z: passage>C1x4  wallx1  passage>C2x1  wallx5
+   +Z: wallx1  wallx3  wallx1  exit>C3x2  wallx2  wallx2
+R1 B space S1 level 0 ceiling 7 x7-15 z5-8 (9x4) floors 28 furniture 8
+   -X: openx2  passage>C1x2
+   +X: wallx4
+   -Z: wallx2  wallx1  wallx6
+   +Z: passage>C1x2  wallx1  passage>C2x5  wallx1
+S0 level 0 ceiling 7 rooms R0
+S1 level 0 ceiling 7 rooms R1
+C1 passage L0 x5-8 z7-11 cols 16 rooms R0,R1 ceiling 7 width 4 (arch)
+C2 passage L0 x10-14 z9-11 cols 11 rooms R0,R1 ceiling 7 width 1 (door)
+C3 exit L0 x10-11 z18-18 cols 2 rooms R0 ceiling 7
+1 pockets (columns out of reach)
+
+Level 0 rooms
+    0     1
+    4567890123456
+z04 ,############
+z05 #  BBBBBBBBB#
+z06 #  BBBBBBBBB#
+z07 #==BBBBBBBBB#
+z08 #==BBBBBBBBB#
+z09 #====#=====##
+z10 #====#=====##
+z11 #====#=######
+z12 #AAAAAAAAAAA#
+z13 #AAAAAAAAAAA#
+z14 #AAAAAAAAAAA#
+z15 #AAAAAAAAAAA#
+z16 #AAAAAAAAAAA#
+z17 #AAAAAAAAAAA#
+z18 ######>>#####
+z19      ####
+Level 0 columns
+    0     1
+    4567890123456
+z04 +MCCCMCCCCCCM
+z05 C  .f.....foM
+z06 C  .f.....pfM
+z07 Cf..........M
+z08 C......ff...M
+z09 C....Coff..CM
+z10 C....Co....CM
+z11 Cff..CfCCCCCM
+z12 Cff.........M
+z13 Cff....pf...M
+z14 Cff....ff...M
+z15 C...........M
+z16 C...........M
+z17 C...........M
+z18 MCMMMJggJJMMM
+z19      CCCC
+Level 0 air
+    0     1
+    4567890123456
+z04
+z05    666666666
+z06    666666666
+z07  66666666666
+z08  66666666666
+z09  6666 66666
+z10  6666 66666
+z11  6666 6
+z12  66666666666
+z13  66666666666
+z14  66666666666
+z15  66666666666
+z16  66666666666
+z17  66666666666
+z18       66
+z19

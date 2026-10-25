@@ -5,8 +5,10 @@
 #include "Import/LBARoomPlan.h"
 #include "LBAWallStyles.h"
 
+class FLBAHollow;
 class FLBAImportContext;
 class FLBAMeshBuilder;
+struct FLBAGridPlan;
 class UMaterialInterface;
 class UStaticMesh;
 class UTexture2D;
@@ -23,6 +25,8 @@ class UTexture2D;
  * Output layout under <Root>/Interiors/:
  *   Libraries/Lib_NN/   T_LibNN_Bricks atlas, material, SM_LibNN_Layout_MMM kit pieces, DA_LibNN_WallStyles
  *   Grids/              SM_Grid_NNN (+ _Collision), L_Grid_NNN_<SceneName> levels
+ *   Grids/Plans/        DA_Grid_NNN_Plan: what the importer understood of each grid (FLBAGridPlan), also written as
+ *                       text to the plugin's Tests/Plans
  */
 class FLBAIsoImporter
 {
@@ -31,6 +35,12 @@ public:
 	~FLBAIsoImporter();
 
 	int32 ImportAll();
+
+	/** Opens the game's interiors to make plans only (MakeGridPlan): no assets are created. */
+	bool BeginPlans();
+	int32 GetNumGrids() const { return Header.GetNumGrids(); }
+	/** The plan of a grid, as the import saves it. */
+	bool MakeGridPlan(int32 GridIndex, FLBAGridPlan& Out);
 
 	/** Brick atlas of one library: texture plus the atlas cell of every used brick. */
 	struct FAtlas
@@ -60,10 +70,16 @@ private:
 	const TArray<FLBAWallStyle>& GetWallStyles(int32 LibraryIndex);
 	/** Bricks of a library's walls, learned from the plans of all its grids (FLBARoomPlan). */
 	const TSet<int32>& GetWallBricks(int32 LibraryIndex);
+	/** What the enclosure is built from: the room plan or the hollow, and the air of the rooms. */
+	struct FGridPlanParts;
+	/** The plan of a grid (Out) and what it was made from (Parts). */
+	bool BuildGridPlan(int32 GridIndex, const FLBAGrid& Grid, FGridPlanParts& Parts, FLBAGridPlan& Out);
 	bool ImportGrid(int32 GridIndex);
 	FString GetGridLevelName(int32 GridIndex) const;
 
 	FLBAImportContext& Context;
+	/** Plans only (BeginPlans): atlases keep their coverage and colors, no textures or materials. */
+	bool bPlansOnly = false;
 	const FLBAHqrFile* Bkg = nullptr;
 	FLBABkgHeader Header;
 	TArray<FLBASceneMapEntry> SceneMap;

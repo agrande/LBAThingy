@@ -1,0 +1,100 @@
+Grid 17 L_Grid_017_Sewers, library 1: hollow, enclosed, room height 6, door height 6
+hollow 1978 columns (1938 with floor), 0 supports, 1978 under the roof; spring 20.0-20.0, roof up to 28.0
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+
+Hollow floor
+    0      1         2         3         4         5
+    34567890123456789012345678901234567890123456789012
+z15      bccb                                   cccc
+z16      c55cc                                 _c11cc
+z17      e55555555678999999998765550000555555551b11b11
+z18      555555555678999999998765550000555555551111111
+z19      555555555678999999998765550000555555111111111
+z20      5550000___00001111000000000000000000000111111
+z21      555000000000000000000000000000000000000111111
+z22      555000000000000000000000000000000000000111111
+z23      555000000000000000000000000000000000000111111
+z24      444000000000000000000000000000000000000111111
+z25      333000000000000000000000000000000000000111111
+z26      222000000000000000000000000000000000000111000
+z27      111000000000000000000000000000000000000111000
+z28      1110000000000000000000000_0000000000000111000
+z29      1110000000000000000000000_0000000000000111000
+z30      111000000000000000000000000000000000000111000
+z31      000000000000000000000000000000000000000111000
+z32      00000000000000000______7777_00000000002111000
+z33       0000000000000000_99aa97777700000000000111000
+z34       0000000000000000_99aa97777700000000000111000
+z35       0000000000000000_999997777700000000000111000
+z36      _1100000000000000_999997777700000000000000000
+z37     111100000000000000_999997777700000000000000000
+z38     111100000000000000_999997777700000000000000000
+z39      _1100000077777777_999997777700000000000000000
+z40       0000000077777777_888777777700000000000000000
+z41       0000000077777777_777777777700000000000000000
+z42       0000000077cccccee777777777700000000000111000
+z43       0000000077cdddddeee7777777700000000000111000
+z44       0000000077cd___deee7777666_00000000000111000
+z45       0000000077cd___dca33345555500000000000111000
+z46       0000000077cd___dc333345555500000000000111000
+z47      _0000000077cdddddc333345555500000000000000000
+z48     __0000000077ccccccca44445555500000000000000000
+z49    7778999999877777c444444440000000000000000111000
+z50    7778999999877777c444444440000000000000000111000
+z51    77700000000000000000000000000000000000000111000
+z52    66600000000000000000000000000000000000000111000
+z53    55500000000000000000000000000000000000000111000
+z54    44400000000000000000000000000000000000000111000
+z55   _33300000000000000000000000000000000000000111000
+z56  __33300000000000000000000000000000000000000111000
+z57 33333332111111111100011111111100011100000000000000
+z58 33333332111111111100011111111100011100000000000000
+z59    33332111111111100011111111100011100000000000000
+Hollow roof
+    0      1         2         3         4         5
+    34567890123456789012345678901234567890123456789012
+z15      mmmm                                   mmmm
+z16      moonm                                 mnoonm
+z17      moponmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnopponm
+z18      moppooooooooooooooooooooooooooooooooooopqqpom
+z19      mopqpppppppppppppppppppppppppppppppppppqqqpom
+z20      mopqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqrqpom
+z21      mopqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrqpom
+z22      mopqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrqpom
+z23      mopqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrqpom
+z24      mopqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrqpom
+z25      mopqrrrrsssssssssssssssssssssssssssssrrrrqpom
+z26      mopqrrrrsssssssssssssssssssssssssssssrrrrqpom
+z27      mopqrrrrsssssssssssssssssssssssssssssrrrrqpom
+z28      mopqrrrrsssssssssssssssssssssssssssssrrrrqpom
+z29      mopqrrrrsssssssssssssssssssssssssssssrrrrqpom
+z30      mopqrrrrrssssssssssssssssssssssssssssrrrrqpom
+z31      mopqqrrrrssssssssssssssssssssssssssssrrrrqpom
+z32      mnopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z33       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z34       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z35       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z36      mnopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z37     mnopqqrrrrssssssssssssssssssssssssssssrrrrqpom
+z38     mnopqqrrrrssssssssssssssssssssssssssssrrrrqpom
+z39      mnopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z40       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z41       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z42       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z43       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z44       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z45       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z46       mopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z47      mnopqrrrrssssssssssssssssssssssssssssrrrrqpom
+z48     mnopqqrrrrssssssssssssssssssssssssssssrrrrqpom
+z49    mnopqqrrrrrssssssssssssssssssssssssssssrrrrqpom
+z50    mopqqrrrrrsssssssssssssssssssssssssssssrrrrqpom
+z51    mopqrrrrrrsssssssssssssssssssssssssssssrrrrqpom
+z52    mopqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrqpom
+z53    mopqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrqpom
+z54    mopqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrqpom
+z55   mnopqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrqpom
+z56  mnopqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpom
+z57 mnooppppppppppppppppppppppppppppppppppppppppppppom
+z58 mmmnooooooooooooooooooooooooooooooooooooooooooooom
+z59    mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm

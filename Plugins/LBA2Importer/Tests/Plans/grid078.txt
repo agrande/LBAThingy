@@ -1,0 +1,96 @@
+Grid 78 L_Grid_078_CasinoWheelRoom, library 13: rooms, enclosed, room height 6, door height 8
+Levels 6
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 6 ceiling 13 x35-45 z40-55 (11x16) floors 170 furniture 6
+   -X: wallx12  alcove>C0x2  wallx2
+   +X: wallx5  open_side>R1x2  wallx9
+   -Z: wallx11
+   +Z: wallx11
+R1 B space S0 level 6 ceiling 13 x46-56 z45-46 (11x2) floors 22 furniture 0
+   -X: open_side>R0x2
+   +X: openx2
+   -Z: wallx10  wallx1
+   +Z: wallx9  wallx2
+S0 level 6 ceiling 13 rooms R0,R1
+C0 alcove L6 x34-34 z52-53 cols 2 rooms R0 ceiling 13
+
+Level 6 rooms
+    1  2         3         4         5
+    7890123456789012345678901234567890123456
+z37     ###          #
+z38                  #
+z39                  #############
+z40                  #AAAAAAAAAAA#
+z41                  #AAAAAAAAAAA#
+z42                  #AAAAAAAAAAA#
+z43                  #AAAAAAAAAAA#
+z44                  #AAAAAAAAAAA###########
+z45                  #AAAAAAAAAAABBBBBBBBBBB
+z46                  #AAAAAAAAAAABBBBBBBBBBB
+z47                  #AAAAAAAAAAA###########
+z48                  #AAAAAAAAAAA#
+z49                  #AAAAAAAAAAA#
+z50                  #AAAAAAAAAAA#
+z51                  #AAAAAAAAAAA#
+z52                  ~AAAAAAAAAAA#
+z53                  ~AAAAAAAAAAA#
+z54                  #AAAAAAAAAAA#
+z55                  #AAAAAAAAAAA#
+z56                  #############
+z57                  #
+z58 ##################
+Level 6 columns
+    1  2         3         4         5
+    7890123456789012345678901234567890123456
+z37     MMM          M
+z38                  M
+z39                  MMMMMMMMMMMMM
+z40                  C...........M
+z41                  C...........M
+z42                  Cff.........M
+z43                  Cff.........M
+z44                  Cff.........MMMMMMMMMMJ
+z45                  C......................
+z46                  C......................
+z47                  C...........MMMMMMMMMJJ
+z48                  C...........M
+z49                  C...........M
+z50                  C...........M
+z51                  C...........M
+z52                  g...........M
+z53                  g...........M
+z54                  C...........M
+z55                  C...........M
+z56                  CMMMMMMMMMMMM
+z57                  M
+z58 MMMMMMMMMMMMMMMMMM
+Level 6 air
+    1  2         3         4         5
+    7890123456789012345678901234567890123456
+z37
+z38
+z39
+z40                   66666666666
+z41                   66666666666
+z42                   66666666666
+z43                   66666666666
+z44                   66666666666
+z45                   6666666666666666666666
+z46                   6666666666666666666666
+z47                   66666666666
+z48                   66666666666
+z49                   66666666666
+z50                   66666666666
+z51                   66666666666
+z52                  666666666666
+z53                  666666666666
+z54                   66666666666
+z55                   66666666666
+z56
+z57
+z58

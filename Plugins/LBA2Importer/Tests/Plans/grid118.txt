@@ -1,0 +1,75 @@
+Grid 118 L_Grid_118_Nursery, library 15: rooms, not enclosed, room height 8, door height 7
+Levels 2
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 2 ceiling 11 x31-43 z26-38 (13x13) floors 114 furniture 55
+   -X: wallx13
+   +X: wallx1  wallx12
+   -Z: wallx13
+   +Z: alcove>C0x2  wallx3  wallx1  exit>C1x2  wallx1  wallx4
+S0 level 2 ceiling 11 rooms R0
+C0 alcove L2 x31-32 z39-39 cols 2 rooms R0 ceiling 11
+C1 exit L2 x37-38 z39-39 cols 2 rooms R0 ceiling 11
+1 pockets (columns out of reach)
+
+Level 2 rooms
+    3         4
+    0123456789012345
+z25 ##############
+z26 #AAAAAAAAAAAAA#
+z27 #AAAAAAAAAAAAA##
+z28 #AAAAAAAAAAAAA##
+z29 #AAAAAAAAAAAAA##
+z30 #AAAAAAAAAAAAA##
+z31 #AAAAAAAAAAAAA##
+z32 #AAAAAAAAAAAAA##
+z33 #AAAAAAAAAAAAA##
+z34 #AAAAAAAAAAAAA##
+z35 #AAAAAAAAAAAAA##
+z36 #AAAAAAAAAAAAA##
+z37 #AAAAAAAAAAAAA##
+z38 #AAAAAAAAAAAAA##
+z39  ~~####>>#######
+z40   #####  ######,
+Level 2 columns
+    3         4
+    0123456789012345
+z25 EEEEEEEEEEEEEE
+z26 EfffffffffffffE
+z27 Effff.p.......CE
+z28 Ef............CE
+z29 Effff.........CE
+z30 Ef......fffff.CE
+z31 Effff...ff.ff.CE
+z32 Ef......ff.ff.CE
+z33 Ef.......f....CE
+z34 Ef............CE
+z35 Effff.........CE
+z36 Ef............CE
+z37 Effff.........CE
+z38 Ef............CE
+z39  ofCCCJggJCCCCCE
+z40   EEEEJ  JJEEEEf
+Level 2 air
+    3         4
+    0123456789012345
+z25
+z26  8888888888888
+z27  8888888888888
+z28  8888888888888
+z29  8888888888888
+z30  8888888888888
+z31  8888888888888
+z32  8888888888888
+z33  8888888888888
+z34  8888888888888
+z35  8888888888888
+z36  8888888888888
+z37  8888888888888
+z38  8888888888888
+z39  88    77
+z40

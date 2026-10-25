@@ -1,0 +1,110 @@
+Grid 57 L_Grid_057_Shop, library 11: rooms, enclosed, room height 8, door height 7
+Levels 3
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 3 ceiling 12 x6-16 z5-22 (11x18) floors 161 furniture 37
+   -X: wallx6  passage>C3x12
+   +X: open_side>R1x10  wallx8
+   -Z: wallx6  passage>C4x5
+   +Z: wallx11
+R1 B space S0 level 3 ceiling 12 x17-21 z5-14 (5x10) floors 42 furniture 8
+   -X: open_side>R0x10
+   +X: passage>C4x8  wallx2
+   -Z: passage>C4x5
+   +Z: wallx5
+R2 C space S1 level 3 ceiling 12 x3-4 z10-22 (2x13) floors 23 furniture 3
+   -X: alcove>C1x2  wallx1  exit>C0x3  wallx1  alcove>C2x6
+   +X: wallx1  passage>C3x12
+   -Z: wallx2
+   +Z: wallx2
+S0 level 3 ceiling 12 rooms R0,R1
+S1 level 3 ceiling 12 rooms R2
+C0 exit L3 x0-2 z13-15 cols 9 rooms R2 ceiling 12
+C1 alcove L3 x1-2 z10-11 cols 4 rooms R2 ceiling 12
+C2 alcove L3 x2-2 z17-22 cols 6 rooms R2 ceiling 12
+C3 passage L3 x5-5 z11-22 cols 12 rooms R0,R2 ceiling 12 width 12 (arch)
+C4 passage L3 x12-22 z1-12 cols 32 rooms R0,R1 ceiling 12 width 5 (arch)
+2 pockets (columns out of reach)
+
+Level 3 rooms
+    0         1         2
+    012345678901234567890123
+z01               ==########
+z02               === ### =#
+z03           ######=======#
+z04     ########===========#
+z05      #AAAAAAAAAAABBBBB=#
+z06      #AAAAAAAAAAABBBBB=#
+z07      #AAAAAAAAAAABBBBB=#
+z08      #AAAAAAAAAAABBBBB=#
+z09 ######AAAAAAAAAAABBBBB=#
+z10 #~~CC#AAAAAAAAAAABBBBB=#
+z11 #~~CC=AAAAAAAAAAABBBBB=#
+z12 ###CC=AAAAAAAAAAABBBBB=#
+z13 >>>CC=AAAAAAAAAAABBBBB##
+z14 >>>CC=AAAAAAAAAAABBBBB#,
+z15 >>>CC=AAAAAAAAAAA######
+z16 ###CC=AAAAAAAAAAA#,
+z17  #~CC=AAAAAAAAAAA#
+z18  #~CC=AAAAAAAAAAA#
+z19  #~CC=AAAAAAAAAAA#
+z20  #~CC=AAAAAAAAAAA#
+z21  #~CC=AAAAAAAAAAA#
+z22  #~CC=AAAAAAAAAAA#
+z23  #################
+Level 3 columns
+    0         1         2
+    012345678901234567890123
+z01               ++MMMMMMME
+z02               .fo CCC .M
+z03           CEMMMM++fff++M
+z04     EMMMMMMMfff+++fff++M
+z05      Mf..ff...oo..fff..M
+z06      Mf..ff............M
+z07      Mf................M
+z08      M...fff.....oo....M
+z09 EMMMMMff.fff.pf..oo....M
+z10 Mf..oMff.fff.ff........M
+z11 M....+.................M
+z12 JJM..+....pf.......f...M
+z13 .....+....ff..........MM
+z14 .....+................Mf
+z15 .....+...........MMMMMM
+z16 JJJ..+...........Mf
+z17  J...+......f....M
+z18  M...+....ff.....M
+z19  Mff.+....ff.....M
+z20  Mff.+.....f.....M
+z21  M...+.f.........M
+z22  M...+...........M
+z23  EMMMMMMMMMMMMMMMM
+Level 3 air
+    0         1         2
+    012345678901234567890123
+z01               88
+z02               888     8
+z03                 8888888
+z04             88888888888
+z05       88888888888888888
+z06       88888888888888888
+z07       88888888888888888
+z08       88888888888888888
+z09       88888888888888888
+z10  8888 88888888888888888
+z11  8888888888888888888888
+z12    88888888888888888888
+z13 xx88888888888888888888
+z14 xx88888888888888888888
+z15 xx888888888888888
+z16    88888888888888
+z17   888888888888888
+z18   888888888888888
+z19   888888888888888
+z20   888888888888888
+z21   888888888888888
+z22   888888888888888
+z23

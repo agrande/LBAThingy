@@ -1,0 +1,68 @@
+Grid 22 L_Grid_022_Pharmacy, library 2: rooms, enclosed, room height 9, door height 7
+Levels 3
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 3 ceiling 13 x1-11 z1-12 (11x12) floors 96 furniture 36
+   -X: wallx12
+   +X: exit>C0x8  wallx1  alcove>C1x3
+   -Z: wallx11
+   +Z: wallx1  wallx10
+S0 level 3 ceiling 13 rooms R0
+C0 exit L3 x12-13 z1-8 cols 10 rooms R0 ceiling 13
+C1 alcove L3 x12-12 z10-12 cols 3 rooms R0 ceiling 13
+
+Level 3 rooms
+    0         1
+    012345678901234
+z00 ##############
+z01 #AAAAAAAAAAA>#
+z02 #AAAAAAAAAAA>#
+z03 #AAAAAAAAAAA>#
+z04 #AAAAAAAAAAA>#
+z05 #AAAAAAAAAAA>#
+z06 #AAAAAAAAAAA>##
+z07 #AAAAAAAAAAA>>#
+z08 #AAAAAAAAAAA>>#
+z09 #AAAAAAAAAAA###
+z10 #AAAAAAAAAAA~#
+z11 #AAAAAAAAAAA~#
+z12 #AAAAAAAAAAA~#
+z13 ##############
+Level 3 columns
+    0         1
+    012345678901234
+z00 CCCCCCCCCCCCCC
+z01 Cff.ffffffffaC
+z02 Cff..........M
+z03 C............M
+z04 Cf...........M
+z05 Cf...........M
+z06 Cf.ff...ff..fJC
+z07 Cf.fffffff...gC
+z08 Cf...........gC
+z09 Cf..........JJC
+z10 Cf...........J
+z11 Cf.........ffM
+z12 Ca...f..f..ffM
+z13 CCMMMMMMMMMMMM
+Level 3 air
+    0         1
+    012345678901234
+z00
+z01  999999999999
+z02  999999999999
+z03  999999999999
+z04  999999999999
+z05  999999999999
+z06  999999999999
+z07  9999999999997
+z08  9999999999997
+z09  99999999999
+z10  999999999999
+z11  999999999999
+z12  999999999999
+z13

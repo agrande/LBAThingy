@@ -1,0 +1,90 @@
+Grid 29 L_Grid_029_HaciendaCentralArea, library 5: rooms, enclosed, room height 6, door height 7
+Levels 2
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 2 ceiling 9 x1-21 z2-18 (21x17) floors 296 furniture 61
+   -X: wallx17
+   +X: wallx17
+   -Z: wallx2  exit>C0x15  wallx1  wallx2  alcove>C2x1
+   +Z: wallx14  wallx1  exit>C1x2  wallx2  wallx2
+S0 level 2 ceiling 9 rooms R0
+C0 exit L2 x3-17 z0-1 cols 19 rooms R0 ceiling 9
+C1 exit L2 x16-17 z19-19 cols 2 rooms R0 ceiling 9
+C2 alcove L2 x21-21 z1-1 cols 1 rooms R0 ceiling 9
+
+Level 2 rooms
+    0         1         2
+    01234567890123456789012
+z00 ######>>#######>>######
+z01 ###>>>>>>>>>>>>>>>###~#
+z02 #AAAAAAAAAAAAAAAAAAAAA#
+z03 #AAAAAAAAAAAAAAAAAAAAA#
+z04 #AAAAAAAAAAAAAAAAAAAAA#
+z05 #AAAAAAAAAAAAAAAAAAAAA#
+z06 #AAAAAAAAAAAAAAAAAAAAA#
+z07 #AAAAAAAAAAAAAAAAAAAAA#
+z08 #AAAAAAAAAAAAAAAAAAAAA#
+z09 #AAAAAAAAAAAAAAAAAAAAA#
+z10 #AAAAAAAAAAAAAAAAAAAAA#
+z11 #AAAAAAAAAAAAAAAAAAAAA#
+z12 #AAAAAAAAAAAAAAAAAAAAA#
+z13 #AAAAAAAAAAAAAAAAAAAAA#
+z14 #AAAAAAAAAAAAAAAAAAAAA#
+z15 #AAAAAAAAAAAAAAAAAAAAA#
+z16 #AAAAAAAAAAAAAAAAAAAAA#
+z17 #AAAAAAAAAAAAAAAAAAAAA#
+z18 #AAAAAAAAAAAAAAAAAAAAA#
+z19 ################>>#####
+z20                ####
+Level 2 columns
+    0         1         2
+    01234567890123456789012
+z00 MMMMMJggJJMMMMJggJJMMMM
+z01 MMMfoggggogggoggggJMMfM
+z02 Mffff..............fffM
+z03 Mfff...............fffM
+z04 M.....................M
+z05 M.....................M
+z06 M.......pfffffp.......M
+z07 M.......f.....f.......M
+z08 M.......f.oof.f.......M
+z09 M.......f.off.f.......M
+z10 M.......f.fff.f.......M
+z11 M.......f.....f.......M
+z12 M.......pfffffp.......M
+z13 M.....................M
+z14 M.....................M
+z15 M.....................M
+z16 M..f...............oofM
+z17 M.ff...............fffM
+z18 Mfff...............fffM
+z19 MMMMMMMMMMMMMMMJggJJMMM
+z20                CCCC
+Level 2 air
+    0         1         2
+    01234567890123456789012
+z00       66       66
+z01    666666665666666   6
+z02  666666666666666666666
+z03  666666666666666666666
+z04  666666666666666666666
+z05  666666666666666666666
+z06  666666666666666666666
+z07  666666666666666666666
+z08  666666666666666666666
+z09  666666666666666666666
+z10  666666666666666666666
+z11  666666666666666666666
+z12  666666666666666666666
+z13  666666666666666666666
+z14  666666666666666666666
+z15  666666666666666666666
+z16  666666666666666666666
+z17  666666666666666666666
+z18  666666666666666666666
+z19                 66
+z20

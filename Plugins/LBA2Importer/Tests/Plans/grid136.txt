@@ -1,0 +1,136 @@
+Grid 136 L_Grid_136_StatueMiddleMecaPinguinsRoom, library 10: rooms, not enclosed, room height 7, door height 9
+Levels 3 21
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 3 ceiling 11 x12-19 z12-19 (8x8) floors 60 furniture 4
+   -X: wallx8
+   +X: wallx8
+   -Z: wallx7  wallx1
+   +Z: open_side>R1x2  wallx6
+R1 B space S0 level 3 ceiling 11 x12-13 z20-26 (2x7) floors 14 furniture 0
+   -X: wallx1  wallx5  wallx1
+   +X: wallx5  wallx2
+   -Z: open_side>R0x2
+   +Z: wallx2
+S0 level 3 ceiling 11 rooms R0,R1
+1 pockets (columns out of reach)
+
+Level 3 rooms
+    1        2
+    1234567890
+z11 ##########
+z12 #AAAAAAAA#
+z13 #AAAAAAAA#
+z14 #AAAAAAAA#
+z15 #AAAAAAAA#
+z16 #AAAAAAAA#
+z17 #AAAAAAAA#
+z18 #AAAAAAAA#
+z19 #AAAAAAAA#
+z20 #BB#######
+z21 #BB#
+z22 #BB#
+z23 #BB#
+z24 #BB#
+z25 #BB#
+z26 #BB#
+z27 ####
+Level 3 columns
+    1        2
+    1234567890
+z11 CMMMMMMMEE
+z12 M......ffM
+z13 M......ffM
+z14 M........M
+z15 M........M
+z16 M........M
+z17 M........M
+z18 M........M
+z19 M........M
+z20 E..MMMMMMM
+z21 M..M
+z22 M..M
+z23 M..M
+z24 M..M
+z25 M..J
+z26 J..J
+z27 CCCC
+Level 3 air
+    1        2
+    1234567890
+z11
+z12  77777777
+z13  77777777
+z14  77777777
+z15  77777777
+z16  77777777
+z17  77777777
+z18  77777777
+z19  77777777
+z20  77
+z21  77
+z22  77
+z23  77
+z24  77
+z25  77
+z26  77
+z27
+
+Level 21 rooms
+    1      2
+    3456789012
+z13 ,,,   ,,,
+z14 ,,,,,,,,,
+z15 ,,,,,,,,,,
+z16 ,,,,,,,,,,
+z17 ,,,,,,
+z18 ,,,,,
+z19 ,,,,,
+z20 ,,,,,
+z21  ,,,,
+z22  ,,,,,
+z23  ,,,,,
+z24  ,,,
+z25  ,,,
+z26   ,,
+z27   ,,
+Level 21 columns
+    1      2
+    3456789012
+z13 ...   ...
+z14 .........
+z15 ..........
+z16 ..........
+z17 ......
+z18 .....
+z19 .....
+z20 .....
+z21  ....
+z22  .....
+z23  .....
+z24  ...
+z25  ...
+z26   ..
+z27   ..
+Level 21 air
+    1      2
+    3456789012
+z13
+z14
+z15
+z16
+z17
+z18
+z19
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27

@@ -1,0 +1,65 @@
+Grid 114 L_Grid_114_HotelSpyRoom, library 8: rooms, enclosed, room height 11, door height 8
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 12 x1-11 z2-11 (11x10) floors 84 furniture 26
+   -X: wallx6  wallx1  wallx3
+   +X: wallx10
+   -Z: wallx1  wallx3  wallx1  wallx6
+   +Z: wallx6  wallx1  exit>C1x2  wallx2
+S0 level 0 ceiling 12 rooms R0
+C1 exit L0 x8-9 z12-12 cols 2 rooms R0 ceiling 12
+1 pockets (columns out of reach)
+
+Level 0 rooms
+    0         1
+    0123456789012
+z01 ,############
+z02 #AAAAAAAAAAA#
+z03 #AAAAAAAAAAA#
+z04 #AAAAAAAAAAA#
+z05 #AAAAAAAAAAA#
+z06 #AAAAAAAAAAA#
+z07 #AAAAAAAAAAA#
+z08 #AAAAAAAAAAA#
+z09 #AAAAAAAAAAA#
+z10 #AAAAAAAAAAA#
+z11 #AAAAAAAAAAA#
+z12 ########>>###
+z13        ####
+Level 0 columns
+    0         1
+    0123456789012
+z01 +ECCCMCCCCCCM
+z02 Cffff..fff..M
+z03 Cffpf..fff..M
+z04 Cffff.......M
+z05 Cffff.......M
+z06 C...........M
+z07 C.........pfM
+z08 M.........ffM
+z09 C...........M
+z10 C...........M
+z11 C...........M
+z12 MMMMMMMJggJJM
+z13        CCCC
+Level 0 air
+    0         1
+    0123456789012
+z01
+z02  bbbbbbbbbbb
+z03  bbbbbbbbbbb
+z04  bbbbbbbbbbb
+z05  bbbbbbbbbbb
+z06  bbbbbbbbbbb
+z07  bbbbbbbbbbb
+z08  bbbbbbbbbbb
+z09  bbbbbbbbbbb
+z10  bbbbbbbbbbb
+z11  bbbbbbbbbbb
+z12         88
+z13

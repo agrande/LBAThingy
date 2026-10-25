@@ -395,3 +395,23 @@ FString FLBAHollow::Describe() const
 	return FString::Printf(TEXT("hollow %d columns (%d with floor), %d supports, %d under the roof; spring %.1f-%.1f, roof up to %.1f\n"),
 		Hollow, NumFloors, NumSupports, NumUnderRoof, NumUnderRoof ? SpringMin : 0.f, SpringMax, RoofMax);
 }
+
+void FLBAHollow::ToGridPlan(FLBAGridPlanHollow& Out) const
+{
+	Out.Columns.Reset();
+	for (int32 Index = 0; Index < SizeXZ * SizeXZ; ++Index)
+	{
+		if (!InHollow[Index])
+		{
+			continue;
+		}
+		const FIntPoint Column(Index % SizeXZ, Index / SizeXZ);
+		FLBAGridPlanHollowColumn& Saved = Out.Columns.AddDefaulted_GetRef();
+		Saved.Column = Column;
+		Saved.Floor = GetFloor(Column);
+		Saved.bSupport = Supports[Index];
+		Saved.Spring = GetSpring(Column.X + 0.5f, Column.Y + 0.5f);
+		Saved.Roof = GetRoof(Column.X + 0.5f, Column.Y + 0.5f);
+	}
+	Out.Summary = Describe().TrimEnd();
+}

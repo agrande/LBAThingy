@@ -1,0 +1,67 @@
+Grid 18 L_Grid_018_SewersTreasureRoom, library 1: rooms, enclosed, room height 6, door height 6
+Levels 1
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 1 ceiling 8 x1-8 z1-12 (8x12) floors 71 furniture 25
+   -X: wallx4  wallx3  wallx5
+   +X: wallx9  wallx1  exit>C0x2
+   -Z: wallx8
+   +Z: wallx7  wallx1
+S0 level 1 ceiling 8 rooms R0
+C0 exit L1 x9-9 z11-12 cols 2 rooms R0 ceiling 8
+
+Level 1 rooms
+    0         1
+    01234567890
+z00 ##########
+z01 #AAAAAAAA#
+z02 #AAAAAAAA#
+z03 #AAAAAAAA#
+z04 #AAAAAAAA#
+z05 #AAAAAAAA#
+z06 #AAAAAAAA#
+z07 #AAAAAAAA#
+z08 #AAAAAAAA#
+z09 #AAAAAAAA#
+z10 #AAAAAAAA##
+z11 #AAAAAAAA>#
+z12 #AAAAAAAA>#
+z13 ###########
+Level 1 columns
+    0         1
+    01234567890
+z00 MMMMMMMMMM
+z01 Ma.ffff.aM
+z02 M..ffff..M
+z03 Mf.ffff..M
+z04 M..ffff..M
+z05 E........M
+z06 E........M
+z07 E........M
+z08 Ma.......M
+z09 Mf.......M
+z10 M........JC
+z11 Mff......+C
+z12 Mff......+C
+z13 MMMMMMMMJJC
+Level 1 air
+    0         1
+    01234567890
+z00
+z01  66666666
+z02  66666666
+z03  66666666
+z04  66666666
+z05  66666666
+z06  66666666
+z07  66666666
+z08  66666666
+z09  66666666
+z10  66666666
+z11  666666666
+z12  666666666
+z13

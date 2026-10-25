@@ -1,0 +1,113 @@
+Grid 60 L_Grid_060_OnTheRockyPeak, library 11: rooms, not enclosed, room height 8, door height 7
+Levels 0 6
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 15 x16-29 z1-3 (14x3) floors 42 furniture 0
+   -X: wallx3
+   +X: wallx3
+   -Z: wallx13  wallx1
+   +Z: wallx11  wallx1  wallx2
+R1 B space S1 level 6 ceiling 15 x2-19 z11-13 (18x3) floors 44 furniture 10
+   -X: wallx3
+   +X: wallx3
+   -Z: openx1  open_side>R2x4  wallx5  wallx7  wallx1
+   +Z: wallx16  wallx2
+R2 C space S1 level 6 ceiling 15 x3-6 z2-10 (4x9) floors 31 furniture 5
+   -X: wallx4  exit>C0x3  wallx1  openx1
+   +X: open_side>R3x2  wallx7
+   -Z: wallx3  passage>C2x1
+   +Z: open_side>R1x4
+R3 D space S1 level 6 ceiling 15 x7-15 z1-3 (9x3) floors 27 furniture 0
+   -X: passage>C2x1  open_side>R2x2
+   +X: step>R0x3
+   -Z: wallx9
+   +Z: wallx9
+S0 level 0 ceiling 15 rooms R0 overlooked by S1 (double height)
+S1 level 6 ceiling 15 rooms R1,R2,R3
+C0 exit L6 x0-2 z4-8 cols 12 rooms R2 ceiling 15
+C2 passage L6 x6-6 z1-1 cols 1 rooms R2,R3 ceiling 15 width 1 (door)
+3 pockets (columns out of reach)
+
+Level 0 rooms
+    1       2         3
+    2345678901234567890
+z00    ################
+z01    #AAAAAAAAAAAAAA#
+z02    #AAAAAAAAAAAAAA#
+z03    #AAAAAAAAAAAAAA#
+z04 ###################
+Level 0 columns
+    1       2         3
+    2345678901234567890
+z00    MMMMMMMMMMMMMMJC
+z01    M..............C
+z02    M..............C
+z03    M..............C
+z04 CCCCCCCCCCCCCCCMJJC
+Level 0 air
+    1       2         3
+    2345678901234567890
+z00
+z01     eeeeeeeeeeeeee
+z02     eeeeeeeeeeeeee
+z03     eeeeeeeeeeeeee
+z04
+
+Level 6 rooms
+    0         1         2         3
+    0123456789012345678901234567890
+z00   #,,##############      ######
+z01   ####=DDDDDDDDD              #
+z02   #CCCCDDDDDDDDD              #
+z03   #CCCCDDDDDDDDD              #
+z04  >#CCCC########################
+z05 >>#CCCC#,,
+z06 >>>CCCC#
+z07 >>>CCCC#
+z08 >>>CCCC#
+z09 ###CCCC#,
+z10  # CCCC##############
+z11  #BBBBBBBBBBBBBBBBBB#
+z12  #BBBBBBBBBBBBBBBBBB#
+z13  #BBBBBBBBBBBBBBBBBB#
+z14  ####################
+Level 6 columns
+    0         1         2         3
+    0123456789012345678901234567890
+z00   C++EMMMMMMMMMMMMM      MMMMJC
+z01   MMMM..........              C
+z02   Mf............              C
+z03   M.............              C
+z04  .M....CCCCCCCCCCCCCCCCCCCCMJJC
+z05 ofM....Cf.
+z06 ooff...C
+z07 .fff...C
+z08 .fff...C
+z09 CCJ....Co
+z10  J f...CCCCCMMMMMMMJC
+z11  Mffff..............C
+z12  M.fff..............C
+z13  M.fff..............C
+z14  MMMMMMMMMMMMMMMMMJJC
+Level 6 air
+    0         1         2         3
+    0123456789012345678901234567890
+z00
+z01       8888888888
+z02    8888888888888
+z03    8888888888888
+z04  x 8888
+z05 xx 8888
+z06 xx88888
+z07 xx88888
+z08 xx88888
+z09    8888
+z10    8888
+z11   888888888888888888
+z12   888888888888888888
+z13   888888888888888888
+z14

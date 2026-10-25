@@ -15,6 +15,7 @@
 #include "Import/LBABodyConverter.h"
 #include "Import/LBARoomPlan.h"
 #include "Import/LBAEnvironment.h"
+#include "Import/LBAGridPlanText.h"
 #include "Import/LBAHollow.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
@@ -23,6 +24,7 @@
 #include "Import/LBAWallSurvey.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
+#include "LBAGridPlanActor.h"
 #include "LBATypes.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -696,22 +698,9 @@ namespace
 
 	/**
 	 * A column of air the enclosure closes: a room's, a connector's or a flight's column (FLBARoomPlan), from the cell
-	 * over its floor (Floor + 1) to the first cell above its air (Top).
+	 * over its floor (Floor + 1) to the first cell above its air (Top). Saved with the plan.
 	 */
-	struct FAirColumn
-	{
-		FIntPoint Column = FIntPoint::ZeroValue;
-		/** The plan level its column is judged at (for a flight's column, the highest level under its step). */
-		int32 Level = 0;
-		int32 Floor = 0;
-		int32 Top = 0;
-		/** Whose wallpaper its walls take. */
-		int32 Space = INDEX_NONE;
-		/** Room (a room's column), else INDEX_NONE. */
-		int32 Room = INDEX_NONE;
-		/** Connector (a connector's or a flight's column), else INDEX_NONE. */
-		int32 Connector = INDEX_NONE;
-	};
+	using FAirColumn = FLBAGridPlanAir;
 
 	/**
 	 * The air of a grid's plan, column by column:
@@ -1620,6 +1609,10 @@ const FLBAIsoImporter::FAtlas* FLBAIsoImporter::GetAtlas(int32 LibraryIndex)
 		}
 	}
 
+	if (bPlansOnly)
+	{
+		return Atlases.Add(LibraryIndex, MakeUnique<FAtlas>(MoveTemp(Atlas))).Get();
+	}
 	const FString Folder = Context.GetContentPath(FString::Printf(TEXT("Interiors/Libraries/Lib_%02d"), LibraryIndex));
 	Atlas.Texture = Context.CreateTexture(Folder, FString::Printf(TEXT("T_Lib%02d_Bricks"), LibraryIndex), Atlas.Width, Atlas.Height, Pixels, false);
 	Atlas.Material = Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Atlas.Texture, Folder);
@@ -1829,6 +1822,90 @@ const TSet<int32>& FLBAIsoImporter::GetWallBricks(int32 LibraryIndex)
 	return Result;
 }
 
+struct FLBAIsoImporter::FGridPlanParts
+{
+	TUniquePtr<FLBARoomPlan> Rooms;
+	TUniquePtr<FLBAHollow> Hollow;
+	/** An exit's columns past its doorway, left open (BuildAir). */
+	TSet<FIntPoint> BeyondExits;
+};
+
+bool FLBAIsoImporter::BuildGridPlan(int32 GridIndex, const FLBAGrid& Grid, FGridPlanParts& Parts, FLBAGridPlan& Out)
+{
+	const FLBALibrary* Library = GetLibrary(Grid.LibraryIndex);
+	const FAtlas* Atlas = GetAtlas(Grid.LibraryIndex);
+	if (!Library || !Atlas)
+	{
+		return false;
+	}
+	const FLBAEnclosureSettings Settings = Context.GetProjectSettings().GetEnclosure(Grid.LibraryIndex, GridIndex);
+	TSet<int32> FrameLayouts;
+	if (const FLBALibraryEnclosure* LibraryEnclosure = Context.GetProjectSettings().FindLibraryEnclosure(Grid.LibraryIndex))
+	{
+		FrameLayouts.Append(LibraryEnclosure->CutFrames);
+	}
+	const FCellQuery Query = MakeGridQuery(Grid, *Library, Header.ForbiddenBrick);
+	const FLBAGridCells Cells = MakePlanCells(Query, Grid, *Library, Atlas, FrameLayouts);
+
+	Out = FLBAGridPlan();
+	Out.Grid = GridIndex;
+	Out.Name = GetGridLevelName(GridIndex);
+	Out.Library = Grid.LibraryIndex;
+	Out.bEnclosed = Settings.bEnclose;
+	Out.Structure = Settings.Structure;
+	Out.RoomHeight = Settings.RoomHeight;
+	Out.DoorHeight = Settings.DoorHeight;
+	if (Settings.Structure == ELBAEnclosureStructure::Hollow)
+	{
+		// A hollow in the rock (FLBAHollow): one roof over the walkable floors, rock walls up to it from what bounds them.
+		FLBAHollow::FSettings HollowSettings;
+		HollowSettings.Clear = Settings.RoomHeight;
+		HollowSettings.SpringReach = Settings.SpringReach;
+		HollowSettings.Shape = FLBAVaultShape{ Settings.VaultRadius, Settings.VaultRise, Settings.VaultNoise };
+		HollowSettings.Seed = GridIndex;
+		Parts.Hollow = MakeUnique<FLBAHollow>(Cells, HollowSettings, DoorZones.FindRef(GridIndex));
+		Parts.Hollow->ToGridPlan(Out.Hollow);
+		return true;
+	}
+	// Grids left open (open-air ones) get a plan too: to look at, not built.
+	Parts.Rooms = MakeUnique<FLBARoomPlan>(Cells, &GetWallBricks(Grid.LibraryIndex), DoorZones.FindRef(GridIndex), Settings.RoomHeight);
+	Parts.Rooms->ToGridPlan(Out);
+	Out.Air = BuildAir(*Parts.Rooms, Settings.DoorHeight, Parts.BeyondExits);
+	Out.BeyondExits = Parts.BeyondExits.Array();
+	Out.BeyondExits.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y != B.Y ? A.Y < B.Y : A.X < B.X; });
+	return true;
+}
+
+bool FLBAIsoImporter::BeginPlans()
+{
+	bPlansOnly = true;
+	if (!LoadHeader())
+	{
+		return false;
+	}
+	LoadDoorZones();
+	// The import plans grids with the remake's fixes of their cells (grids.json patches): so do the plans.
+	Remake = MakeUnique<FLBARemakeAssets>(Context);
+	Remake->Initialize();
+	return true;
+}
+
+bool FLBAIsoImporter::MakeGridPlan(int32 GridIndex, FLBAGridPlan& Out)
+{
+	FLBAGrid Grid;
+	if (!Bkg || !Grid.Load(Bkg->GetEntry(Header.GridStart + GridIndex), GridIndex))
+	{
+		return false;
+	}
+	if (Remake && Remake->IsAvailable())
+	{
+		FLBARemakeAssets::FGridResult Patched;
+		Remake->ApplyPatches(Grid, Patched);
+	}
+	FGridPlanParts Parts;
+	return BuildGridPlan(GridIndex, Grid, Parts, Out);
+}
+
 bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 {
 	FLBAGrid Grid;
@@ -1874,7 +1951,23 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		Context.FinishPendingBuilds();
 	}
 
-	// The plan of the grid's rooms, and the enclosure that closes them for the Enhanced look.
+	// The plan of the grid's rooms (saved: DA_Grid_NNN_Plan, and as text in the plugin's Tests/Plans), and the enclosure
+	// that closes them for the Enhanced look.
+	FLBAGridPlan GridPlan;
+	FGridPlanParts Parts;
+	ULBAGridPlanAsset* PlanAsset = nullptr;
+	if (BuildGridPlan(GridIndex, Grid, Parts, GridPlan))
+	{
+		PlanAsset = Context.CreateOrReuseAsset<ULBAGridPlanAsset>(Context.GetContentPath(TEXT("Interiors/Grids/Plans")), FString::Printf(TEXT("DA_Grid_%03d_Plan"), GridIndex));
+		if (PlanAsset)
+		{
+			const FString LevelName = GetGridLevelName(GridIndex);
+			PlanAsset->Plan = GridPlan;
+			PlanAsset->Level = TSoftObjectPtr<UWorld>(FSoftObjectPath(Folder / TEXT("Levels") / LevelName + TEXT(".") + LevelName));
+			Context.MarkForSave(PlanAsset);
+		}
+		FFileHelper::SaveStringToFile(LBAGridPlanText::Write(GridPlan), *LBAGridPlanText::GetPath(GridIndex), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	}
 	UStaticMesh* EnclosureMesh = nullptr;
 	UStaticMesh* CeilingMesh = nullptr;
 	// The enclosed spaces: the box of their air (cells) and their floor's color, for their bounce light.
@@ -1998,16 +2091,10 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			UTexture2D* Texture = Context.CreateTexture(EnclosureFolder, Name, Width, Height, Pixels, true);
 			return Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Texture, EnclosureFolder);
 		};
-		if (Settings.bEnclose && Settings.Structure == ELBAEnclosureStructure::Hollow)
+		if (Settings.bEnclose && Parts.Hollow)
 		{
 			// A hollow in the rock (FLBAHollow): one roof over the walkable floors, rock walls up to it from what bounds them.
-			const FLBAGridCells Cells = MakePlanCells(Query, Grid, *Library, Atlas, FrameLayouts);
-			FLBAHollow::FSettings HollowSettings;
-			HollowSettings.Clear = Settings.RoomHeight;
-			HollowSettings.SpringReach = Settings.SpringReach;
-			HollowSettings.Shape = VaultShape;
-			HollowSettings.Seed = GridIndex;
-			const FLBAHollow Hollow(Cells, HollowSettings, DoorZones.FindRef(GridIndex));
+			const FLBAHollow& Hollow = *Parts.Hollow;
 			UE_LOG(LogLBA2, Display, TEXT("Grid %d %s"), GridIndex, *Hollow.Describe());
 			if (!Hollow.IsEmpty())
 			{
@@ -2082,15 +2169,14 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				FFileHelper::SaveStringToFile(Dump, *(FPaths::ProjectSavedDir() / FString::Printf(TEXT("LookDev/enclosure/cells/grid%03d.txt"), GridIndex)));
 			}
 		}
-		else if (Settings.bEnclose)
+		else if (Settings.bEnclose && Parts.Rooms)
 		{
-			const FLBAGridCells Cells = MakePlanCells(Query, Grid, *Library, Atlas, FrameLayouts);
-			const FLBARoomPlan Plan(Cells, &GetWallBricks(Grid.LibraryIndex), DoorZones.FindRef(GridIndex), Settings.RoomHeight);
+			const FLBARoomPlan& Plan = *Parts.Rooms;
 			UE_LOG(LogLBA2, Display, TEXT("Grid %d plan:\n%s"), GridIndex, *Plan.Describe());
 			const TArray<FLBAPlanRoom>& Rooms = Plan.GetRooms();
 			const TArray<FLBAPlanSpace>& Spaces = Plan.GetSpaces();
-			TSet<FIntPoint> BeyondExits;
-			const TArray<FAirColumn> Air = BuildAir(Plan, Settings.DoorHeight, BeyondExits);
+			const TSet<FIntPoint>& BeyondExits = Parts.BeyondExits;
+			const TArray<FAirColumn>& Air = GridPlan.Air;
 
 			FEnclosureArt Art;
 			Art.Library = Library;
@@ -2442,6 +2528,11 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform::Identity, TEXT("Grid"), TEXT("Grid")))
 	{
 		Actor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
+	}
+	// The plan, drawn over the grid in the editor (Show > Developer > LBA2 Grid Plan).
+	if (ALBAGridPlanActor* Actor = PlanAsset ? Context.SpawnGeneratedActor<ALBAGridPlanActor>(World, FTransform::Identity, TEXT("GridPlan"), TEXT("Grid")) : nullptr)
+	{
+		Actor->PlanView->Plan = PlanAsset;
 	}
 	if (EnclosureMesh)
 	{

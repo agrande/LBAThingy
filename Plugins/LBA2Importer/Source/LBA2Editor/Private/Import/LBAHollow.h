@@ -102,6 +102,8 @@ public:
 	const FLBAVault& GetVault() const { return Vault; }
 	/** The hollow as text: its size, supports, spring and roof ranges. */
 	FString Describe() const;
+	/** The hollow as saved (FLBAGridPlan): its footprint's columns, their floor, spring and roof at their center. */
+	void ToGridPlan(FLBAGridPlanHollow& Out) const;
 
 	static bool IsInGrid(const FIntPoint& Column) { return FLBARoomPlan::IsInGrid(Column); }
 	static int32 ToColumnIndex(const FIntPoint& Column) { return FLBARoomPlan::ToColumnIndex(Column); }

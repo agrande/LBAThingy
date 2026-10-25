@@ -1,0 +1,144 @@
+Grid 92 L_Grid_092_ShopSecretRoom, library 13: rooms, enclosed, room height 6, door height 8
+Levels 1 5
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 1 ceiling 8 x21-31 z31-43 (11x13) floors 109 furniture 34
+   -X: stairs>C0x6  stepx1  wallx6
+   +X: wallx1  wallx12
+   -Z: wallx6  wallx1  wallx3  wallx1
+   +Z: alcove>C1x4  wallx3  alcove>C2x4
+R1 B space S1 level 5 ceiling 12 x17-19 z37-45 (3x9) floors 27 furniture 0
+   -X: wallx8  wallx1
+   +X: stairs>C0x1  wallx6  wallx1  wallx1
+   -Z: stairs>C0x3
+   +Z: wallx3
+S0 level 1 ceiling 8 rooms R0
+S1 level 5 ceiling 12 rooms R1
+C0 stairs L1+L5+flight x17-20 z31-37 cols 25 rooms R0,R1 ceiling 12
+C1 alcove L1 x21-24 z44-44 cols 4 rooms R0 ceiling 8
+C2 alcove L1 x28-31 z44-44 cols 4 rooms R0 ceiling 8
+1 pockets (columns out of reach)
+F0 flight levels 1,5 x17-20 z34-36 steps 2-4 cells 12
+
+Level 1 rooms
+    1   2         3
+    67890123456789012
+z30 #################
+z31 #////AAAAAAAAAAA#
+z32 #////AAAAAAAAAAA#
+z33 #////AAAAAAAAAAA#
+z34 #////AAAAAAAAAAA#
+z35 #////AAAAAAAAAAA#
+z36 #////AAAAAAAAAAA#
+z37      AAAAAAAAAAA#
+z38     #AAAAAAAAAAA#
+z39     #AAAAAAAAAAA#
+z40     #AAAAAAAAAAA#
+z41     #AAAAAAAAAAA#
+z42     #AAAAAAAAAAA#
+z43     #AAAAAAAAAAA#
+z44     #~~~~###~~~~#
+z45 #################
+Level 1 columns
+    1   2         3
+    67890123456789012
+z30 CCCCCCCCCCCMCCCMM
+z31 Cf....f.fffoffo.C
+z32 C.......ff....foM
+z33 C...............M
+z34 C////...........M
+z35 C////...........M
+z36 C////f..fffff...M
+z37      f..fffff...M
+z38     Mf..ffoof...M
+z39     Mf..........M
+z40     Mf..........M
+z41     Mf..........M
+z42     Mf..........M
+z43     M...........M
+z44     J....CCC...fM
+z45 JJJJCJMMMMMMMMMMM
+Level 1 air
+    1   2         3
+    67890123456789012
+z30
+z31  a84466666666666
+z32  aaaa66666666666
+z33  aaaa66666666666
+z34  999966666666666
+z35  888866666666666
+z36  777766666666666
+z37      66666666666
+z38      66666666666
+z39      66666666666
+z40      66666666666
+z41      66666666666
+z42      66666666666
+z43      66666666666
+z44      6666   6666
+z45
+
+Level 5 rooms
+    1   2         3
+    67890123456789012
+z30 #################
+z31 #         ,,,,, #
+z32 #             ,,#
+z33 #               #
+z34 #////           #
+z35 #////           #
+z36 #////           #
+z37 #BBB/           #
+z38 #BBB#           #
+z39 #BBB#           #
+z40 #BBB#           #
+z41 #BBB#           #
+z42 #BBB#           #
+z43 #BBB#           #
+z44 #BBB#    ###    #
+z45 #BBB#############
+z46 #####
+Level 5 columns
+    1   2         3
+    67890123456789012
+z30 CCCCCCCCCCCMCCCMM
+z31 C         .fffo C
+z32 C             .oM
+z33 C               M
+z34 C////           M
+z35 C////           M
+z36 C////           M
+z37 C...+           M
+z38 C...M           M
+z39 C...M           M
+z40 C...M           M
+z41 C...M           M
+z42 C...M           M
+z43 C...M           M
+z44 C...J    CCC    M
+z45 J...CJMMMMMMMMMMM
+z46 CCCCC
+Level 5 air
+    1   2         3
+    67890123456789012
+z30
+z31
+z32
+z33
+z34
+z35
+z36
+z37  6666
+z38  666
+z39  666
+z40  666
+z41  666
+z42  666
+z43  666
+z44  666
+z45  666
+z46

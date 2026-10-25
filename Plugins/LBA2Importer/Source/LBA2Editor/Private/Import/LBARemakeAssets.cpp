@@ -361,6 +361,46 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 	return Result;
 }
 
+void FLBARemakeAssets::ApplyPatches(FLBAGrid& Grid, FGridResult& Out) const
+{
+	const TSharedPtr<FJsonObject>* GridMeta = nullptr;
+	const TSharedPtr<FJsonObject>* Patches = nullptr;
+	if (!bAvailable || !GridsMetadata.IsValid() || !GridsMetadata->TryGetObjectField(FString::FromInt(Grid.Index), GridMeta)
+		|| !(*GridMeta)->TryGetObjectField(TEXT("patches"), Patches))
+	{
+		return;
+	}
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Patch : (*Patches)->Values)
+	{
+		TArray<FString> Parts;
+		Patch.Key.ParseIntoArray(Parts, TEXT("x"));
+		if (Parts.Num() != 3)
+		{
+			continue;
+		}
+		const FIntVector Cell(FCString::Atoi(*Parts[0]), FCString::Atoi(*Parts[1]), FCString::Atoi(*Parts[2]));
+		if (!Grid.IsInside(Cell.X, Cell.Y, Cell.Z))
+		{
+			continue;
+		}
+		const TSharedPtr<FJsonObject> Value = Patch.Value->AsObject();
+		double Layout = -1, Block = 0;
+		if (Value->TryGetNumberField(TEXT("layout"), Layout) && Layout >= 0)
+		{
+			Value->TryGetNumberField(TEXT("block"), Block);
+			FLBAGridCell& GridCell = Grid.Cells[FLBAGrid::CellIndex(Cell.X, Cell.Y, Cell.Z)];
+			GridCell.Layout = int16(Layout);
+			GridCell.Block = uint8(Block);
+			Out.PatchedCells.Add(Cell, FIntPoint(int32(Layout), int32(Block)));
+		}
+		bool bHide = false;
+		if (Value->TryGetBoolField(TEXT("hide"), bHide) && bHide)
+		{
+			Out.HiddenCells.Add(Cell);
+		}
+	}
+}
+
 FLBARemakeAssets::FGridResult FLBARemakeAssets::ProcessGrid(FLBAGrid& Grid, const FLBALibrary& Library)
 {
 	FGridResult Out;
@@ -370,46 +410,12 @@ FLBARemakeAssets::FGridResult FLBARemakeAssets::ProcessGrid(FLBAGrid& Grid, cons
 	}
 	const float Scale = Context.GetScale();
 
-	// Per-grid patches and extra props (grids.json).
-	TSet<FIntVector> PatchHidden;
+	// Per-grid patches (grids.json), then extra props.
+	ApplyPatches(Grid, Out);
+	const TSet<FIntVector> PatchHidden = Out.HiddenCells;
 	const TSharedPtr<FJsonObject>* GridMeta = nullptr;
 	if (GridsMetadata.IsValid() && GridsMetadata->TryGetObjectField(FString::FromInt(Grid.Index), GridMeta))
 	{
-		const TSharedPtr<FJsonObject>* Patches = nullptr;
-		if ((*GridMeta)->TryGetObjectField(TEXT("patches"), Patches))
-		{
-			for (const TPair<FString, TSharedPtr<FJsonValue>>& Patch : (*Patches)->Values)
-			{
-				TArray<FString> Parts;
-				Patch.Key.ParseIntoArray(Parts, TEXT("x"));
-				if (Parts.Num() != 3)
-				{
-					continue;
-				}
-				const FIntVector Cell(FCString::Atoi(*Parts[0]), FCString::Atoi(*Parts[1]), FCString::Atoi(*Parts[2]));
-				if (!Grid.IsInside(Cell.X, Cell.Y, Cell.Z))
-				{
-					continue;
-				}
-				const TSharedPtr<FJsonObject> Value = Patch.Value->AsObject();
-				double Layout = -1, Block = 0;
-				if (Value->TryGetNumberField(TEXT("layout"), Layout) && Layout >= 0)
-				{
-					Value->TryGetNumberField(TEXT("block"), Block);
-					FLBAGridCell& GridCell = Grid.Cells[FLBAGrid::CellIndex(Cell.X, Cell.Y, Cell.Z)];
-					GridCell.Layout = int16(Layout);
-					GridCell.Block = uint8(Block);
-					Out.PatchedCells.Add(Cell, FIntPoint(int32(Layout), int32(Block)));
-				}
-				bool bHide = false;
-				if (Value->TryGetBoolField(TEXT("hide"), bHide) && bHide)
-				{
-					PatchHidden.Add(Cell);
-					Out.HiddenCells.Add(Cell);
-				}
-			}
-		}
-
 		const TArray<TSharedPtr<FJsonValue>>* Models = nullptr;
 		if ((*GridMeta)->TryGetArrayField(TEXT("models"), Models))
 		{

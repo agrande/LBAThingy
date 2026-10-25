@@ -1,0 +1,252 @@
+Grid 116 L_Grid_116_Bar, library 15: rooms, not enclosed, room height 8, door height 7
+Levels 0 9
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 9 x15-26 z25-46 (12x22) floors 176 furniture 88
+   -X: wallx21  openx1
+   +X: passage>C0x2  wallx5  open_side>R3x15
+   -Z: wallx12
+   +Z: openx1  wallx11
+R1 B space S1 level 0 ceiling 9 x30-42 z25-36 (13x12) floors 111 furniture 45
+   -X: passage>C0x2  wallx3  passage>C3x7
+   +X: wallx12
+   -Z: passage>C0x13
+   +Z: wallx4  wallx1  openx2  wallx2  wallx4
+R2 C space S2 level 0 ceiling 9 x29-42 z19-23 (14x5) floors 34 furniture 36
+   -X: wallx5
+   +X: openx1  wallx4
+   -Z: wallx13  openx1
+   +Z: passage>C0x14
+R3 D space S0 level 0 ceiling 9 x27-28 z32-46 (2x15) floors 16 furniture 14
+   -X: open_side>R0x15
+   +X: passage>C3x6  wallx9
+   -Z: wallx2
+   +Z: wallx2
+S0 level 0 ceiling 9 rooms R0,R3
+S1 level 0 ceiling 9 rooms R1
+S2 level 0 ceiling 9 rooms R2
+C0 passage L0 x27-42 z24-26 cols 21 rooms R0,R1,R2 ceiling 9 width 2 (door)
+C3 passage L0 x29-29 z30-37 cols 8 rooms R1,R3 ceiling 9 width 6 (arch)
+9 pockets (columns out of reach)
+
+Level 0 rooms
+    1     2         3         4
+    456789012345678901234567890123
+z10               ,
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18               ##############
+z19               #CCCCCCCCCCCCCC
+z20               #CCCCCCCCCCCCCC#
+z21               #CCCCCCCCCCCCCC#
+z22               #CCCCCCCCCCCCCC#
+z23               #CCCCCCCCCCCCCC#
+z24 ##############===============#
+z25 #AAAAAAAAAAAA===BBBBBBBBBBBBB#
+z26 #AAAAAAAAAAAA===BBBBBBBBBBBBB#
+z27 #AAAAAAAAAAAA###BBBBBBBBBBBBB#
+z28 #AAAAAAAAAAAA#,#BBBBBBBBBBBBB#
+z29 #AAAAAAAAAAAA###BBBBBBBBBBBBB#
+z30 #AAAAAAAAAAAA##=BBBBBBBBBBBBB#
+z31 #AAAAAAAAAAAA##=BBBBBBBBBBBBB#
+z32 #AAAAAAAAAAAADD=BBBBBBBBBBBBB#
+z33 #AAAAAAAAAAAADD=BBBBBBBBBBBBB#
+z34 #AAAAAAAAAAAADD=BBBBBBBBBBBBB#
+z35 #AAAAAAAAAAAADD=BBBBBBBBBBBBB#
+z36 #AAAAAAAAAAAADD=BBBBBBBBBBBBB#
+z37 #AAAAAAAAAAAADD=#####  ######,
+z38 #AAAAAAAAAAAADD#
+z39 #AAAAAAAAAAAADD#
+z40 #AAAAAAAAAAAADD#
+z41 #AAAAAAAAAAAADD#
+z42 #AAAAAAAAAAAADD#
+z43 #AAAAAAAAAAAADD#
+z44 #AAAAAAAAAAAADD#
+z45 #AAAAAAAAAAAADD#
+z46  AAAAAAAAAAAADD#
+z47   #############,
+Level 0 columns
+    1     2         3         4
+    456789012345678901234567890123
+z10               o
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18               EEEEEEEEEEEEEE
+z19               Efffffffffffffo
+z20               Ef..p.ff....f.fE
+z21               Eff...ff......fE
+z22               Ef....fff.....fE
+z23               Eff...fff.....fE
+z24 EEEEEEEEEEEEEEff++++fff+++++fE
+z25 Efffffffffffffff............fE
+z26 Ef.........f..+.............fE
+z27 Ef...........CCCff.........pfE
+z28 Ef.....f.....CfCff........fffE
+z29 Ef...fffff...CCC..........fffE
+z30 Ef...ffff....CCg.........ffffE
+z31 Ef...ffff....CCg.........ffffE
+z32 Ef...ffff......g.........ffffE
+z33 Efp...f........g.........ff.fE
+z34 Ef.............g.........ff.fE
+z35 Ef...........p.g........a...fE
+z36 Eff...........ffffffo..ooffffE
+z37 Ef............ffEEEEJ  JJEEEEf
+z38 Ef............fE
+z39 Ef.....ff.....fE
+z40 Ef.....ff.....fE
+z41 Ef..fffff....pfE
+z42 Ef..fffff.ff..fE
+z43 Ef....fff.ff..fE
+z44 Ef............fE
+z45 Efp...........fE
+z46  offfffffffffffE
+z47   EEEEEEEEEEEEEf
+Level 0 air
+    1     2         3         4
+    456789012345678901234567890123
+z10
+z11
+z12
+z13
+z14
+z15
+z16
+z17
+z18
+z19                88888888888888
+z20                88888888888888
+z21                88888888888888
+z22                88888888888888
+z23                88888888888888
+z24               888888888888888
+z25  8888888888888888888888888888
+z26  8888888888888888888888888888
+z27  888888888888   8888888888888
+z28  888888888888   8888888888888
+z29  888888888888   8888888888888
+z30  888888888888  78888888888888
+z31  888888888888  78888888888888
+z32  8888888888888878888888888888
+z33  8888888888888878888888888888
+z34  8888888888888878888888888888
+z35  8888888888888878888888888888
+z36  8888888888888878888888888888
+z37  888888888888887
+z38  88888888888888
+z39  88888888888888
+z40  88888888888888
+z41  88888888888888
+z42  88888888888888
+z43  88888888888888
+z44  88888888888888
+z45  88888888888888
+z46  88888888888888
+z47
+
+Level 9 rooms
+    1   2         3         4
+    6789012345678901234567890123
+z20                           ,,
+z21                           ,,
+z22                           ,,
+z23                           ,,
+z24
+z25
+z26
+z27
+z28                           ,,
+z29    ,,,,                   ,,
+z30    ,,,,                   ,,
+z31    ,,,,                   ,,
+z32    ,,,,                   ,,
+z33                           ,,
+z34                           ,,
+z35                           ,,
+z36             ,,,,,,,  ,,,,,,,
+z37             ,,,,,,,  ,,,,,,
+z38
+z39
+z40
+z41
+z42             ,,
+z43             ,,
+z44             ,,
+z45             ,,
+z46 ,,,,    ,,,,,,
+z47 ,,,,,,,,,,,,,
+Level 9 columns
+    1   2         3         4
+    6789012345678901234567890123
+z20                           ff
+z21                           .f
+z22                           .f
+z23                           .f
+z24
+z25
+z26
+z27
+z28                           .f
+z29    ....                   .f
+z30    ....                   .f
+z31    ....                   .f
+z32    ....                   .f
+z33                           .f
+z34                           .f
+z35                           .f
+z36             .......  .....ff
+z37             .fffff.  .fffff
+z38
+z39
+z40
+z41
+z42             .f
+z43             .f
+z44             .f
+z45             .f
+z46 f...    ....ff
+z47 fffffffffffff
+Level 9 air
+    1   2         3         4
+    6789012345678901234567890123
+z20
+z21
+z22
+z23
+z24
+z25
+z26
+z27
+z28
+z29
+z30
+z31
+z32
+z33
+z34
+z35
+z36
+z37
+z38
+z39
+z40
+z41
+z42
+z43
+z44
+z45
+z46
+z47

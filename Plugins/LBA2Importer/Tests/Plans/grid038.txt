@@ -1,0 +1,190 @@
+Grid 38 L_Grid_038_BaldinosHouse, library 5: rooms, enclosed, room height 6, door height 7
+Levels 0 10 18
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 17 x7-15 z6-13 (9x8) floors 67 furniture 5
+   -X: stepx1  alcove>C0x2  stepx1  alcove>C1x4
+   +X: wallx8
+   -Z: alcove>C3x4  stepx4  alcove>C5x1
+   +Z: wallx5  wallx1  exit>C4x3
+R1 B space S1 level 10 ceiling 17 x4-15 z2-4 (12x3) floors 25 furniture 11
+   -X: wallx3
+   +X: wallx3
+   -Z: wallx1  wallx4  wallx7
+   +Z: alcove>C6x3  stepx2  alcove>C7x7
+S0 level 0 ceiling 17 rooms R0 overlooked by S1 (double height)
+S1 level 10 ceiling 17 rooms R1
+C0 alcove L0 x5-6 z6-8 cols 5 rooms R0 ceiling 17
+C1 alcove L0 x5-6 z10-13 cols 5 rooms R0 ceiling 17
+C3 alcove L0 x7-10 z5-5 cols 4 rooms R0 ceiling 17
+C4 exit L0 x13-15 z14-14 cols 3 rooms R0 ceiling 17
+C5 alcove L0 x15-15 z5-5 cols 1 rooms R0 ceiling 17
+C6 alcove L10 x4-7 z5-13 cols 29 rooms R1 ceiling 17
+C7 alcove L10 x9-15 z5-6 cols 12 rooms R1 ceiling 17
+3 pockets (columns out of reach)
+
+Level 0 rooms
+    0      1
+    34567890123456
+z01              #
+z02              #
+z03    ,,,       #
+z04  ###  ########
+z05  #  ~~~~    ~#
+z06  #~ AAAAAAAAA#
+z07  #~~AAAAAAAAA#
+z08  #~~AAAAAAAAA#
+z09  #  AAAAAAAAA#
+z10  # ~AAAAAAAAA#
+z11  # ~AAAAAAAAA#
+z12  # ~AAAAAAAAA#
+z13  #~~AAAAAAAAA#
+z14 ##########>>>#
+z15          ####
+Level 0 columns
+    0      1
+    34567890123456
+z01              M
+z02              M
+z03    o..       M
+z04  EMM  MMMMMMMM
+z05  M  ....    .M
+z06  Mf ...ffffp.M
+z07  M...........M
+z08  Mf..........M
+z09  M  .........M
+z10  M f.........M
+z11  M f.........M
+z12  M f.........M
+z13  M...........M
+z14 MMMMMMMMMJ++oJ
+z15          CCCC
+Level 0 air
+    0      1
+    34567890123456
+z01
+z02
+z03
+z04
+z05     gg99    9
+z06   9 9gggggggg
+z07   999gggggggg
+z08   999gggggggg
+z09     9gggggggg
+z10    9ggggggggg
+z11    9ggggggggg
+z12    9ggggggggg
+z13   99ggggggggg
+z14           ggg
+z15
+
+Level 10 rooms
+    0      1
+    34567890123456
+z01 ##############
+z02 #BBBBBBBBBBBB#
+z03 #BBBBBBBBBBBB#
+z04 #BBBBBBBBBBBB#
+z05 #~~~  ~~~~~~~#
+z06 #~~~~  ~~~~~ #
+z07 #~ ~~        #
+z08 #~~~~        #
+z09 #~~~~        #
+z10 #~~~         #
+z11 #~~~         #
+z12 #~~~         #
+z13 #~~          #
+z14 #########    #
+z15          ,,,,
+Level 10 columns
+    0      1
+    34567890123456
+z01 MMEEEEMMMMMMMM
+z02 M......fofff.M
+z03 Mf......ffff.M
+z04 Mf...........M
+z05 M...  .......M
+z06 Efp..  fffff M
+z07 Ef ..        M
+z08 Eff..        M
+z09 M....        M
+z10 Mf.f         M
+z11 Mf.f         M
+z12 Mf.f         M
+z13 M..          M
+z14 MMMMMMMMM    J
+z15          ....
+Level 10 air
+    0      1
+    34567890123456
+z01
+z02  666666666666
+z03  666666666666
+z04  666666666666
+z05  666  6666666
+z06  6666  66666
+z07  6 66
+z08  6666
+z09  6666
+z10  666
+z11  666
+z12  666
+z13  66
+z14
+z15
+
+Level 18 rooms
+    0        1
+    1234567890123456
+z01   ,,,,,,,,,,,,,,
+z02   ,            ,
+z03   ,            ,
+z04   ,            ,
+z05   ,            ,
+z06 ,,,,,          ,
+z07 ,,,,,          ,
+z08 ,,,,,          ,
+z09   ,            ,
+z10   ,            ,
+z11   ,            ,
+z12   ,            ,
+z13   ,            ,
+z14   ,,,,,,,,,    ,
+Level 18 columns
+    0        1
+    1234567890123456
+z01   ..............
+z02   .            .
+z03   .            .
+z04   .            .
+z05   .            .
+z06 .....          .
+z07 .....          .
+z08 .....          .
+z09   .            .
+z10   .            .
+z11   .            .
+z12   .            .
+z13   .            .
+z14   .........    .
+Level 18 air
+    0        1
+    1234567890123456
+z01
+z02
+z03
+z04
+z05
+z06
+z07
+z08
+z09
+z10
+z11
+z12
+z13
+z14

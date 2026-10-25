@@ -1,0 +1,136 @@
+Grid 20 L_Grid_020_TralüsCaveMeetJoeTheElf, library 1: hollow, enclosed, room height 6, door height 6
+hollow 1099 columns (1021 with floor), 1 supports, 1098 under the roof; spring 11.0-26.0, roof up to 31.5
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+
+Hollow floor
+    4      5         6
+    345678901234567890123
+z01              555
+z02   mfffff     5 5
+z03   ffffffS__555555_ 5
+z04   ffffff__5555555_55
+z05   ffffff__55555___55
+z06   mfffff____5_555555
+z07   mfffff__55___555 5
+z08   _fff____555_5555 5
+z09   afff____5555555555
+z10   affffaab5___555555
+z11   affffaab55_55555 5
+z12   affffaab5555_555
+z13   affffaab5555555555
+z14    ffffaab6665555555
+z15    ffffaab6665555555
+z16    ffffeeb5555555555
+z17    ffffeeb5555555555
+z18    ff______555555555
+z19    fffgg___5555555
+z20    fffg_5555555555
+z21    fffg_555555555555
+z22    fffg5555555555555
+z23    fffg5555555555555
+z24    fffg44242222222423
+z25     ffg22222233322223
+z26     ffg22222233322223
+z27     ffg22222222222223
+z28     ffg_755555555555
+z29     ffge6555555555555
+z30     ffgf_555555555555
+z31     ffff_555555555555
+z32    fffff_555555555555
+z33    fffff_555555555555
+z34    ffhff_555555555555
+z35    ffhe__555555555555
+z36   fffg__5555555555555
+z37   fffg_55555555555555
+z38   fffg_5555555555555
+z39   fffg_55522422222423
+z40   fffg_22222222222223
+z41   fffg_22222222222223
+z42  _fffg_22222222222223
+z43 fffffg_5555555555555
+z44 fffffg_55555555555555
+z45 fffffg_55555555555555
+z46 fffffg_55555555555555
+z47  fff_g_55555555555555
+z48  555_g_55555555555555
+z49  5555__55555555555555
+z50  5555__55555555555555
+z51  55555555555555555555
+z52  55555556665555555555
+z53  55555556665555555555
+z54  55555555555555555555
+z55  55555555555555555555
+z56   _555555555555555555
+z57    555555555555556665
+z58    55555555555555666
+z59    55555555555555555
+z60    55555555555555555
+z61    55555555555555555
+z62  5555555555555555555
+z63              55
+Hollow roof
+    4      5         6
+    345678901234567890123
+z01              fee
+z02   ssrrpn     f e
+z03   stutqnSjihgfefee e
+z04   ttvurnlklkhghhgeee
+z05   stvvspommljiiihhge
+z06   rtvvtrponmjijiheee
+z07   rtuvtsponmkjhgfd e
+z08   qtuutsqonmkjhgfd e
+z09   qsuusrrqnmlkjigeee
+z10   psttsrrqomlkjigfee
+z11   orssrrrqpomkkjfe e
+z12   orqrrrrqpomkkife
+z13   nopqrrqqpolkihhfee
+z14    npqrrrqpolkihhhge
+z15    npqrrrqonnmjihhge
+z16    nprrrrqonnmjihhge
+z17    nprsssqnmlkihhhfe
+z18    oqrssrqnmljihhfee
+z19    oqrrrqoonmkihge
+z20    oqrrrpoonmkihge
+z21    oqrsrqpnmmkiggeee
+z22    oqrsrqpnmlkihhgge
+z23    orrrrqonlkjiiihfe
+z24    oprrqponlkjiiihfee
+z25     oqqpponmkjiiiigge
+z26     oqqpoonmkjjiiihge
+z27     oppponnmljjihhgfe
+z28     oppponmllkjihhge
+z29     prqponmlmkjiihgee
+z30     prqponnmmljiiigfe
+z31     orrrqponmljjjjihe
+z32    oprrrqponmkjjjjihe
+z33    orsrqqpmlkjkkiiihe
+z34    orsrqqpmkjjkkiiihe
+z35    prssrpnlkkkjjjihge
+z36   oprssrpnlkkkjjjigfe
+z37   prqqqqpomlkjiijifee
+z38   orrqqppomlkjiijife
+z39   orsrqpnmmljjjjjiged
+z40   orsrqonmlkjjjjjihfe
+z41   oqrrqponljjjiiihgge
+z42  ooqrrqponljjjihihgee
+z43 ooqrrqrqonmljjihiife
+z44 oqrsrrrqonmljjihiigee
+z45 npstsrqpomkjjjiijihge
+z46 mnqssrqonmkjjjiijihge
+z47  mopqqponmlkiiiiiihge
+z48  lnopppomllkiiiiiihge
+z49  kmopponlkkjjjjjihgfe
+z50  ilnnnnnlkkjjjkjihgfe
+z51  hkmllmmlkkkkkjjjihge
+z52  gjkkkllkkkkkkjjjjhge
+z53  fhjklllkjjijjjjjjhge
+z54  eghjjkkjjiijjjjjjhge
+z55  eefhijjjjiikkjjjihge
+z56   eegijjjjiikkjjjihge
+z57    ehijjjjjjkkjjiigfe
+z58    ehijjjjjjkkjjihge
+z59    efghhhhhiiiiiihfe
+z60    efggggggghhhhhhfe
+z61    effggggffggggggge
+z62  eeeeeeeeeddeeeeeeee
+z63              ee

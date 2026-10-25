@@ -1,0 +1,72 @@
+Grid 115 L_Grid_115_Shop, library 15: rooms, not enclosed, room height 8, door height 7
+Levels 2
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 2 ceiling 11 x31-44 z26-39 (14x14) floors 119 furniture 77
+   -X: wallx13  openx1
+   +X: openx1  wallx13
+   -Z: wallx13  openx1
+   +Z: openx1  wallx4  wallx1  wallx2  wallx2  wallx4
+S0 level 2 ceiling 11 rooms R0
+
+Level 2 rooms
+    3         4
+    0123456789012345
+z25 ##############
+z26 #AAAAAAAAAAAAAA
+z27 #AAAAAAAAAAAAAA#
+z28 #AAAAAAAAAAAAAA#
+z29 #AAAAAAAAAAAAAA#
+z30 #AAAAAAAAAAAAAA#
+z31 #AAAAAAAAAAAAAA#
+z32 #AAAAAAAAAAAAAA#
+z33 #AAAAAAAAAAAAAA#
+z34 #AAAAAAAAAAAAAA#
+z35 #AAAAAAAAAAAAAA#
+z36 #AAAAAAAAAAAAAA#
+z37 #AAAAAAAAAAAAAA#
+z38 #AAAAAAAAAAAAAA#
+z39  AAAAAAAAAAAAAA#
+z40   ##############
+Level 2 columns
+    3         4
+    0123456789012345
+z25 EEEEEEEEEEEEEE
+z26 Efffffffffffffo
+z27 Ef.f........fffE
+z28 Ef......ff....fE
+z29 Ef......ff....fE
+z30 Efp.....ff....fE
+z31 Ef..ff........fE
+z32 Ef..ff........fE
+z33 Ef........ff..fE
+z34 Ef........ff..fE
+z35 Efff......fff.fE
+z36 Efff......ff..fE
+z37 Ef............fE
+z38 Ef............fE
+z39  offffo..oofffoE
+z40   EEEEJCCJJEEEEE
+Level 2 air
+    3         4
+    0123456789012345
+z25
+z26  88888888888888
+z27  88888888888888
+z28  88888888888888
+z29  88888888888888
+z30  88888888888888
+z31  88888888888888
+z32  88888888888888
+z33  88888888888888
+z34  88888888888888
+z35  88888888888888
+z36  88888888888888
+z37  88888888888888
+z38  88888888888888
+z39  88888888888888
+z40

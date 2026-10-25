@@ -1,0 +1,180 @@
+Grid 48 L_Grid_048_TwinsunCafe, library 9: rooms, enclosed, room height 13, door height 7
+Levels 0
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 0 ceiling 14 x4-17 z2-47 (14x46) floors 586 furniture 58
+   -X: alcove>C2x10  wallx1  wallx4  wallx1  alcove>C3x14  wallx1  wallx4  wallx1  alcove>C4x10
+   +X: wallx46
+   -Z: alcove>C2x4  wallx6  alcove>C7x4
+   +Z: wallx4  wallx1  exit>C6x4  wallx2  wallx3
+S0 level 0 ceiling 14 rooms R0
+C2 alcove L0 x3-7 z1-11 cols 15 rooms R0 ceiling 14
+C3 alcove L0 x3-3 z18-31 cols 14 rooms R0 ceiling 14
+C4 alcove L0 x3-3 z38-47 cols 10 rooms R0 ceiling 14
+C6 exit L0 x9-12 z48-48 cols 4 rooms R0 ceiling 14
+C7 alcove L0 x14-17 z1-1 cols 4 rooms R0 ceiling 14
+3 pockets (columns out of reach)
+
+Level 0 rooms
+    0       1
+    23456789012345678
+z00 #######,,,,######
+z01 #~~~~~######~~~~#
+z02 #~AAAAAAAAAAAAAA#
+z03 #~AAAAAAAAAAAAAA#
+z04 #~AAAAAAAAAAAAAA#
+z05 #~AAAAAAAAAAAAAA#
+z06 #~AAAAAAAAAAAAAA#
+z07 #~AAAAAAAAAAAAAA#
+z08 #~AAAAAAAAAAAAAA#
+z09 #~AAAAAAAAAAAAAA#
+z10 #~AAAAAAAAAAAAAA#
+z11 #~AAAAAAAAAAAAAA#
+z12 ##AAAAAAAAAAAAAA#
+z13 ,#AAAAAAAAAAAAAA#
+z14 ,#AAAAAAAAAAAAAA#
+z15 ,#AAAAAAAAAAAAAA#
+z16 ,#AAAAAAAAAAAAAA#
+z17 ##AAAAAAAAAAAAAA#
+z18 #~AAAAAAAAAAAAAA#
+z19 #~AAAAAAAAAAAAAA#
+z20 #~AAAAAAAAAAAAAA#
+z21 #~AAAAAAAAAAAAAA#
+z22 #~AAAAAAAAAAAAAA#
+z23 #~AAAAAAAAAAAAAA#
+z24 #~AAAAAAAAAAAAAA#
+z25 #~AAAAAAAAAAAAAA#
+z26 #~AAAAAAAAAAAAAA#
+z27 #~AAAAAAAAAAAAAA#
+z28 #~AAAAAAAAAAAAAA#
+z29 #~AAAAAAAAAAAAAA#
+z30 #~AAAAAAAAAAAAAA#
+z31 #~AAAAAAAAAAAAAA#
+z32 ##AAAAAAAAAAAAAA#
+z33 ,#AAAAAAAAAAAAAA#
+z34 ,#AAAAAAAAAAAAAA#
+z35 ,#AAAAAAAAAAAAAA#
+z36 ,#AAAAAAAAAAAAAA#
+z37 ##AAAAAAAAAAAAAA#
+z38 #~AAAAAAAAAAAAAA#
+z39 #~AAAAAAAAAAAAAA#
+z40 #~AAAAAAAAAAAAAA#
+z41 #~AAAAAAAAAAAAAA#
+z42 #~AAAAAAAAAAAAAA#
+z43 #~AAAAAAAAAAAAAA#
+z44 #~AAAAAAAAAAAAAA#
+z45 #~AAAAAAAAAAAAAA#
+z46 #~AAAAAAAAAAAAAA#
+z47 #~AAAAAAAAAAAAAA#
+z48 #######>>>>######
+z49        ####
+Level 0 columns
+    0       1
+    23456789012345678
+z00 CCCCCCCffffCCCCCC
+z01 C++++fCCCCCCf+++M
+z02 C+...pffffffp...M
+z03 C+...ff....ff...M
+z04 C+...ff....pf...M
+z05 C+..............M
+z06 C+..............M
+z07 C+..............M
+z08 C+..............M
+z09 C+..............M
+z10 C+..............M
+z11 C+..............M
+z12 CC............ffM
+z13 gMf...........ffM
+z14 gMf...........ffM
+z15 gMf...........ffM
+z16 gMf.............M
+z17 CC..............M
+z18 Cg..............M
+z19 Cg..............M
+z20 Cg..............M
+z21 Cg..............M
+z22 Cg..............M
+z23 Cff...........ffM
+z24 Cff...........ffM
+z25 Cff...........ffM
+z26 Cff...........ffM
+z27 Cg..............M
+z28 Cg..............M
+z29 Cg..............M
+z30 Cg..............M
+z31 Cg..............M
+z32 CC..............M
+z33 gMf.............M
+z34 gMf...........ffM
+z35 gMf...........ffM
+z36 gMf...........ffM
+z37 CC............ffM
+z38 C+..............M
+z39 C+..............M
+z40 C+..............M
+z41 C+..............M
+z42 Cff...........ffM
+z43 Cff...........ffM
+z44 C+..............M
+z45 C+..............M
+z46 C+..............M
+z47 C+..............M
+z48 CMMMMMJggggJJMMMM
+z49        CCCC
+Level 0 air
+    0       1
+    23456789012345678
+z00
+z01  ddddd      dddd
+z02  ddddddddddddddd
+z03  ddddddddddddddd
+z04  ddddddddddddddd
+z05  ddddddddddddddd
+z06  ddddddddddddddd
+z07  ddddddddddddddd
+z08  ddddddddddddddd
+z09  ddddddddddddddd
+z10  ddddddddddddddd
+z11  ddddddddddddddd
+z12   dddddddddddddd
+z13   dddddddddddddd
+z14   dddddddddddddd
+z15   dddddddddddddd
+z16   dddddddddddddd
+z17   dddddddddddddd
+z18  7dddddddddddddd
+z19  7dddddddddddddd
+z20  7dddddddddddddd
+z21  7dddddddddddddd
+z22  7dddddddddddddd
+z23  7dddddddddddddd
+z24  7dddddddddddddd
+z25  7dddddddddddddd
+z26  7dddddddddddddd
+z27  7dddddddddddddd
+z28  7dddddddddddddd
+z29  7dddddddddddddd
+z30  7dddddddddddddd
+z31  7dddddddddddddd
+z32   dddddddddddddd
+z33   dddddddddddddd
+z34   dddddddddddddd
+z35   dddddddddddddd
+z36   dddddddddddddd
+z37   dddddddddddddd
+z38  ddddddddddddddd
+z39  ddddddddddddddd
+z40  ddddddddddddddd
+z41  ddddddddddddddd
+z42  ddddddddddddddd
+z43  ddddddddddddddd
+z44  ddddddddddddddd
+z45  ddddddddddddddd
+z46  ddddddddddddddd
+z47  ddddddddddddddd
+z48        7777
+z49

@@ -1,0 +1,45 @@
+Grid 90 L_Grid_090_RefinerySecretRoom, library 14: rooms, enclosed, room height 6, door height 8
+Levels 4
+Maps per level (X across, Z down):
+  rooms: A-Z a-z = R0-R51, / stairs, = passage, > exit, ~ alcove, , pocket, # wall
+  columns: . floor, g gap in a wall line, + partition line, / stairs, f furniture; walls by rule: C cut, J jamb, I invisible,
+    T tall, M masonry, E exterior, # other; furniture kept from walls: p pillar, o post, a against
+  air: cells of air over the floor (0-9 a-z), x past an exit
+
+R0 A space S0 level 4 ceiling 11 x1-5 z1-5 (5x5) floors 22 furniture 3
+   -X: wallx5
+   +X: wallx5
+   -Z: wallx5
+   +Z: wallx5
+S0 level 4 ceiling 11 rooms R0
+
+Level 4 rooms
+    0
+    0123456
+z00 #######
+z01 #AAAAA#
+z02 #AAAAA#
+z03 #AAAAA#
+z04 #AAAAA#
+z05 #AAAAA#
+z06 #######
+Level 4 columns
+    0
+    0123456
+z00 EMMMMMM
+z01 Mf....C
+z02 M.....C
+z03 Mf....C
+z04 M.....C
+z05 Mo....C
+z06 CCCCCCC
+Level 4 air
+    0
+    0123456
+z00
+z01  66666
+z02  66666
+z03  66666
+z04  66666
+z05  66666
+z06
