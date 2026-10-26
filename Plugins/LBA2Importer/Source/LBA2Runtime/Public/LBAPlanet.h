@@ -55,8 +55,9 @@ struct LBA2RUNTIME_API FLBAPlanetIsland
 	FVector GetUp() const;
 
 	/**
-	 * Where the island is on the planet's flat map (cm): the northern hemisphere laid flat around the north pole, its
-	 * distances from the pole and its longitudes kept (azimuthal equidistant projection). Distances between islands
+	 * Where the island is on the planet's flat map (cm): the hemisphere laid flat around its pole (north here, from the
+	 * holomap's positive latitudes: in the story, Citadel's hemisphere is the southern one), its distances from the pole
+	 * and its longitudes kept (azimuthal equidistant projection). Distances between islands
 	 * stretch east-west the further they are from the pole: by 11% at 45 degrees from it.
 	 */
 	FVector2D GetMapLocation(double Radius) const;

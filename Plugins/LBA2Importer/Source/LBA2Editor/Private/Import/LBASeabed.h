@@ -18,8 +18,6 @@ struct FLBASeabedSettings
 	/** Seabed color (linear albedo), varied a little with noise. */
 	FLinearColor Color = FLinearColor(0.5f, 0.45f, 0.3f);
 	UMaterialInterface* Material = nullptr;
-	/** Moves the seabed's vertices (cm, level space), e.g. bent with a round planet's sea; unset: flat. */
-	TFunction<FVector(const FVector&)> Transform;
 };
 
 namespace LBASeabed

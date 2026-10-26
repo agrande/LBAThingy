@@ -167,10 +167,6 @@ UStaticMesh* LBASeabed::Build(FLBAImportContext& Context, const FLBASeabedSettin
 			const float Depth = SeabedDepth(FMath::Sqrt(Distance[Y * W + X]) * Spacing, Heights[Nearest[Y * W + X]], Noise);
 			Depths[J * GW + I] = Depth;
 			Positions[J * GW + I] = FVector3f(P.X, P.Y, -Clearance - Depth);
-			if (Settings.Transform)
-			{
-				Positions[J * GW + I] = FVector3f(Settings.Transform(FVector(Positions[J * GW + I])));
-			}
 			Shades[J * GW + I] = 0.85f + 0.3f * (0.5f + 0.5f * FMath::PerlinNoise2D(FVector2D(P) / 350.0 + FVector2D(31.7, 11.3)));
 		}
 	}

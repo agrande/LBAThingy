@@ -114,7 +114,8 @@ public:
 	TSoftObjectPtr<class USoundBase> EnemyDeathSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/LBA2/Audio/Samples/SFX_014.SFX_014")));
 
 	/**
-	 * Globe mode (prototype): islands placed on a planet open on it, a round sea around them (ULBAPlanetSubsystem).
+	 * Globe mode (prototype): islands placed on a planet open on it, laid out around it, the view bent round
+	 * (ULBAPlanetSubsystem).
 	 * The console variable lba.Globe and the travel URL options ?Globe / ?NoGlobe override it.
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Globe")

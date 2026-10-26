@@ -503,8 +503,9 @@ How it holds together (the world is flat and still; only the view is round):
 
 - **Islands laid flat on a map.** The opened island's level is where it was saved; every other placed island's level
   is streamed in as a level instance where it is on the planet's flat map (`FLBAPlanetIsland::GetLevelToMap`): the
-  northern hemisphere laid flat around the north pole, distances from the pole and longitudes kept (azimuthal
-  equidistant), so distances between islands near the pole are kept too (Citadel to desert: 315 m on the planet and on
+  hemisphere of Citadel and the desert laid flat around its pole, distances from the pole and longitudes kept
+  (azimuthal equidistant; the code calls it north, from the holomap's positive latitudes, but in the story it is the
+  southern hemisphere), so distances between islands near the pole are kept too (Citadel to desert: 315 m on the planet and on
   the map; they stretch east-west by 11% at 45 degrees from the pole). Nothing moves: collision, navigation, gravity
   and every gameplay system see a flat world, static objects stay static. Streamed islands come without what the
   opened island's level brings for the whole planet (sun and lights, sky atmosphere, sky light, clouds, height fog,
@@ -538,8 +539,8 @@ How it holds together (the world is flat and still; only the view is round):
   127.7); the desert island at 89.0, 5.7 (heading -150.4).
 
 Tests: `-LBA2Shots=globe` on Citadel (open the level with `?Globe`): the Dinofly flies out to sea and back, floats,
-shots from 500 m and 1.5 km up (the whole planet, both islands on it). 129 fps on average in standalone game (the 2 km
-world-turning prototype: 140). `-LBA2GlobeTo=DESERT`: across to the desert until within its reach, looks back from
+shots from 500 m and 1.5 km up (the whole planet, both islands on it). 129 fps on average in standalone game.
+`-LBA2GlobeTo=DESERT`: across to the desert until within its reach, looks back from
 above, lands. `-LBA2Shots=boat -LBA2BoatTo=DESERT` crosses by ferry. Shots: Saved/LookDev/flatglobe750 (and
 flatglobe1000, flatglobe1 for 1 and 2 km, compare_750_1000.png, flatglobe_cmp.png against the flat level).
 Console: `lba.Globe.Bend 0` (the flat world unbent, to compare), `lba.Globe.FlatRadius 150` (m),
@@ -548,10 +549,13 @@ Console: `lba.Globe.Bend 0` (the flat world unbent, to compare), `lba.Globe.Flat
 (the next island opened comes alone), `lba.Globe.SkyLightGain 1.4`, `lba.Globe.Clouds 5 10` (km),
 `lba.Globe.SeaErrors` (the sea material's compile errors).
 
-Not done yet: the other islands (stubs from the holomap and LBA1), the southern hemisphere (its own flat map, joined to
-this one through the Hamalayi belt's passes), the other islands' scenes and looks (they borrow the home island's sun,
-sky, sea color and look), streaming by distance (every placed island is loaded), the fast travel menu landing on the
-globe, space; packaged builds don't cook the planet asset yet. Bounds aren't grown by the bend (a far object whose
+Next, in order: bring back the Unreal Water system's sea if possible (the planet's sea is darker, most in shallow
+water); stop the water leaks on the desert island; the Hamalayi belt as real mountains on the flat map, bounding the
+southern hemisphere so movement stays in it without tricks; the other southern islands from LBA1, first approximations
+of their shapes, then if possible 3D conversions placed on the map and bent like the rest. Later: space travel, the
+other hemisphere, the other islands' scenes and looks (they borrow the home island's sun, sky, sea color and look),
+streaming by distance (every placed island is loaded), the fast travel menu landing on the globe; packaged builds don't
+cook the planet asset yet. Bounds aren't grown by the bend (a far object whose
 flat place is off screen while its bent one is on screen would be culled; not seen in the shots). Every generated
 material now has a world position offset (zero without a planet): virtual shadow maps may stop caching those meshes
 outside globe mode too (not measured; `ShadowCacheInvalidationBehavior` Rigid on static meshes would fix it).
