@@ -8,6 +8,7 @@
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBARenderingAssets.h"
 #include "Import/LBAWater.h"
+#include "WaterWaves.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
 #include "LBATypes.h"
@@ -225,6 +226,128 @@ namespace
 		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet sea disc %s: %d rings out to %.0f m, %d triangles"), *Name, Rings.Num(), Reach / 100.0, Builder.NumTriangles());
 		return Mesh;
 	}
+
+	/** Sea kept around an island's coastline inside its ocean's cell (cm), and how much neighbouring cells overlap. */
+	constexpr double CellMargin = 1000.0;
+	constexpr double CellOverlap = 5.0;
+
+	/**
+	 * Splits Cell among Islands (indices into Land, their land's boxes): a cut along X or Y through the widest gap
+	 * between their land, until each island has a rectangle of its own around its land.
+	 */
+	void Partition(FLBAImportContext& Context, const FBox2D& Cell, const TArray<int32>& Islands, const TArray<FBox2D>& Land,
+		TArray<FLBAGlobeSeaSettings::FIsland>& Out)
+	{
+		if (Islands.Num() == 1)
+		{
+			Out[Islands[0]].Cell = Cell;
+			return;
+		}
+		double BestGap = 0.0;
+		int32 BestAxis = INDEX_NONE;
+		double BestCut = 0.0;
+		for (int32 Axis = 0; Axis < 2; ++Axis)
+		{
+			TArray<int32> Sorted = Islands;
+			Sorted.Sort([&Land, Axis](int32 A, int32 B) { return Land[A].Min[Axis] < Land[B].Min[Axis]; });
+			double Reach = TNumericLimits<double>::Lowest();
+			for (int32 Index = 0; Index + 1 < Sorted.Num(); ++Index)
+			{
+				Reach = FMath::Max(Reach, Land[Sorted[Index]].Max[Axis]);
+				const double Gap = Land[Sorted[Index + 1]].Min[Axis] - Reach;
+				if (Gap > BestGap)
+				{
+					BestGap = Gap;
+					BestAxis = Axis;
+					BestCut = Reach + 0.5 * Gap;
+				}
+			}
+		}
+		if (BestAxis == INDEX_NONE)
+		{
+			// No straight cut between them: the first gets the cell, the others' low land floods.
+			Context.Warn(FString::Printf(TEXT("Globe sea: %s and %d more islands can't be split by a straight line; only %s keeps its coastline dry"),
+				*Out[Islands[0]].Name, Islands.Num() - 1, *Out[Islands[0]].Name));
+			Out[Islands[0]].Cell = Cell;
+			return;
+		}
+		TArray<int32> Low;
+		TArray<int32> High;
+		for (int32 Island : Islands)
+		{
+			(Land[Island].Max[BestAxis] <= BestCut ? Low : High).Add(Island);
+		}
+		FBox2D LowCell = Cell;
+		FBox2D HighCell = Cell;
+		LowCell.Max[BestAxis] = BestCut + CellOverlap;
+		HighCell.Min[BestAxis] = BestCut - CellOverlap;
+		Partition(Context, LowCell, Low, Land, Out);
+		Partition(Context, HighCell, High, Land, Out);
+	}
+
+	/**
+	 * The planet's sea levels: for each placed island whose sea is known, its sea over all the planet's islands, laid
+	 * where they are around it (as the planet subsystem streams them in). The zone takes in every camera near an
+	 * island, plus all the sea the bent view can show from there: out a quarter way around the planet past the flat
+	 * circle (beyond is the far side, never in view).
+	 */
+	void BuildSeaLevels(FLBAImportContext& Context, ULBAPlanetAsset* Asset, const FString& Folder)
+	{
+		const double Radius = Asset->Radius;
+		const double Visible = Asset->FlatRadius + 0.5 * UE_DOUBLE_PI * Radius;
+		for (FLBAPlanetIsland& Opened : Asset->Islands)
+		{
+			UMaterialInterface* Material = Opened.WaterMaterial.LoadSynchronous();
+			if (!Material)
+			{
+				continue;
+			}
+			const FTransform MapToWorld = Opened.GetLevelToMap(Radius).Inverse();
+			FLBAGlobeSeaSettings Settings;
+			Settings.Material = Material;
+			Settings.Waves = Opened.WaterWaves.LoadSynchronous();
+			TArray<FBox2D> Land;
+			TArray<int32> Islands;
+			for (const FLBAPlanetIsland& Island : Asset->Islands)
+			{
+				const FTransform LevelToWorld = Island.GetLevelToMap(Radius) * MapToWorld;
+				FLBAGlobeSeaSettings::FIsland& Entry = Settings.Islands.AddDefaulted_GetRef();
+				Entry.Name = Island.Island.ToString();
+				const FVector2D Center(LevelToWorld.TransformPosition(FVector(Island.Center, 0.0)));
+				FBox2D Box(Center, Center);
+				for (const FVector2D& Point : Island.Coastline)
+				{
+					Entry.Coastline.Add(FVector2D(LevelToWorld.TransformPosition(FVector(Point, 0.0))));
+					Box += Entry.Coastline.Last();
+				}
+				if (Island.Coastline.Num() < 3)
+				{
+					Context.Warn(FString::Printf(TEXT("Globe sea of %s: %s has no coastline yet (import it again): its low land floods"),
+						*Opened.Island.ToString(), *Entry.Name));
+				}
+				Islands.Add(Land.Num());
+				Land.Add(Box.ExpandBy(CellMargin));
+				Settings.Bounds += Center - FVector2D(Island.Reach);
+				Settings.Bounds += Center + FVector2D(Island.Reach);
+			}
+			Settings.Bounds = Settings.Bounds.ExpandBy(Visible);
+			for (const FBox2D& Box : Land)
+			{
+				Settings.Bounds += Box;
+			}
+			Partition(Context, Settings.Bounds, Islands, Land, Settings.Islands);
+
+			const FString Name = FString::Printf(TEXT("L_%s_GlobeSea"), *Opened.Island.ToString());
+			UWorld* World = Context.BeginLevel(Folder, Name);
+			if (!World)
+			{
+				continue;
+			}
+			LBAWater::SpawnGlobeSea(Context, World, Settings);
+			Context.EndLevel(World);
+			Opened.SeaLevel = TSoftObjectPtr<UWorld>(FSoftObjectPath(Folder / Name + TEXT(".") + Name));
+		}
+	}
 }
 
 bool LBAPlanetBuilder::IsPlaced(const FString& IslandName)
@@ -237,7 +360,7 @@ bool LBAPlanetBuilder::IsPlaced(const FString& IslandName)
 }
 
 void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& Island, const FString& IslandFolder, const FLBAEnvironmentPreset& Preset,
-	const FLBAEnvironmentLights& Lights)
+	const FLBAEnvironmentLights& Lights, const TArray<FVector2D>& Coastline, const FLBAWaterSea& Sea)
 {
 	const FPlanetPreset* Planet = FindPreset(Island.Name);
 	if (!Planet || !IsPlaced(Island.Name))
@@ -302,6 +425,9 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 		LandRadius = FMath::Max(LandRadius, FVector2D::Distance(Point, Entry.Center));
 	}
 	Entry.Reach = float(LandRadius + ReachMargin);
+	Entry.Coastline = Coastline;
+	Entry.WaterMaterial = Sea.Material;
+	Entry.WaterWaves = Sea.Waves;
 	const FString PlanetFolder = Context.GetContentPath(TEXT("Planets"));
 
 	// The planet's shared assets; the home island gives the sea its look.
@@ -337,6 +463,7 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	Asset->Islands.RemoveAll([](const FLBAPlanetIsland& Placed) { return !IsPlaced(Placed.Island.ToString()); });
 	if (FLBAPlanetIsland* Existing = Asset->Islands.FindByPredicate([&Entry](const FLBAPlanetIsland& Placed) { return Placed.Island == Entry.Island; }))
 	{
+		Entry.SeaLevel = Existing->SeaLevel;
 		*Existing = Entry;
 	}
 	else
@@ -360,6 +487,8 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 				Planet->Name, *Island.Name, *Other.Island.ToString(), OnMap / 100.0, Entry.Reach / 100.0, Other.Reach / 100.0));
 		}
 	}
+	// The island's coastline and sea changed: every opened island's sea level, which leaves it dry.
+	BuildSeaLevels(Context, Asset, PlanetFolder);
 	Context.MarkForSave(Asset);
 
 	const double Elevation = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(PlanetSun, Entry.GetUp()), -1.0, 1.0)));

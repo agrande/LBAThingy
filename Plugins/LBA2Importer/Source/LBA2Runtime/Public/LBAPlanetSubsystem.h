@@ -21,9 +21,11 @@ class USkyAtmosphereComponent;
  *
  * Only the view is round. Past the planet's flat radius around the camera, every generated material moves its vertices
  * down onto a sphere of the planet's radius (LBAPlanet.ush, MPC_LBA_Planet), so the sea curves away to a horizon and far
- * islands sink below it, rising as they come near. The sea is a disc kept under the camera (the islands' Water plugin
- * sea and invisible sea floor are gone; sea queries answer the sea level), bent the same way; the sky atmosphere is a
- * planet of that radius centered under the camera, so its horizon follows.
+ * islands sink below it, rising as they come near. The sea is the opened island's sea level (FLBAPlanetIsland::SeaLevel:
+ * one Water plugin zone over all the sea in view, an ocean per island keeping its coastline dry, its water bent by its
+ * material), over a disc kept under the camera for the sea beyond it (or alone, without a sea level). The islands' own
+ * water and invisible sea floors are gone; sea queries answer the sea level. The sky atmosphere is a planet of that
+ * radius centered under the camera, so its horizon follows.
  *
  *   lba.Globe 0/1             globe mode off/on for the next level opened (-1: the project setting)
  *   lba.Globe.Open ISLAND     opens an island in globe mode
@@ -31,6 +33,7 @@ class USkyAtmosphereComponent;
  *   lba.Globe.FlatRadius M    overrides the flat radius around the camera (m; negative: the planet's)
  *   lba.Globe.Radius M        overrides the planet's radius for the next level opened (m): the islands' places and the bend
  *   lba.Globe.Debug 1         prints where the camera is on screen
+ *   lba.Globe.Sea 0           the sea disc alone for the next level opened (to compare)
  */
 UCLASS()
 class LBA2RUNTIME_API ULBAPlanetSubsystem : public UTickableWorldSubsystem
@@ -90,6 +93,9 @@ private:
 	/** The other islands' streamed levels, by island. */
 	TArray<TWeakObjectPtr<ULevelStreamingDynamic>> IslandStreams;
 	TWeakObjectPtr<USkyAtmosphereComponent> Atmosphere;
+	/** The opened island's sea level (Water plugin oceans) is the sea (lba.Globe.Sea); the sea disc lies under it. */
+	bool bWaterSea = false;
+	TWeakObjectPtr<ULevelStreamingDynamic> SeaStream;
 
 	/** The view this frame and the last, for motion vectors of the bent world. */
 	FVector View = FVector::ZeroVector;

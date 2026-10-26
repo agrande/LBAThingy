@@ -5,10 +5,13 @@
 #include "Import/LBAEnvironment.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
+#include "Import/LBARenderingAssets.h"
 #include "LBA2Runtime.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialAttributeDefinitionMap.h"
+#include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionGetMaterialAttributes.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionSetMaterialAttributes.h"
 #include "Materials/MaterialFunctionInterface.h"
@@ -57,6 +60,16 @@ namespace
 	/** Water mesh tiles (cm) and their quads per side (2^n): 25 cm quads up close. */
 	constexpr float WaterTileSize = 400.f;
 	constexpr int32 WaterTileTessellation = 4;
+	/** Most water mesh tiles across a zone (r.Water.WaterMesh.MaxDimensionInTiles' default). */
+	constexpr double MaxWaterTiles = 256.0;
+
+	/**
+	 * Most water info texels across a zone: an island's zone, and globe mode's, which covers all the sea the bent view
+	 * shows (3 km for Twinsun: 1.5 m per texel). The texture is half float RGBA, 32 MB at 2048, and each update of it
+	 * renders through full float targets of its size: 4096 went 130 MB over an 8 GB card's video memory budget.
+	 */
+	constexpr int32 MaxLevelWaterResolution = 2048;
+	constexpr int32 MaxGlobeWaterResolution = 2048;
 
 	/** Gerstner wave generator settings of a sea mood (cm, degrees). */
 	struct FWaves
@@ -112,15 +125,19 @@ namespace
 		return Asset;
 	}
 
-	/** Bump to regenerate the clipped water materials (e.g. after an engine upgrade changed the Water plugin's). */
-	constexpr int32 ClippedWaterVersion = 1;
+	/**
+	 * Bump to regenerate the clipped water materials (e.g. after an engine upgrade changed the Water plugin's).
+	 * v2: globe mode's bend.
+	 */
+	constexpr int32 ClippedWaterVersion = 2;
 
 	/**
 	 * Unreal's ocean material, clipped where its water zone has no water (inside the coastline). Unreal's only turns
 	 * see-through there: those pixels still count as water in the G-buffer, so the cartoon water would paint them, as
 	 * blocky patches where the water mesh's tiles cross the coast. Derived from the Water plugin's material chain (copied
 	 * once per version): its own depth mask, which goes to 0 where the water info texture has no water, also feeds the
-	 * opacity mask, which the ocean's masked blend mode clips at a third.
+	 * opacity mask, which the ocean's masked blend mode clips at a third. It bends with globe mode's view like the
+	 * generated masters (no offset without a planet).
 	 */
 	UMaterialInterface* GetClippedOceanMaterial(FLBAImportContext& Context)
 	{
@@ -170,8 +187,26 @@ namespace
 		Clip->Inputs[0].Connect(Graph->MaterialAttributes.OutputIndex, Graph->MaterialAttributes.Expression);
 		Clip->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_OpacityMask));
 		Clip->Inputs.AddDefaulted_GetRef().Connect(MaskOutput, DepthMask);
+
+		// Globe mode's bend, like every generated material: added to the waves, and the normals turned with it.
+		UMaterialParameterCollection* Planet = Context.GetRendering().GetPlanetParameters();
+		UMaterialExpressionGetMaterialAttributes* Own = NewObject<UMaterialExpressionGetMaterialAttributes>(Material);
+		Own->MaterialAttributes.Connect(Graph->MaterialAttributes.OutputIndex, Graph->MaterialAttributes.Expression);
+		const int32 OwnOffset = Own->CreateOrGetOutputAttribute(MP_WorldPositionOffset);
+		const int32 OwnNormal = Own->CreateOrGetOutputAttribute(MP_Normal);
+		Material->GetExpressionCollection().AddExpression(Own);
+		UMaterialExpressionAdd* Offset = Cast<UMaterialExpressionAdd>(UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionAdd::StaticClass(), -250, 1000));
+		Offset->A.Connect(OwnOffset, Own);
+		Offset->B.Connect(0, LBAMaterials::MakePlanetBend(Material, Planet));
+		Clip->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_WorldPositionOffset));
+		Clip->Inputs.AddDefaulted_GetRef().Connect(0, Offset);
+		Clip->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_Normal));
+		Clip->Inputs.AddDefaulted_GetRef().Connect(0, LBAMaterials::MakePlanetBentNormal(Material, Planet, Own, OwnNormal));
+
 		Clip->MaterialExpressionEditorX = Graph->MaterialAttributes.Expression->MaterialExpressionEditorX + 300;
 		Clip->MaterialExpressionEditorY = Graph->MaterialAttributes.Expression->MaterialExpressionEditorY;
+		Own->MaterialExpressionEditorX = Clip->MaterialExpressionEditorX;
+		Own->MaterialExpressionEditorY = Clip->MaterialExpressionEditorY + 300;
 		Material->GetExpressionCollection().AddExpression(Clip);
 		Graph->MaterialAttributes.Connect(0, Clip);
 		LBAMaterials::AddVersionStamp(Material, ClippedWaterVersion);
@@ -228,7 +263,139 @@ FLBAWaterLook LBAWater::ComputeLook(const FLBAEnvironmentPreset& Preset, const F
 	return Look;
 }
 
-float LBAWater::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWaterSettings& Settings, const FLBAEnvironmentPreset& Preset,
+namespace
+{
+	/** Water info texels across a zone of that size (cm): about half a meter each, up to MaxResolution. */
+	int32 GetZoneResolution(double Size, int32 MaxResolution)
+	{
+		return FMath::Clamp(int32(FMath::RoundUpToPowerOfTwo(uint32(Size / 50.0))), 256, MaxResolution);
+	}
+
+	/**
+	 * A water zone over Bounds: its water info texture (ground depth, for the shore) gets about half a meter per texel,
+	 * up to MaxResolution texels across.
+	 */
+	AWaterZone* SpawnZone(FLBAImportContext& Context, UWorld* World, const FBox2D& Bounds, int32 MaxResolution, UMaterialInterface* FarMaterial,
+		const FName& Folder)
+	{
+		const FVector2D Center = Bounds.GetCenter();
+		const FVector2D Extent = Bounds.GetSize();
+		AWaterZone* Zone = Context.SpawnGeneratedActorWithFactory<AWaterZone>(World, FTransform(FVector(Center, 0.0)), TEXT("WaterZone"), Folder);
+		if (!Zone)
+		{
+			return nullptr;
+		}
+		Zone->SetZoneExtent(Extent);
+		const double Size = FMath::Max(Extent.X, Extent.Y);
+		const int32 Resolution = GetZoneResolution(Size, MaxResolution);
+		Zone->SetRenderTargetResolution(FIntPoint(Resolution, Resolution));
+		Zone->SetFarMeshMaterial(FarMaterial);
+		if (UWaterMeshComponent* Mesh = Zone->GetWaterMeshComponent())
+		{
+			if (!FarMaterial)
+			{
+				Mesh->FarDistanceMeshExtent = 0.f;
+			}
+			// The water mesh leaves out only whole tiles inside the coastline: small tiles follow it closely. Fewer quads
+			// per tile and LOD distances scaled back up keep the mesh about as dense as with the default 24 m tiles. It
+			// takes at most MaxWaterTiles across: larger zones get larger tiles with more quads each, as small.
+			int32 Doublings = 0;
+			while (WaterTileSize * double(1 << Doublings) * MaxWaterTiles < Size)
+			{
+				++Doublings;
+			}
+			const float TileSize = WaterTileSize * float(1 << Doublings);
+			const float DefaultTileSize = Mesh->GetTileSize();
+			Mesh->SetTileSize(TileSize);
+			if (FIntProperty* Tessellation = FindFProperty<FIntProperty>(UWaterMeshComponent::StaticClass(), TEXT("TessellationFactor")))
+			{
+				Tessellation->SetPropertyValue_InContainer(Mesh, WaterTileTessellation + Doublings);
+			}
+			if (FFloatProperty* LODScale = FindFProperty<FFloatProperty>(UWaterMeshComponent::StaticClass(), TEXT("LODScale")))
+			{
+				LODScale->SetPropertyValue_InContainer(Mesh, DefaultTileSize / TileSize);
+			}
+		}
+		return Zone;
+	}
+
+	/**
+	 * An ocean in Zone, its coastline (world cm) left dry: filling the zone from Location, or only Cell (world cm) when
+	 * it is valid. Without a coastline, a 2 m loop around Location (a point on land) is the only dry place.
+	 */
+	void SpawnOcean(FLBAImportContext& Context, UWorld* World, AWaterZone* Zone, const FVector2D& Location, const TArray<FVector2D>& Coastline,
+		const FBox2D& Cell, UMaterialInterface* Material, UWaterWavesAsset* WavesAsset, const FString& Label, const FName& Folder)
+	{
+		// Water bodies build their render data (the meshes the water zone draws and renders into its water info) only
+		// when the application can render, and save it with the level. Import commandlets can't, so they would save an
+		// invisible ocean: let the water plugin build it anyway.
+		TGuardValue<bool> AllowRenderData(PRIVATE_GAllowCommandletRendering, true);
+
+		// A cell's rectangle is centered on its ocean.
+		const FVector2D Origin = Cell.bIsValid ? Cell.GetCenter() : Location;
+		AWaterBodyOcean* Ocean = Context.SpawnGeneratedActorWithFactory<AWaterBodyOcean>(World, FTransform(FVector(Origin, 0.0)), Label, Folder);
+		UWaterBodyOceanComponent* Body = Ocean ? Cast<UWaterBodyOceanComponent>(Ocean->GetWaterBodyComponent()) : nullptr;
+		if (!Body)
+		{
+			return;
+		}
+		// Coastline: straight segments between the given points (local to the ocean), else a 2 m loop on land.
+		// (Linear from the start: curved points would overshoot and loop.)
+		TArray<FVector2D> Coast;
+		for (const FVector2D& Point : Coastline)
+		{
+			Coast.Add(Point - Origin);
+		}
+		if (Coast.Num() < 3)
+		{
+			constexpr double Loop = 100.0;
+			const FVector2D Land = Location - Origin;
+			Coast = { Land + FVector2D(Loop, -Loop), Land + FVector2D(Loop, Loop), Land + FVector2D(-Loop, Loop), Land + FVector2D(-Loop, -Loop) };
+		}
+		TArray<FSplinePoint> Points;
+		for (int32 Index = 0; Index < Coast.Num(); ++Index)
+		{
+			Points.Emplace(float(Index), FVector(Coast[Index], 0.0), ESplinePointType::Linear);
+		}
+		UWaterSplineComponent* Spline = Body->GetWaterSpline();
+		Spline->ClearSplinePoints(false);
+		Spline->AddPoints(Points, false);
+		Spline->UpdateSpline();
+		Spline->K2_SynchronizeAndBroadcastDataChange();
+		Body->SetWaterMaterial(Material);
+		// The water info texture holds water exactly up to the coastline (Unreal grows it 20 m inland by default), so the
+		// clipped water material stops there.
+		Body->ShapeDilation = 0.f;
+		if (WavesAsset)
+		{
+			UWaterWavesAssetReference* Waves = NewObject<UWaterWavesAssetReference>(Ocean, TEXT("OceanWaterWaves"));
+			Waves->SetWaterWavesAsset(WavesAsset);
+			Ocean->SetWaterWaves(Waves);
+		}
+		FOnWaterBodyChangedParams Changed;
+		Changed.bShapeOrPositionChanged = true;
+		Body->UpdateAll(Changed);
+		Body->UpdateWaterZones();
+		if (Cell.bIsValid)
+		{
+			// The ocean's rectangle is centered on the cell rather than on its zone.
+			if (FBoolProperty* Centered = FindFProperty<FBoolProperty>(UWaterBodyOceanComponent::StaticClass(), TEXT("bCenterOnWaterZone")))
+			{
+				Centered->SetPropertyValue_InContainer(Body, false);
+			}
+			Body->SetCollisionExtents(FVector(Cell.GetExtent(), Body->GetCollisionExtents().Z));
+			Body->SetOceanExtent(Cell.GetSize());
+		}
+		else
+		{
+			Body->SetCollisionExtents(FVector(Zone->GetZoneExtent() / 2.0, Body->GetCollisionExtents().Z));
+			Body->FillWaterZoneWithOcean();
+		}
+		Body->UpdateWaterBodyRenderData();
+	}
+}
+
+FLBAWaterSea LBAWater::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWaterSettings& Settings, const FLBAEnvironmentPreset& Preset,
 	const FLBAEnvironmentLights& Lights)
 {
 	const FName Folder(TEXT("Environment"));
@@ -237,44 +404,24 @@ float LBAWater::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWater
 	const FLBAWaterLook Look = ComputeLook(Preset, Lights);
 	const FLinearColor Absorption(1.f / Look.Absorption.R, 1.f / Look.Absorption.G, 1.f / Look.Absorption.B, 1.f);
 	const FLinearColor Scattering(1.f, 1.f, 1.f, WaterScattering * 1000.f);
-	const float NeutralLight = Look.NeutralLight;
+	FLBAWaterSea Sea;
+	Sea.NeutralLight = Look.NeutralLight;
 	UE_LOG(LogLBA2, Display, TEXT("LBA2 water %s: sea %s, albedo %s, absorption distance %s cm, neutral light %.2f"), *Settings.Name,
-		*Preset.SeaColor.ToString(), *Look.Albedo.ToString(), *Absorption.ToString(), NeutralLight);
+		*Preset.SeaColor.ToString(), *Look.Albedo.ToString(), *Absorption.ToString(), Sea.NeutralLight);
 
-	UMaterialInterface* WaterMaterial = MakeWaterMaterial(Context, Settings.MaterialFolder, FString::Printf(TEXT("MI_%s_Ocean"), *Settings.Name),
+	Sea.Material = MakeWaterMaterial(Context, Settings.MaterialFolder, FString::Printf(TEXT("MI_%s_Ocean"), *Settings.Name),
 		GetClippedOceanMaterial(Context), Absorption, Scattering);
 	UMaterialInterface* FarMaterial = MakeWaterMaterial(Context, Settings.MaterialFolder, FString::Printf(TEXT("MI_%s_OceanFar"), *Settings.Name),
 		LoadObject<UMaterialInterface>(nullptr, TEXT("/Water/Materials/WaterSurface/Water_FarMesh.Water_FarMesh")), Absorption, Scattering);
+	Sea.Waves = GetWavesAsset(Context, Preset.bStormSea ? StormWaves : CalmWaves);
 
-	// The zone covers the island and the sea around it; its water info texture (ground depth, for the shore) gets
-	// about half a meter per texel.
-	const FVector Center = Settings.Bounds.GetCenter();
-	const FVector2D Extent(Settings.Bounds.GetSize());
-	AWaterZone* Zone = Context.SpawnGeneratedActorWithFactory<AWaterZone>(World, FTransform(FVector(Center.X, Center.Y, 0.0)), TEXT("WaterZone"), Folder);
+	// The zone covers the island and the sea around it; the ocean goes on beyond it to the horizon (its far mesh).
+	AWaterZone* Zone = SpawnZone(Context, World, FBox2D(FVector2D(Settings.Bounds.Min), FVector2D(Settings.Bounds.Max)), MaxLevelWaterResolution,
+		FarMaterial, Folder);
 	if (!Zone)
 	{
-		return NeutralLight;
+		return Sea;
 	}
-	Zone->SetZoneExtent(Extent);
-	const int32 Resolution = FMath::Clamp(int32(FMath::RoundUpToPowerOfTwo(uint32(FMath::Max(Extent.X, Extent.Y) / 50.0))), 256, 2048);
-	Zone->SetRenderTargetResolution(FIntPoint(Resolution, Resolution));
-	Zone->SetFarMeshMaterial(FarMaterial);
-	if (UWaterMeshComponent* Mesh = Zone->GetWaterMeshComponent())
-	{
-		// The water mesh leaves out only whole tiles inside the coastline: small tiles follow it closely. Fewer quads
-		// per tile and LOD distances scaled back up keep the mesh about as dense as with the default 24 m tiles.
-		const float DefaultTileSize = Mesh->GetTileSize();
-		Mesh->SetTileSize(WaterTileSize);
-		if (FIntProperty* Tessellation = FindFProperty<FIntProperty>(UWaterMeshComponent::StaticClass(), TEXT("TessellationFactor")))
-		{
-			Tessellation->SetPropertyValue_InContainer(Mesh, WaterTileTessellation);
-		}
-		if (FFloatProperty* LODScale = FindFProperty<FFloatProperty>(UWaterMeshComponent::StaticClass(), TEXT("LODScale")))
-		{
-			LODScale->SetPropertyValue_InContainer(Mesh, DefaultTileSize / WaterTileSize);
-		}
-	}
-
 	for (AActor* Terrain : Settings.TerrainActors)
 	{
 		if (Terrain)
@@ -284,58 +431,31 @@ float LBAWater::Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWater
 			Component->RegisterComponent();
 		}
 	}
-
-	// Water bodies build their render data (the meshes the water zone draws and renders into its water info) only
-	// when the application can render, and save it with the level. Import commandlets can't, so they would save an
-	// invisible ocean: let the water plugin build it anyway.
-	TGuardValue<bool> AllowRenderData(PRIVATE_GAllowCommandletRendering, true);
-
-	AWaterBodyOcean* Ocean = Context.SpawnGeneratedActorWithFactory<AWaterBodyOcean>(World,
-		FTransform(FVector(Settings.LandPoint.X, Settings.LandPoint.Y, 0.0)), TEXT("Ocean"), Folder);
-	UWaterBodyOceanComponent* Body = Ocean ? Cast<UWaterBodyOceanComponent>(Ocean->GetWaterBodyComponent()) : nullptr;
-	if (!Body)
-	{
-		return NeutralLight;
-	}
-	// Coastline: straight segments between the given points (local to the ocean), else a 2 m loop on land.
-	// (Linear from the start: curved points would overshoot and loop.)
-	TArray<FVector2D> Coast;
-	for (const FVector2D& Point : Settings.Coastline)
-	{
-		Coast.Add(Point - Settings.LandPoint);
-	}
-	if (Coast.Num() < 3)
-	{
-		constexpr double Loop = 100.0;
-		Coast = { FVector2D(Loop, -Loop), FVector2D(Loop, Loop), FVector2D(-Loop, Loop), FVector2D(-Loop, -Loop) };
-	}
-	TArray<FSplinePoint> Points;
-	for (int32 Index = 0; Index < Coast.Num(); ++Index)
-	{
-		Points.Emplace(float(Index), FVector(Coast[Index], 0.0), ESplinePointType::Linear);
-	}
-	UWaterSplineComponent* Spline = Body->GetWaterSpline();
-	Spline->ClearSplinePoints(false);
-	Spline->AddPoints(Points, false);
-	Spline->UpdateSpline();
-	Spline->K2_SynchronizeAndBroadcastDataChange();
-	Body->SetWaterMaterial(WaterMaterial);
-	// The water info texture holds water exactly up to the coastline (Unreal grows it 20 m inland by default), so the
-	// clipped water material stops there.
-	Body->ShapeDilation = 0.f;
-	if (UWaterWavesAsset* WavesAsset = GetWavesAsset(Context, Preset.bStormSea ? StormWaves : CalmWaves))
-	{
-		UWaterWavesAssetReference* Waves = NewObject<UWaterWavesAssetReference>(Ocean, TEXT("OceanWaterWaves"));
-		Waves->SetWaterWavesAsset(WavesAsset);
-		Ocean->SetWaterWaves(Waves);
-	}
-	FOnWaterBodyChangedParams Changed;
-	Changed.bShapeOrPositionChanged = true;
-	Body->UpdateAll(Changed);
-	Body->UpdateWaterZones();
-	Body->SetCollisionExtents(FVector(Extent / 2.0, Body->GetCollisionExtents().Z));
-	Body->FillWaterZoneWithOcean();
-	Body->UpdateWaterBodyRenderData();
+	SpawnOcean(Context, World, Zone, Settings.LandPoint, Settings.Coastline, FBox2D(ForceInit), Sea.Material, Sea.Waves, TEXT("Ocean"), Folder);
 	Zone->MarkForRebuild(EWaterZoneRebuildFlags::All);
-	return NeutralLight;
+	return Sea;
+}
+
+void LBAWater::SpawnGlobeSea(FLBAImportContext& Context, UWorld* World, const FLBAGlobeSeaSettings& Settings)
+{
+	const FName Folder(TEXT("Sea"));
+	AWaterZone* Zone = SpawnZone(Context, World, Settings.Bounds, MaxGlobeWaterResolution, nullptr, Folder);
+	if (!Zone)
+	{
+		return;
+	}
+	for (const FLBAGlobeSeaSettings::FIsland& Island : Settings.Islands)
+	{
+		if (!Island.Cell.bIsValid)
+		{
+			continue;
+		}
+		// Without a coastline, the ocean's dry loop goes in its cell's corner, out at sea.
+		SpawnOcean(Context, World, Zone, Island.Cell.Min + FVector2D(200.0), Island.Coastline, Island.Cell, Settings.Material, Settings.Waves,
+			TEXT("Ocean_") + Island.Name, Folder);
+	}
+	Zone->MarkForRebuild(EWaterZoneRebuildFlags::All);
+	UE_LOG(LogLBA2, Display, TEXT("LBA2 globe sea: zone %.0f x %.0f m around (%.0f, %.0f) m, %d texels across, %d islands"),
+		Settings.Bounds.GetSize().X / 100.0, Settings.Bounds.GetSize().Y / 100.0, Settings.Bounds.GetCenter().X / 100.0,
+		Settings.Bounds.GetCenter().Y / 100.0, GetZoneResolution(Settings.Bounds.GetSize().GetMax(), MaxGlobeWaterResolution), Settings.Islands.Num());
 }

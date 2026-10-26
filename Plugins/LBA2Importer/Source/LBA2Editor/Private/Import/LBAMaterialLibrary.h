@@ -4,6 +4,7 @@
 
 class FLBAImportContext;
 class UMaterial;
+class UMaterialExpression;
 class UMaterialInterface;
 class UMaterialInstanceConstant;
 class UMaterialParameterCollection;
@@ -61,6 +62,13 @@ namespace LBAMaterials
 	 * Shaders/Private/LBAPlanet.ush), last frame's camera for motion vectors. Nothing moves without a planet.
 	 */
 	void AddPlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet);
+	/** The bend's world position offset (current and last frame), for materials that add it to their own. */
+	UMaterialExpression* MakePlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet);
+	/**
+	 * A normal (world space, or tangent space where the tangent basis is the world's, like the Water plugin's meshes)
+	 * output of Normal turned with the bend's tilt at the pixel (LBAPlanetBendVector).
+	 */
+	UMaterialExpression* MakePlanetBentNormal(UMaterial* Material, UMaterialParameterCollection* Planet, UMaterialExpression* Normal, int32 OutputIndex);
 }
 
 class FLBAMaterialLibrary

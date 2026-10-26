@@ -4,6 +4,8 @@
 
 class AActor;
 class FLBAImportContext;
+class UMaterialInterface;
+class UWaterWavesAsset;
 class UWorld;
 struct FLBAEnvironmentLights;
 struct FLBAEnvironmentPreset;
@@ -37,6 +39,36 @@ struct FLBAWaterLook
 	float NeutralLight = 1.f;
 };
 
+/** A level's sea as spawned. */
+struct FLBAWaterSea
+{
+	/** How bright open water renders relative to the preset's SeaColor (the palette shading's WaterNeutralLight). */
+	float NeutralLight = 1.f;
+	/** The ocean's material and waves. */
+	UMaterialInterface* Material = nullptr;
+	UWaterWavesAsset* Waves = nullptr;
+};
+
+/** Globe mode's sea (LBAPlanetBuilder): one water zone over all the sea the bent view shows, an ocean per island. */
+struct FLBAGlobeSeaSettings
+{
+	struct FIsland
+	{
+		FString Name;
+		/** Its coastline (world cm, closed loop), left dry; fewer than 3 points: none. */
+		TArray<FVector2D> Coastline;
+		/** The part of the zone its ocean covers (world cm): the islands' cells tile the zone. */
+		FBox2D Cell = FBox2D(ForceInit);
+	};
+
+	/** Area the water zone covers (world cm). */
+	FBox2D Bounds = FBox2D(ForceInit);
+	TArray<FIsland> Islands;
+	/** The opened island's ocean material and waves: its sea is the planet's. */
+	UMaterialInterface* Material = nullptr;
+	UWaterWavesAsset* Waves = nullptr;
+};
+
 namespace LBAWater
 {
 	/** The sea's look under the level's lights: tinted towards the preset's SeaColor. */
@@ -44,9 +76,14 @@ namespace LBAWater
 
 	/**
 	 * Spawns a water zone and an ocean at sea level: Unreal's ocean material tinted towards the preset's SeaColor
-	 * under the level's lights, with a calm swell or storm waves (shared, editable wave assets). Returns how bright
-	 * open water renders relative to SeaColor, which the palette shading uses as the water's neutral light.
+	 * under the level's lights, with a calm swell or storm waves (shared, editable wave assets).
 	 */
-	float Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWaterSettings& Settings, const FLBAEnvironmentPreset& Preset,
+	FLBAWaterSea Spawn(FLBAImportContext& Context, UWorld* World, const FLBAWaterSettings& Settings, const FLBAEnvironmentPreset& Preset,
 		const FLBAEnvironmentLights& Lights);
+
+	/**
+	 * Spawns globe mode's sea: a water zone without far mesh (its few large flat tiles can't bend), and an ocean per
+	 * island filling the island's cell. The islands' ground brings its own water terrain (their levels' sea floors).
+	 */
+	void SpawnGlobeSea(FLBAImportContext& Context, UWorld* World, const FLBAGlobeSeaSettings& Settings);
 }

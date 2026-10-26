@@ -519,43 +519,58 @@ How it holds together (the world is flat and still; only the view is round):
   offset is zero. The palette shading undoes the bend (`LBAPlanetUnbend`) for its dither dots and cartoon sea, so
   they stay put on far surfaces. From the desert's shore, Citadel's center is 30 m down; from the water 285 m away,
   Citadel is entirely below the horizon (at 2 km radius it stood on it).
-- **The sea** is a flat disc of rings kept under the camera, bent like the rest by its material (`M_LBA_PlanetSea`:
-  single layer water with the home island's water colour, so the palette shading draws it as cartoon water); the
-  islands' Water plugin ocean and invisible sea floor are removed, their seabeds stay (bent by their material). Sea
-  queries (`GetSeaSurface`: the Dinofly's and the boat's floating, air density) answer the sea level, Z 0.
+- **The sea** is the Water plugin's, as in the island levels: the opened island's sea level
+  (`/Game/LBA2/Planets/L_<ISLAND>_GlobeSea`, streamed in) has one water zone over all the sea the bent view can show
+  from the islands (out a quarter way around the planet past the flat circle: 3 km across for Twinsun, 1.5 m per
+  water info texel: 2048 texels across, as the islands' levels at most; 4096 overran an 8 GB card's video memory) and an ocean per island, each covering its island's cell of the zone (straight cuts between the
+  islands' land) and keeping its island's coastline dry, so low land inside the coasts stays dry (the desert's beaches
+  no longer leak). The oceans take the opened island's ocean material and waves. The water material (`M_LBA_Water`,
+  Unreal's ocean material clipped at the coast) bends like the generated masters, its normals turned with the bend.
+  The zone has no far mesh (a few large flat tiles can't bend); beyond it, the planet's sea disc (`M_LBA_PlanetSea`,
+  rings kept under the camera, bent by its material) lies 10 m lower, out of sight: far from the camera the water
+  mesh's large tiles slope down towards the coasts. Without a sea level (or `lba.Globe.Sea 0`) the disc is the whole
+  sea, at sea level. The islands' own water and invisible sea floors are removed, their seabeds stay (bent by their
+  material). Sea queries (`GetSeaSurface`: the Dinofly's and the boat's floating, air density) answer the sea level,
+  Z 0. The water's pixel shading (shore depth, foam, ripples) is looked up where the bend puts it, a little closer to
+  the camera than where it is (2 m at 300 m, 19 m at 500 m), which only shows far away.
 - **Sky:** the island's sky atmosphere becomes a planet of the same radius centered under the camera, so its horizon
   stays below the sea's. Its clouds keep their level's layer (5 to 15 km up: the cloud material forms nothing in a
   layer lower than 2 km). Such a small planet's sky is darker towards the horizon (low rays leave its air fast), so
   the sky light is made brighter by the island's `SkyLightGain` (Citadel 1.55, desert 1.35, measured at 2 km). At
   750 m the island's ground is as light as in its level (park 0.99 to 1.07); the sky near the horizon is about 20%
-  darker, and the sea is darker than the level's Water plugin sea, most in shallow water (harbour).
+  darker, and so are its reflections on the sea: Citadel's harbour is (1, 112, 158) sRGB against (43, 156, 199) in
+  the level (the sea disc gave (7, 48, 79)); open water (138, 202, 245) against (155, 206, 239).
 - **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
   (HOLOMAP.HQR, ARROW.BIN: latitude, longitude) and is turned so its calibrated sun keeps its angles; the planet's sun
   is the direction that gives every listed island its sun's elevation (Citadel 31.3 and desert 36.8 degrees, both
   exact). One sun lights the flat world: the opened island's. Output: `/Game/LBA2/Planets/DA_Planet_TWINSUN` (radius,
-  flat radius, islands) and the sea disc and material. The planets list (radius, flat radius, islands) is a table in
+  flat radius, islands, each island's coastline, ocean material and waves, sea level), the sea levels, the sea disc
+  and its material; every placed island's import rebuilds every sea level. The planets list (radius, flat radius, islands) is a table in
   `LBAPlanetBuilder.cpp`; the builder logs each pair's distance on the planet and on the map, and warns when two
   islands' reaches (land plus 20 m) overlap on the map. Twinsun: Citadel at latitude 65.1, longitude 332.4 (heading
   127.7); the desert island at 89.0, 5.7 (heading -150.4).
 
 Tests: `-LBA2Shots=globe` on Citadel (open the level with `?Globe`): the Dinofly flies out to sea and back, floats,
-shots from 500 m and 1.5 km up (the whole planet, both islands on it). 129 fps on average in standalone game.
+shots from 500 m and 1.5 km up (the whole planet, both islands on it). 102 fps on average in standalone game (123
+with the sea disc alone).
 `-LBA2GlobeTo=DESERT`: across to the desert until within its reach, looks back from
 above, lands. `-LBA2Shots=boat -LBA2BoatTo=DESERT` crosses by ferry. Shots: Saved/LookDev/flatglobe750 (and
-flatglobe1000, flatglobe1 for 1 and 2 km, compare_750_1000.png, flatglobe_cmp.png against the flat level).
+flatglobe1000, flatglobe1 for 1 and 2 km, compare_750_1000.png, flatglobe_cmp.png against the flat level; the Water
+plugin sea against the disc in globesea, sheets sheet_a to sheet_j).
 Console: `lba.Globe.Bend 0` (the flat world unbent, to compare), `lba.Globe.FlatRadius 150` (m),
 `lba.Globe.Radius 1000` (m, for the next level opened: places and bend; the sea disc is built for the asset's radius),
 `lba.Globe.Debug 1` (camera height, nearest island and how far it sinks, horizon distance), `lba.Globe.Islands 0`
-(the next island opened comes alone), `lba.Globe.SkyLightGain 1.4`, `lba.Globe.Clouds 5 10` (km),
-`lba.Globe.SeaErrors` (the sea material's compile errors).
+(the next island opened comes alone), `lba.Globe.Sea 0` (the sea disc alone, for the next island opened),
+`lba.Globe.SeaDiscDrop 60` (cm under the sea level's water), `lba.Globe.SkyLightGain 1.4`, `lba.Globe.Clouds 5 10`
+(km), `lba.Globe.SeaErrors` (the sea disc material's compile errors).
 
-Next, in order: bring back the Unreal Water system's sea if possible (the planet's sea is darker, most in shallow
-water); stop the water leaks on the desert island; the Hamalayi belt as real mountains on the flat map, bounding the
+Next, in order: the Hamalayi belt as real mountains on the flat map, bounding the
 southern hemisphere so movement stays in it without tricks; the other southern islands from LBA1, first approximations
 of their shapes, then if possible 3D conversions placed on the map and bent like the rest. Later: space travel, the
 other hemisphere, the other islands' scenes and looks (they borrow the home island's sun, sky, sea color and look),
 streaming by distance (every placed island is loaded), the fast travel menu landing on the globe; packaged builds don't
-cook the planet asset yet. Bounds aren't grown by the bend (a far object whose
+cook the planet asset (nor its sea levels) yet; the small planet's darker horizon sky, which its sea reflects. Bounds
+aren't grown by the bend, and the water mesh culls its tiles where they are flat (a far object or tile whose
 flat place is off screen while its bent one is on screen would be culled; not seen in the shots). Every generated
 material now has a world position offset (zero without a planet): virtual shadow maps may stop caching those meshes
 outside globe mode too (not measured; `ShadowCacheInvalidationBehavior` Rigid on static meshes would fix it).
@@ -749,7 +764,8 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   channel to the sea. Unreal's water mesh only leaves out whole tiles (4 m here), and its material only
   turns see-through where the zone has no water, which the cartoon water would still paint, so the
   ocean uses a copy of the Water plugin's material chain that clips there (`Rendering/Water/M_LBA_Water`,
-  `MI_LBA_Water`, `MI_LBA_Water_Ocean`; the plugin's own depth mask feeds the opacity mask). The terrain renders into the
+  `MI_LBA_Water`, `MI_LBA_Water_Ocean`; the plugin's own depth mask feeds the opacity mask; it also bends with globe
+  mode's view, no offset without a planet). The terrain renders into the
   zone as the ground (`WaterTerrainComponent`), with a generated seabed (`SM_<Island>_Seabed`) sloping
   down from the shores: a shallow shelf off beaches, deep water right along quays and cliffs, in the
   shores' average color, so beaches get lighter shallows and the water's shore foam and waves see a
@@ -847,7 +863,7 @@ Customizing (material instances in `<Root>/Rendering`, children inherit what the
 | level `MI_<Level>_Rain` (child of `M_LBA_Rain`), `MI_<Level>_RainDrops` (child of `M_LBA_RainDrop`) | generated | no |
 | plugin `Effects/NS_LBA_Rain` (rain particles) | levels with rain | yes (plugin content, not generated) |
 | island `MI_<Island>_Ocean` / `_OceanFar` (children of the clipped ocean material / the plugin's far mesh material) | generated | no |
-| `Water/M_LBA_Water`, `MI_LBA_Water`, `MI_LBA_Water_Ocean` (copies of the Water plugin's ocean chain, clipped) | every water level | yes, unless a newer importer changes them |
+| `Water/M_LBA_Water`, `MI_LBA_Water`, `MI_LBA_Water_Ocean` (copies of the Water plugin's ocean chain, clipped, bent in globe mode) | every water level | yes, unless a newer importer changes them |
 | `Water/Waves_LBA_Calm`, `Water/Waves_LBA_Storm` (Gerstner wave assets) | every water level | yes, unless a newer importer changes their defaults |
 
 Main parameters: *LightContrast*, *RowStep*, *Exposure*, *Contrast*, *Saturation*, *ShadowTint* /
@@ -908,7 +924,8 @@ color, shade row / light, surfaces without fog).
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [x] Travel menu by planet, island and scene (interiors included), after lba2remake's teleport menu
 - [ ] Globe mode: islands laid flat on a 750 m planet's map, the view bent round (prototype: Citadel, the
-      Dinofly at sea; next: island stubs, the Hamalayi belt, a boat, fast travel onto the globe, space)
+      desert, the Water plugin's sea, the Dinofly and the ferry at sea; next: the Hamalayi belt, LBA1's southern
+      islands, fast travel onto the globe, space)
 - [x] Tests tab, feature test map (stations, gateways; default map), editor level selector on the toolbar
 - [x] Twinsen's life points: falls, hit zones and enemies that hurt on touch, hit stars, death screen and retry
 - [x] L4 Scenes: per-scene levels streamed into islands and interiors, objects, sprites, typed zone volumes,

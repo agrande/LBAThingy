@@ -58,6 +58,25 @@ float3 LBAPlanetBentUp(float3 FromView, float4 Bend)
 	return float3(FromView.xy / Distance * sin(Angle), cos(Angle));
 }
 
+// A direction of the flat world at a point FromView (flat world position - the camera) turned with the bend's tilt
+// there, as the bent view shows it: up becomes LBAPlanetBentUp (for normals of surfaces bent by LBAPlanetBendOffset).
+float3 LBAPlanetBendVector(float3 FromView, float4 Bend, float3 Vector)
+{
+	const float Distance = length(FromView.xy);
+	const float Beyond = Distance - Bend.y;
+	if (Bend.w <= 0.0 || Beyond <= 0.0)
+	{
+		return Vector;
+	}
+	const float Angle = min(Beyond / max(Bend.x, 1.0), PI);
+	// Turn about the horizontal axis across the way from the camera, away from it.
+	const float2 Along = FromView.xy / Distance;
+	const float3 Axis = float3(-Along.y, Along.x, 0.0);
+	const float Cos = cos(Angle);
+	const float Sin = sin(Angle);
+	return Vector * Cos + cross(Axis, Vector) * Sin + Axis * dot(Axis, Vector) * (1.0 - Cos);
+}
+
 // Normal of the sea (world) at a point given by its flat world position, with small ripples laid out on the flat sea.
 float3 LBAPlanetSeaNormal(float3 FromView, float2 Flat, float Time, float4 Bend, float RippleSlope)
 {

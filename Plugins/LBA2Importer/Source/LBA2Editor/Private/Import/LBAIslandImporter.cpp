@@ -1358,10 +1358,11 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		Water.Name = Island.Name;
 		Water.TerrainActors = GroundActors;
 		const FLBAEnvironmentLights Lights = LBAEnvironment::ComputeLights(Preset, SunRotation, Xpl ? Xpl->ShadeNormalLevel : 12);
-		Preset.WaterNeutralLight = LBAWater::Spawn(Context, World, Water, Preset, Lights);
+		const FLBAWaterSea Sea = LBAWater::Spawn(Context, World, Water, Preset, Lights);
+		Preset.WaterNeutralLight = Sea.NeutralLight;
 		if (LBAPlanetBuilder::IsPlaced(Island.Name))
 		{
-			LBAPlanetBuilder::AddIsland(Context, Island, IslandFolder, Preset, Lights);
+			LBAPlanetBuilder::AddIsland(Context, Island, IslandFolder, Preset, Lights, Water.Coastline, Sea);
 		}
 	}
 	if (UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))

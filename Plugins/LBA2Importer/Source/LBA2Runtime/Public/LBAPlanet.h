@@ -9,6 +9,7 @@ class UMaterialInterface;
 class UMaterialParameterCollection;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UWaterWavesAsset;
 class UWorld;
 
 /** An island placed on a planet. */
@@ -50,6 +51,24 @@ struct LBA2RUNTIME_API FLBAPlanetIsland
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Island", meta = (ClampMin = "0"))
 	float SkyLightGain = 1.f;
+
+	/**
+	 * The planet's sea when this island is opened: a level with a water zone over all the sea the bent view shows and
+	 * an ocean per island, in this island's look (built by the importer from the entries below).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sea")
+	TSoftObjectPtr<UWorld> SeaLevel;
+
+	/** The island's coastline in its level (cm, closed loop): the planet's sea leaves the inside dry. */
+	UPROPERTY(EditAnywhere, Category = "Sea")
+	TArray<FVector2D> Coastline;
+
+	/** Its level's ocean material and waves, the planet's sea when it is opened. */
+	UPROPERTY(EditAnywhere, Category = "Sea")
+	TSoftObjectPtr<UMaterialInterface> WaterMaterial;
+
+	UPROPERTY(EditAnywhere, Category = "Sea")
+	TSoftObjectPtr<UWaterWavesAsset> WaterWaves;
 
 	/** The planet's unit vector of the island's up (planet space, +Z towards the north pole). */
 	FVector GetUp() const;
@@ -95,7 +114,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Planet")
 	TArray<FLBAPlanetIsland> Islands;
 
-	/** Disc of sea kept under the camera, bent like everything else by its material (built by the importer). */
+	/**
+	 * Disc of sea kept under the camera, bent like everything else by its material (built by the importer): the sea
+	 * beyond the opened island's sea level (FLBAPlanetIsland::SeaLevel), or all of it without one.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sea")
 	TSoftObjectPtr<UStaticMesh> SeaMesh;
 

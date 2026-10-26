@@ -188,19 +188,77 @@ void LBAMaterials::AddVersionStamp(UMaterial* Material, int32 Version)
 	Material->GetExpressionCollection().AddComment(Stamp);
 }
 
-void LBAMaterials::AddPlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet)
+namespace
 {
-	auto Add = [Material](UClass* Class, int32 X, int32 Y)
+	UMaterialExpression* AddExpression(UMaterial* Material, UClass* Class, int32 X, int32 Y)
 	{
 		return UMaterialEditingLibrary::CreateMaterialExpression(Material, Class, X, Y);
-	};
-	auto Parameter = [&](const TCHAR* Name, int32 Y)
+	}
+
+	UMaterialExpressionCollectionParameter* AddPlanetParameter(UMaterial* Material, UMaterialParameterCollection* Planet, const TCHAR* Name, int32 Y)
 	{
-		UMaterialExpressionCollectionParameter* Node = Cast<UMaterialExpressionCollectionParameter>(Add(UMaterialExpressionCollectionParameter::StaticClass(), -1200, Y));
+		UMaterialExpressionCollectionParameter* Node = Cast<UMaterialExpressionCollectionParameter>(AddExpression(Material,
+			UMaterialExpressionCollectionParameter::StaticClass(), -1200, Y));
 		Node->Collection = Planet;
 		Node->ParameterName = Name;
 		Node->ParameterId = Planet ? Planet->GetParameterId(Name) : FGuid();
 		return Node;
+	}
+
+	/** A custom node of LBAPlanet.ush returning a float3. */
+	UMaterialExpressionCustom* AddPlanetCustom(UMaterial* Material, const TCHAR* Code, std::initializer_list<TPair<const TCHAR*, UMaterialExpression*>> Inputs,
+		int32 X, int32 Y)
+	{
+		UMaterialExpressionCustom* Custom = Cast<UMaterialExpressionCustom>(AddExpression(Material, UMaterialExpressionCustom::StaticClass(), X, Y));
+		Custom->Description = TEXT("LBA planet bend");
+		Custom->OutputType = CMOT_Float3;
+		Custom->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBAPlanet.ush") };
+		Custom->Inputs.Reset();
+		for (const TPair<const TCHAR*, UMaterialExpression*>& Input : Inputs)
+		{
+			FCustomInput& CustomInput = Custom->Inputs.AddDefaulted_GetRef();
+			CustomInput.InputName = Input.Key;
+			CustomInput.Input.Connect(0, Input.Value);
+		}
+		Custom->Code = Code;
+		return Custom;
+	}
+}
+
+void LBAMaterials::AddPlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet)
+{
+	UMaterialEditingLibrary::ConnectMaterialProperty(MakePlanetBend(Material, Planet), TEXT(""), MP_WorldPositionOffset);
+}
+
+UMaterialExpression* LBAMaterials::MakePlanetBentNormal(UMaterial* Material, UMaterialParameterCollection* Planet, UMaterialExpression* Normal, int32 OutputIndex)
+{
+	// The flat world's position (the bend undone) relative to the camera.
+	UMaterialExpressionWorldPosition* Pixel = Cast<UMaterialExpressionWorldPosition>(AddExpression(Material, UMaterialExpressionWorldPosition::StaticClass(), -1200, 1400));
+	Pixel->WorldPositionShaderOffset = WPT_ExcludeAllShaderOffsets;
+	UMaterialExpression* View = AddPlanetParameter(Material, Planet, TEXT("PlanetView"), 1500);
+	UMaterialExpressionComponentMask* XYZ = Cast<UMaterialExpressionComponentMask>(AddExpression(Material, UMaterialExpressionComponentMask::StaticClass(), -1000, 1500));
+	XYZ->R = XYZ->G = XYZ->B = true;
+	XYZ->A = false;
+	XYZ->Input.Connect(0, View);
+	UMaterialExpressionSubtract* FromView = Cast<UMaterialExpressionSubtract>(AddExpression(Material, UMaterialExpressionSubtract::StaticClass(), -850, 1400));
+	FromView->A.Connect(0, Pixel);
+	FromView->B.Connect(0, XYZ);
+	UMaterialExpressionCustom* Custom = AddPlanetCustom(Material, TEXT("return LBAPlanetBendVector(FromView, Bend, Vector);"),
+		{ { TEXT("FromView"), FromView }, { TEXT("Bend"), AddPlanetParameter(Material, Planet, TEXT("PlanetBend"), 1600) }, { TEXT("Vector"), Normal } },
+		-650, 1400);
+	Custom->Inputs[2].Input.Connect(OutputIndex, Normal);
+	return Custom;
+}
+
+UMaterialExpression* LBAMaterials::MakePlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet)
+{
+	auto Add = [Material](UClass* Class, int32 X, int32 Y)
+	{
+		return AddExpression(Material, Class, X, Y);
+	};
+	auto Parameter = [&](const TCHAR* Name, int32 Y)
+	{
+		return AddPlanetParameter(Material, Planet, Name, Y);
 	};
 	UMaterialExpression* Vertex = Add(UMaterialExpressionWorldPosition::StaticClass(), -1200, 900);
 	UMaterialExpression* Bend = Parameter(TEXT("PlanetBend"), 1000);
@@ -216,25 +274,13 @@ void LBAMaterials::AddPlanetBend(UMaterial* Material, UMaterialParameterCollecti
 		UMaterialExpressionSubtract* FromView = Cast<UMaterialExpressionSubtract>(Add(UMaterialExpressionSubtract::StaticClass(), -850, Y));
 		FromView->A.Connect(0, Vertex);
 		FromView->B.Connect(0, XYZ);
-		UMaterialExpressionCustom* Custom = Cast<UMaterialExpressionCustom>(Add(UMaterialExpressionCustom::StaticClass(), -650, Y));
-		Custom->Description = TEXT("LBA planet bend");
-		Custom->OutputType = CMOT_Float3;
-		Custom->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBAPlanet.ush") };
-		Custom->Inputs.Reset();
-		const TPair<const TCHAR*, UMaterialExpression*> Inputs[] = { { TEXT("FromView"), FromView }, { TEXT("View"), View }, { TEXT("Bend"), Bend } };
-		for (const TPair<const TCHAR*, UMaterialExpression*>& Input : Inputs)
-		{
-			FCustomInput& CustomInput = Custom->Inputs.AddDefaulted_GetRef();
-			CustomInput.InputName = Input.Key;
-			CustomInput.Input.Connect(0, Input.Value);
-		}
-		Custom->Code = TEXT("return LBAPlanetBendOffset(FromView, View.xyz, Bend);");
-		return Custom;
+		return AddPlanetCustom(Material, TEXT("return LBAPlanetBendOffset(FromView, View.xyz, Bend);"),
+			{ { TEXT("FromView"), FromView }, { TEXT("View"), View }, { TEXT("Bend"), Bend } }, -650, Y);
 	};
 	UMaterialExpressionPreviousFrameSwitch* Switch = Cast<UMaterialExpressionPreviousFrameSwitch>(Add(UMaterialExpressionPreviousFrameSwitch::StaticClass(), -400, 1100));
 	Switch->CurrentFrame.Connect(0, Bent(TEXT("PlanetView"), 1100));
 	Switch->PreviousFrame.Connect(0, Bent(TEXT("PlanetViewPrevious"), 1250));
-	UMaterialEditingLibrary::ConnectMaterialProperty(Switch, TEXT(""), MP_WorldPositionOffset);
+	return Switch;
 }
 
 UMaterial* LBAMaterials::EndRebuild(FLBAImportContext& Context, UMaterial* Material)

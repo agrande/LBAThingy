@@ -44,6 +44,15 @@ namespace
 		TEXT("Overrides the opened island's sky light gain on the planet (debug, for tuning; negative: the island's, see FLBAPlanetIsland)."));
 	TAutoConsoleVariable<int32> CVarGlobeIslands(TEXT("lba.Globe.Islands"), 1,
 		TEXT("0: the planet's other islands aren't streamed in (debug, for the next level opened)."));
+	TAutoConsoleVariable<int32> CVarGlobeSea(TEXT("lba.Globe.Sea"), 1,
+		TEXT("The sea for the next level opened: 1 the opened island's sea level (Water plugin oceans), the planet's sea disc beyond; 0 the sea disc alone."));
+
+	/**
+	 * Under the sea level's water, the sea disc lies this much lower (cm), out of sight: far from the camera, the water
+	 * mesh's large tiles slope down towards the coasts (their vertices on land are pulled down), meters below the sea.
+	 */
+	TAutoConsoleVariable<float> CVarGlobeSeaDiscDrop(TEXT("lba.Globe.SeaDiscDrop"), 1000.f,
+		TEXT("How much lower the sea disc lies under the sea level's water (cm; debug, for tuning)."));
 
 	/** Actors of island levels the planet replaces (tagged by the importer). */
 	const FName SeaFloorTag(TEXT("LBA_SeaFloor"));
@@ -206,6 +215,7 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 		return;
 	}
 	Planet = Spawned;
+	bWaterSea = CVarGlobeSea.GetValueOnGameThread() != 0 && !Asset->Islands[Home].SeaLevel.IsNull();
 	Spawned->GetSea()->SetStaticMesh(Asset->SeaMesh.LoadSynchronous());
 	Spawned->GetSea()->SetMaterial(0, Asset->SeaMaterial.LoadSynchronous());
 	Asset->MaterialParameters.LoadSynchronous();
@@ -285,7 +295,7 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 
 void ULBAPlanetSubsystem::OnLevelAdded(ULevel* Level, UWorld* InWorld)
 {
-	if (InWorld != GetWorld() || !IsActive() || !Level)
+	if (InWorld != GetWorld() || !IsActive() || !Level || (SeaStream.IsValid() && SeaStream->GetLoadedLevel() == Level))
 	{
 		return;
 	}
@@ -307,6 +317,18 @@ void ULBAPlanetSubsystem::OnLevelAdded(ULevel* Level, UWorld* InWorld)
 
 void ULBAPlanetSubsystem::LoadIslands()
 {
+	if (bWaterSea)
+	{
+		bool bLoaded = false;
+		const TSoftObjectPtr<UWorld>& Sea = Asset->Islands[Home].SeaLevel;
+		SeaStream = ULevelStreamingDynamic::LoadLevelInstanceBySoftObjectPtr(GetWorld(), Sea, FTransform::Identity, bLoaded,
+			Sea.GetAssetName() + TEXT("_Instance"));
+		if (!bLoaded)
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("Globe mode: couldn't stream in the sea (%s)"), *Sea.ToString());
+			bWaterSea = false;
+		}
+	}
 	IslandStreams.SetNum(Asset->Islands.Num());
 	for (int32 Index = 0; Index < Asset->Islands.Num(); ++Index)
 	{
@@ -404,7 +426,7 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 
 	// The sea disc and the atmosphere's planet under the camera.
 	const FVector Sea(View.X, View.Y, SeaLevel);
-	Planet->GetSea()->SetWorldLocation(Sea);
+	Planet->GetSea()->SetWorldLocation(Sea - FVector(0.0, 0.0, bWaterSea ? CVarGlobeSeaDiscDrop.GetValueOnGameThread() : 0.0));
 	if (USkyAtmosphereComponent* SkyAtmosphere = Atmosphere.Get())
 	{
 		SkyAtmosphere->SetWorldLocation(FVector(View.X, View.Y, SeaLevel - Radius));
