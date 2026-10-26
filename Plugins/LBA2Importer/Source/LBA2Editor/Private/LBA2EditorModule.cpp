@@ -7,6 +7,7 @@
 #include "LBA2Settings.h"
 #include "LBAIslandMenu.h"
 #include "LBAIslandTravelSubsystem.h"
+#include "LBAPlanet.h"
 #include "LBASceneAsset.h"
 #include "LBASceneTravelSubsystem.h"
 #include "LevelEditor.h"
@@ -33,6 +34,7 @@ public:
 		Style = MakeShared<FSlateStyleSet>(TEXT("LBA2EditorStyle"));
 		Style->SetContentRoot(IPluginManager::Get().FindPlugin(TEXT("LBA2Importer"))->GetBaseDir() / TEXT("Resources"));
 		Style->Set("LBA2.LevelSelector", new FSlateImageBrush(Style->RootToContentDir(TEXT("Icons/LevelSelector"), TEXT(".png")), FVector2D(20.f, 20.f)));
+		Style->Set("LBA2.Globe", new FSlateImageBrush(Style->RootToContentDir(TEXT("Icons/Globe"), TEXT(".png")), FVector2D(20.f, 20.f)));
 		FSlateStyleRegistry::RegisterSlateStyle(*Style);
 
 		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(LBA2ImporterTabName, FOnSpawnTab::CreateLambda([](const FSpawnTabArgs&)
@@ -78,6 +80,12 @@ public:
 				ULBALevelSelector::OpenInEditor(Arg.IsNumeric() ? FLBATravelDestination::ToScene(FCString::Atoi(*Arg))
 					: bIsland ? FLBATravelDestination::ToIsland(*Arg.ToUpper())
 					: FLBATravelDestination::ToTestLevel(GetDefault<ULBA2Settings>()->FeatureLevel, *Arg));
+			}));
+		PlayGlobeCommand = MakeUnique<FAutoConsoleCommand>(TEXT("lba.Globe.Play"),
+			TEXT("lba.Globe.Play [ISLAND]: plays an island of a planet in globe mode in the editor (the toolbar's Globe button: CITABAU)."),
+			FConsoleCommandWithArgsDelegate::CreateLambda([this](const TArray<FString>& Args)
+			{
+				PlayGlobe(Args.IsEmpty() ? GlobeIsland : FName(*Args[0].ToUpper()));
 			}));
 
 		// The island menu and scene changes open levels nothing references: cook them all (and the scene assets doors
@@ -138,6 +146,8 @@ public:
 		LevelSelector.Reset();
 		OpenSelectorCommand.Reset();
 		SelectorGoCommand.Reset();
+		PlayGlobeCommand.Reset();
+		FEditorDelegates::EndPIE.Remove(EndGlobeHandle);
 		UToolMenus::UnRegisterStartupCallback(this);
 		UToolMenus::UnregisterOwner(this);
 		if (FSlateApplication::IsInitialized())
@@ -157,6 +167,12 @@ private:
 	FDelegateHandle MapChangedHandle;
 	TUniquePtr<FAutoConsoleCommand> OpenSelectorCommand;
 	TUniquePtr<FAutoConsoleCommand> SelectorGoCommand;
+	TUniquePtr<FAutoConsoleCommand> PlayGlobeCommand;
+	/** The island the Globe button plays: Citadel, sunny. */
+	const FName GlobeIsland = TEXT("CITABAU");
+	/** lba.Globe before a globe session, put back when it ends. */
+	int32 GlobeBefore = -1;
+	FDelegateHandle EndGlobeHandle;
 	TSharedPtr<FSlateStyleSet> Style;
 	TWeakPtr<SDockTab> LevelSelectorTab;
 	TStrongObjectPtr<ULBALevelSelector> LevelSelector;
@@ -234,6 +250,63 @@ private:
 		// Icon and label, like the toolbar's Platforms button.
 		Button.StyleNameOverride = "CalloutToolbar";
 		ToolbarSection.AddEntry(Button);
+
+		// Next to it: play Citadel on the planet.
+		const FUIAction PlayOnGlobe(FExecuteAction::CreateLambda([this]() { PlayGlobe(GlobeIsland); }),
+			FCanExecuteAction::CreateLambda([]() { return GEditor && !GEditor->IsPlaySessionInProgress(); }));
+		const FText GlobeTooltip = LOCTEXT("GlobeButtonTooltip",
+			"Plays Citadel (sunny) in globe mode: the islands of Twinsun laid out around it, the sea and far islands bending away "
+			"to a horizon. Plays in the editor without opening the level here (console: lba.Globe.Play ISLAND).");
+		Section.AddMenuEntry("PlayLBA2Globe", LOCTEXT("PlayGlobe", "Play on the Globe"), GlobeTooltip, FSlateIcon(Style->GetStyleSetName(), "LBA2.Globe"), PlayOnGlobe);
+		FToolMenuEntry GlobeButton = FToolMenuEntry::InitToolBarButton("LBA2Globe", PlayOnGlobe, LOCTEXT("GlobeButton", "Globe"), GlobeTooltip,
+			FSlateIcon(Style->GetStyleSetName(), "LBA2.Globe"));
+		GlobeButton.StyleNameOverride = "CalloutToolbar";
+		ToolbarSection.AddEntry(GlobeButton);
+	}
+
+	/**
+	 * Plays an island's level in the editor (whatever level is open here) in globe mode: lba.Globe is on for the session
+	 * (the planet starts with the world, ULBAPlanetSubsystem) and back to what it was after.
+	 */
+	void PlayGlobe(FName Island)
+	{
+		if (!GEditor || GEditor->IsPlaySessionInProgress())
+		{
+			return;
+		}
+		FString Level;
+		for (const TSoftObjectPtr<ULBAPlanetAsset>& Soft : GetDefault<ULBA2Settings>()->Planets)
+		{
+			const ULBAPlanetAsset* Planet = Soft.LoadSynchronous();
+			if (const FLBAPlanetIsland* Entry = Planet ? Planet->FindIsland(Island) : nullptr)
+			{
+				Level = Entry->Level.ToSoftObjectPath().ToString();
+			}
+		}
+		IConsoleVariable* Globe = IConsoleManager::Get().FindConsoleVariable(TEXT("lba.Globe"));
+		if (Level.IsEmpty() || !Globe)
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("Globe: %s is on no planet (LBA2 settings > Globe > Planets; import its island)"), *Island.ToString());
+			return;
+		}
+		if (!EndGlobeHandle.IsValid())
+		{
+			GlobeBefore = Globe->GetInt();
+			EndGlobeHandle = FEditorDelegates::EndPIE.AddLambda([this](bool)
+			{
+				if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("lba.Globe")))
+				{
+					Variable->Set(GlobeBefore, ECVF_SetByCode);
+				}
+				FEditorDelegates::EndPIE.Remove(EndGlobeHandle);
+				EndGlobeHandle.Reset();
+			});
+		}
+		Globe->Set(1, ECVF_SetByCode);
+		FRequestPlaySessionParams Params;
+		Params.GlobalMapOverride = Level;
+		GEditor->RequestPlaySession(Params);
+		UE_LOG(LogLBA2, Display, TEXT("Globe: playing %s (%s)"), *Island.ToString(), *Level);
 	}
 
 	void OpenLevelSelector()

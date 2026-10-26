@@ -492,8 +492,10 @@ the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScene
 ### Globe mode (prototype)
 
 Islands placed on a planet can open on it: a tiny round planet (Twinsun: 750 m radius) whose sea curves away to a
-horizon, far islands sinking below it until they come close. `lba.Globe.Open CITABAU` opens Citadel (sunny) that way;
-so does any travel to it with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
+horizon, far islands sinking below it until they come close. In the editor, the toolbar's **Globe** button (next to
+Levels; also Tools > Play on the Globe, or `lba.Globe.Play ISLAND`) plays Citadel (sunny) that way without opening its
+level here (lba.Globe is on for the session only). In game, `lba.Globe.Open CITABAU` opens it; so does any travel to it
+with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
 and the desert island are placed, 315 m apart: open either one and the other is out there, across the sea. The Dinofly
 and the ferry are the sea vehicles.
 
