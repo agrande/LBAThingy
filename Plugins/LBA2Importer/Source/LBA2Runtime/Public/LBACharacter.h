@@ -266,6 +266,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LBA")
 	bool TryInteract();
 
+	/**
+	 * Rides something that carries him in view (a boat): stands idle on Seat (his feet on it) and moves with it, with no
+	 * collision or movement of his own, until StopRiding puts him down at Location (his capsule's center).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void StartRiding(USceneComponent* Seat);
+
+	UFUNCTION(BlueprintCallable, Category = "LBA")
+	void StopRiding(const FVector& Location, const FRotator& Facing);
+
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	bool IsRiding() const { return bRiding; }
+
 	UFUNCTION(BlueprintPure, Category = "LBA")
 	ULBAEntityAsset* GetEntity() const;
 
@@ -370,6 +383,7 @@ private:
 	void HandleDeath();
 	void ShowDeathScreen();
 	bool bDead = false;
+	bool bRiding = false;
 	/** World time of the last hit that hurt (-1: none yet). */
 	double LastHurtTime = -1.0;
 	FTimerHandle DeathTimer;

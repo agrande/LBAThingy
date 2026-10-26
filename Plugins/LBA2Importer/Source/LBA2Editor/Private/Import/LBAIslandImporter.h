@@ -56,8 +56,13 @@ private:
 		UMaterialInterface* GroundMaterial, UMaterialInterface* ColorMaterial);
 	/** Also returns what glows on them (lit decor, glowing texels). */
 	TArray<UStaticMesh*> BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder, FLBADecorGlow& OutGlow);
+	/**
+	 * Decor bodies shaped like the boat's (Project Settings > LBA2 > Mounts > Boat, the ferry): the island's own copies
+	 * of it, where boats are moored instead.
+	 */
+	TSet<int32> FindBoatBodies(const FLBAIsland& Island) const;
 	void BuildLevel(const FLBAIsland& Island, const FString& IslandFolder, const TArray<UStaticMesh*>& GroundMeshes,
-		const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow);
+		const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow, const TSet<int32>& BoatBodies);
 
 	FLBAImportContext& Context;
 };

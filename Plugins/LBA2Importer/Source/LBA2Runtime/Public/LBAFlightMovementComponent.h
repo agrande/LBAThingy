@@ -404,6 +404,9 @@ public:
 	/** The world was moved with the Dinofly (globe mode, ULBAPlanetSubsystem): turns its directions along. */
 	void OnWorldMoved(const FTransform& Delta);
 
+	/** Height of the water surface (with waves) at Location, if there is water there: the planet's sea, or Water bodies. */
+	static bool FindWaterSurface(const UWorld* World, const FVector& Location, float& OutSurfaceZ);
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual float GetMaxSpeed() const override { return 4000.f; }
 	virtual bool IsFalling() const override { return !bLanded; }
@@ -420,8 +423,6 @@ private:
 	void TickAirborne(float DeltaTime);
 	void TickLanded(float DeltaTime);
 	void TouchDown(const FHitResult& Hit);
-	/** Height of the water surface (with waves) at Location, if there is water there. */
-	bool FindWaterSurface(const FVector& Location, float& OutSurfaceZ) const;
 	/** Lands on or skims off the water when below the waterline. */
 	void HandleWater();
 	void TickFloating(float DeltaTime);

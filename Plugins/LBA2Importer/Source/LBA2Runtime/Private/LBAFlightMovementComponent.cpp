@@ -271,7 +271,7 @@ float ULBAFlightMovementComponent::GetHeightAboveSurface(float MaxDistance) cons
 		}
 	}
 	float WaterZ = 0.f;
-	if (FindWaterSurface(Start, WaterZ) && WaterZ > SurfaceZ && WaterZ < Start.Z)
+	if (FindWaterSurface(GetWorld(), Start, WaterZ) && WaterZ > SurfaceZ && WaterZ < Start.Z)
 	{
 		SurfaceZ = WaterZ;
 	}
@@ -821,10 +821,10 @@ void ULBAFlightMovementComponent::OnWorldMoved(const FTransform& Delta)
 	WindDrift = Delta.TransformVectorNoScale(WindDrift);
 }
 
-bool ULBAFlightMovementComponent::FindWaterSurface(const FVector& Location, float& OutSurfaceZ) const
+bool ULBAFlightMovementComponent::FindWaterSurface(const UWorld* World, const FVector& Location, float& OutSurfaceZ)
 {
 	// On a planet the sea is everywhere (globe mode).
-	const ULBAPlanetSubsystem* Planet = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>();
+	const ULBAPlanetSubsystem* Planet = World->GetSubsystem<ULBAPlanetSubsystem>();
 	double PlanetSeaZ = 0.0;
 	if (Planet && Planet->GetSeaSurface(Location, PlanetSeaZ))
 	{
@@ -833,7 +833,7 @@ bool ULBAFlightMovementComponent::FindWaterSurface(const FVector& Location, floa
 	}
 
 	bool bFound = false;
-	FWaterBodyManager::ForEachWaterBodyComponent(GetWorld(), [&](UWaterBodyComponent* Body)
+	FWaterBodyManager::ForEachWaterBodyComponent(World, [&](UWaterBodyComponent* Body)
 	{
 		FVector Surface, Normal, WaterVelocity;
 		float Depth = 0.f;
@@ -851,7 +851,7 @@ void ULBAFlightMovementComponent::HandleWater()
 {
 	const FVector Location = UpdatedComponent->GetComponentLocation();
 	float SurfaceZ = 0.f;
-	if (bLanded || !FindWaterSurface(Location, SurfaceZ) || Location.Z >= SurfaceZ + WaterlineHeight)
+	if (bLanded || !FindWaterSurface(GetWorld(), Location, SurfaceZ) || Location.Z >= SurfaceZ + WaterlineHeight)
 	{
 		return;
 	}
@@ -895,7 +895,7 @@ void ULBAFlightMovementComponent::TickFloating(float DeltaTime)
 	const FVector Horizontal = Velocity;
 	const FVector Location = UpdatedComponent->GetComponentLocation();
 	float SurfaceZ = Location.Z - WaterlineHeight;
-	if (!FindWaterSurface(Location, SurfaceZ))
+	if (!FindWaterSurface(GetWorld(), Location, SurfaceZ))
 	{
 		bOnWater = false;
 		bLanded = false;

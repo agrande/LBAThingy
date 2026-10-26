@@ -558,12 +558,32 @@ Console: `lba.Globe.Debug 1` (state on screen; 2 logs every turn, 3 their cost b
 sky light gain, for the next island opened), `lba.Globe.Clouds 5 10` (sets the cloud layer, km),
 `lba.Globe.SeaErrors` (the sea material's compile errors).
 
-Not done yet: the other islands (stubs from the holomap and LBA1), the Hamalayi belt and its passes, a boat, the
+Not done yet: the other islands (stubs from the holomap and LBA1), the Hamalayi belt and its passes, the
 other islands' scenes and looks (they borrow the home island's sun, sky, sea color and look), streaming by distance
 (every placed island is loaded), the fast travel menu landing on the globe, space; packaged builds don't cook the
 planet asset yet. Out at sea, markers stay where their island last was until the next snap. Height fog stays flat in
 the world (it shifts with each turn: visible only on large turns); views from high above are hazy (an island 1 km
 away is lost in the fog). A streamed island is lit by the opened island's sky light and gain.
+
+### The ferry (boat)
+
+Each island has one ferry Twinsen can steer (`ALBABoat`, prototype), moored where the island's own copy of the ferry
+stood: the island layer recognizes the decor whose body has the ferry's shape (Project Settings > LBA2 > Mounts > Boat,
+`DA_Ferry`: as many points and polygons, about the same box) and moors a boat there instead (Citadel's harbour by the
+pier, the desert's town harbour, out through the lighthouses' channel). Each scene also had its own ferry (one at
+Citadel, three on the desert island, all shown at once here): those scene objects are hidden (Hidden Scene Entities).
+
+Use (E / gamepad X) next to it: Twinsen goes into the cabin and the player drives. W/S or the left stick, or the
+triggers: throttle (against the motion it brakes, then backs up at 5 m/s); A/D or the stick: rudder. Mouse / right
+stick look around. Use again, slow (under 3 m/s) and next to land, to step ashore: dry ground first, else water up to
+60 cm deep, within 4 m of the hull. `ULBABoatMovementComponent`: 30 m/s top speed (0 to 25 m/s in about 4 s, quadratic
+drag), the rudder turns 75 degrees/s under way, 40% of it when still, at most 1.1 g sideways (about 23 degrees/s and a
+70 m circle at full speed), the keel kills sideways slides at 2.5/s; it floats at the surface (the planet's sea or
+Water bodies) and runs aground where its keel (60 cm) meets the seabed. The hull rises when planing, leans into
+turns and rocks. In globe mode it crosses from Citadel to the desert island in about 40 s, the world turning under it.
+`lba.Boat.Debug 1` shows its speed, `lba.Boat.Spawn` puts one in front of the player. Test: `-LBA2Shots=boat` on
+`L_CITABAU?Globe` (boards, steps ashore and back, backs out, full speed, turns, stops, refuses to leave at sea; shots
+and log), `-LBA2BoatTo=DESERT` crosses to the desert instead.
 
 ### Tests tab, feature test map and gateways
 

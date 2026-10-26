@@ -16,6 +16,8 @@ class ALBASceneActor;
  *   -LBA2Shots=ladder -LBA2Ladder=44:7    climbs a ladder zone (scene:zone) up, then back down (log + a shot per second)
  *   -LBA2Shots=door -LBA2Door=15:3        opens a door (scene:object) by interacting, walks through, checks it closes behind
  *   -LBA2Shots=attack -LBA2Attack=15:14   punches an enemy (scene:object) twice, checks it dies and vanishes
+ *   -LBA2Shots=boat [-LBA2BoatTo=DESERT]  globe mode (open the island with ?Globe): gets on the moored boat, ashore and back,
+ *                                         backs out, drives at full throttle, turns, (crosses to that island,) stops
  *   -LBA2ShotDir=<folder>                 where to write PNGs (default Saved/LBA2Shots)
  *   -LBA2HeroAt=x,y,yaw[,z]               with camera poses, hero or modern: stands the player pawn on the ground there first
  *                                         (the first surface below z, default: the highest; indoors, below the ceiling)
@@ -43,6 +45,7 @@ private:
 	bool TickAttack(UWorld* World, float DeltaTime);
 	bool TickMenu(UWorld* World, float DeltaTime);
 	bool TickGlobe(UWorld* World, float DeltaTime);
+	bool TickBoat(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
 	/** -LBA2HeroAt: stands the pawn on the first surface below the point, facing its yaw. */
 	void PlaceHero(UWorld* World, APawn* Pawn) const;
@@ -74,6 +77,15 @@ private:
 	double GlobeFrameTime = 0.0;
 	int32 GlobeFrames = 0;
 	double GlobeWorstFrame = 0.0;
+	/** -LBA2Shots=boat: Twinsen takes the boat moored at the opened island out to sea (and to -LBA2BoatTo's island). */
+	bool bBoat = false;
+	int32 BoatDestination = INDEX_NONE;
+	int32 BoatStep = -1;
+	double BoatStepStart = 0.0;
+	int32 BoatFrame = 0;
+	double BoatNextReport = 0.0;
+	float BoatTopSpeed = 0.f;
+	TWeakObjectPtr<class ALBABoat> TestBoat;
 	/** -LBA2Shots=wind: the Dinofly hovers hands-off at places of Citadel's storm, then tries to fly away and climb. */
 	bool bWind = false;
 	bool bStepStarted = false;

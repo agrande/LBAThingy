@@ -52,6 +52,13 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
 	TSoftObjectPtr<class ULBAEntityAsset> Dinofly;
 
+	/**
+	 * Entity of the boats Twinsen steers (ALBABoat): the ferry. The island layer turns the islands' own copies of its
+	 * body (decor) into boats, where they are moored; its scene objects are hidden (HiddenSceneEntities).
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
+	TSoftObjectPtr<class ULBAEntityAsset> Boat;
+
 	/** Niagara system drawing the airflow strokes around flyers (ULBAAirflowComponent), e.g. the Dinofly. */
 	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
 	TSoftObjectPtr<class UNiagaraSystem> AirflowTrail = TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/LBA2Importer/Effects/NS_LBA_Airflow.NS_LBA_Airflow")));
@@ -89,7 +96,8 @@ public:
 
 	/**
 	 * Scene objects with these entities are hidden in game, without collision: the original stages Twinsen (with
-	 * Zoe, carried...), his Dinofly and meca-penguins as scene objects for gameplay that is handled differently here.
+	 * Zoe, carried...), his Dinofly, meca-penguins and the ferry as scene objects for gameplay that is handled
+	 * differently here (each scene has its own ferry, so an island had several; its boat replaces them).
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Scenes")
 	TArray<TSoftObjectPtr<class ULBAEntityAsset>> HiddenSceneEntities;

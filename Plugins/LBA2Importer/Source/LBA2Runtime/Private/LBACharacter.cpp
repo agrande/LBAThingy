@@ -1327,6 +1327,43 @@ ALBADinofly* ALBACharacter::SummonDinofly()
 	return ALBADinofly::Summon(this, DinoflyClass);
 }
 
+void ALBACharacter::StartRiding(USceneComponent* Seat)
+{
+	if (!Seat || bRiding)
+	{
+		return;
+	}
+	bRiding = true;
+	MoveInput = FVector2D::ZeroVector;
+	ActionSlot = INDEX_NONE;
+	if (ControlMode == ELBAControlMode::Modern)
+	{
+		SetModernState(EModernState::None);
+	}
+	SetActorEnableCollision(false);
+	GetCharacterMovement()->StopMovementImmediately();
+	GetCharacterMovement()->DisableMovement();
+	AttachToComponent(Seat, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	SetActorRelativeLocation(FVector(0.f, 0.f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
+	PlaySlot(int32(ELBAAnimType::Idle), true);
+	// No locomotion while carried (his components still tick: the animation plays on).
+	SetActorTickEnabled(false);
+}
+
+void ALBACharacter::StopRiding(const FVector& Location, const FRotator& Facing)
+{
+	if (!bRiding)
+	{
+		return;
+	}
+	bRiding = false;
+	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	SetActorEnableCollision(true);
+	TeleportTo(Location, FRotator(0.f, Facing.Yaw, 0.f), false, true);
+	GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+	SetActorTickEnabled(true);
+}
+
 // Pain ----------------------------------------------------------------------------------------------------
 
 bool ALBACharacter::Hurt(float Damage, int32 ReactionSlot)

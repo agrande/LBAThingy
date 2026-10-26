@@ -21,6 +21,7 @@
 #include "Animation/AnimSequence.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "LBAAnimInstance.h"
+#include "LBABoat.h"
 #include "LBACharacter.h"
 #include "LBADeathScreen.h"
 #include "LBADinofly.h"
@@ -78,6 +79,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	else if (Spec.Equals(TEXT("globe"), ESearchCase::IgnoreCase))
 	{
 		bGlobe = true;
+		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("boat"), ESearchCase::IgnoreCase))
+	{
+		bBoat = true;
 		bPosesReady = true;
 	}
 	else if (Spec.Equals(TEXT("wind"), ESearchCase::IgnoreCase))
@@ -631,6 +637,226 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 		}
 		++HeroStep;
 		HeroStepStart = Elapsed;
+	}
+	return true;
+}
+
+bool ULBA2SnapshotSubsystem::TickBoat(UWorld* World, float DeltaTime)
+{
+	enum class EBoatStep : uint8 { Approach, Board, Leave, Drive, Stop, LeaveAtSea };
+	struct FStep
+	{
+		const TCHAR* Name;
+		float Duration;
+		EBoatStep Kind;
+		float Throttle;
+		/** Steers away from the opened island (-1), towards the target (1), or holds Rudder (0). */
+		float Steer;
+		float Rudder;
+		/** What it steers to: the opened island (0) or the voyage's destination (1). */
+		int32 Target = 0;
+		/** Ends once the world is held at the target. */
+		bool bUntilHeld = false;
+	};
+	static const FStep HomeSteps[] =
+	{
+		{ TEXT("quay"), 1.5f, EBoatStep::Approach, 0.f, 0.f, 0.f },
+		{ TEXT("on_board"), 1.5f, EBoatStep::Board, 0.f, 0.f, 0.f },
+		{ TEXT("ashore"), 1.5f, EBoatStep::Leave, 0.f, 0.f, 0.f },
+		{ TEXT("on_board_again"), 1.f, EBoatStep::Board, 0.f, 0.f, 0.f },
+		{ TEXT("back_out"), 5.f, EBoatStep::Drive, -1.f, 0.f, 0.f },
+		{ TEXT("head_out"), 6.f, EBoatStep::Drive, 0.5f, -1.f, 0.f },
+		{ TEXT("full_speed"), 12.f, EBoatStep::Drive, 1.f, -1.f, 0.f },
+		{ TEXT("turning"), 4.f, EBoatStep::Drive, 1.f, 0.f, 1.f },
+		{ TEXT("heading_home"), 8.f, EBoatStep::Drive, 1.f, 1.f, 0.f },
+		{ TEXT("stopped"), 6.f, EBoatStep::Stop, -1.f, 0.f, 0.f },
+		{ TEXT("leave_at_sea"), 1.f, EBoatStep::LeaveAtSea, 0.f, 0.f, 0.f },
+	};
+	// -LBA2BoatTo=ISLAND: across the sea to that island, until the world is held there.
+	static const FStep VoyageSteps[] =
+	{
+		{ TEXT("quay"), 1.5f, EBoatStep::Approach, 0.f, 0.f, 0.f },
+		{ TEXT("on_board"), 1.5f, EBoatStep::Board, 0.f, 0.f, 0.f },
+		{ TEXT("back_out"), 5.f, EBoatStep::Drive, -1.f, 0.f, 0.f },
+		{ TEXT("head_out"), 6.f, EBoatStep::Drive, 0.5f, -1.f, 0.f },
+		{ TEXT("leave_home"), 8.f, EBoatStep::Drive, 1.f, -1.f, 0.f },
+		{ TEXT("voyage"), 90.f, EBoatStep::Drive, 1.f, 1.f, 0.f, 1, true },
+		{ TEXT("arrived"), 4.f, EBoatStep::Drive, 0.6f, 1.f, 0.f, 1 },
+		{ TEXT("stopped"), 6.f, EBoatStep::Stop, -1.f, 0.f, 0.f, 1 },
+	};
+	const FStep* Steps = BoatDestination != INDEX_NONE ? VoyageSteps : HomeSteps;
+	const int32 NumSteps = BoatDestination != INDEX_NONE ? UE_ARRAY_COUNT(VoyageSteps) : UE_ARRAY_COUNT(HomeSteps);
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	ULBAPlanetSubsystem* Planets = World->GetSubsystem<ULBAPlanetSubsystem>();
+	if (BoatStep < 0)
+	{
+		ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+		// The boat moored nearest to Twinsen (at the opened island).
+		ALBABoat* Boat = nullptr;
+		for (TActorIterator<ALBABoat> It(World); It && Hero; ++It)
+		{
+			if (!Boat || FVector::Dist(It->GetActorLocation(), Hero->GetActorLocation()) < FVector::Dist(Boat->GetActorLocation(), Hero->GetActorLocation()))
+			{
+				Boat = *It;
+			}
+		}
+		if (!Planets || !Planets->IsActive() || !Hero || !Boat)
+		{
+			if (Elapsed > 15.0)
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots boat: no planet (open the island with ?Globe), no ALBACharacter or no boat moored"));
+				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+				return false;
+			}
+			return true;
+		}
+		TestBoat = Boat;
+		FString Destination;
+		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2BoatTo="), Destination))
+		{
+			BoatDestination = Planets->GetPlanetAsset()->Islands.IndexOfByPredicate([&Destination](const FLBAPlanetIsland& Island)
+			{
+				return Island.Island.ToString().Equals(Destination, ESearchCase::IgnoreCase);
+			});
+			if (BoatDestination == INDEX_NONE || BoatDestination == Planets->GetHome())
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots boat: %s isn't another island of the planet"), *Destination);
+				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+				return false;
+			}
+		}
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat: %s at %s, yaw %.0f"), *Boat->GetName(), *Boat->GetActorLocation().ToCompactString(), Boat->GetActorRotation().Yaw);
+		BoatStep = 0;
+		BoatStepStart = Elapsed;
+		BoatFrame = 0;
+		BoatNextReport = Elapsed;
+		return true;
+	}
+	ALBABoat* Boat = TestBoat.Get();
+	if (BoatStep >= NumSteps || !Boat)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat done: top speed %.1f m/s, %d turns of the world"), BoatTopSpeed / 100.f, Planets ? Planets->GetRecenterCount() : 0);
+		FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+		return false;
+	}
+
+	const FStep& Step = Steps[BoatStep];
+	const double StepTime = Elapsed - BoatStepStart;
+	auto Shoot = [&](const FString& Name)
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Boat_%02d_%s.png"), BoatStep, *Name), false, false);
+	};
+	auto NextStep = [&]()
+	{
+		++BoatStep;
+		BoatStepStart = Elapsed;
+		BoatFrame = 0;
+	};
+	ALBACharacter* Hero = Boat->GetRider() ? Boat->GetRider() : Cast<ALBACharacter>(Pawn);
+	const int32 Target = Step.Target == 1 ? BoatDestination : Planets->GetHome();
+	const FLBAPlanetIsland& Island = Planets->GetPlanetAsset()->Islands[Target];
+	const FVector IslandCenter = Planets->GetIslandToWorld(Target).TransformPosition(FVector(Island.Center, 0.0));
+	const FLBAPlanetIsland& HomeIsland = Planets->GetPlanetAsset()->Islands[Planets->GetHome()];
+	const FVector HomeCenter = Planets->GetIslandToWorld(Planets->GetHome()).TransformPosition(FVector(HomeIsland.Center, 0.0));
+
+	switch (Step.Kind)
+	{
+	case EBoatStep::Approach:
+		if (BoatFrame == 0)
+		{
+			// On the quay (or the beach) next to the boat, facing it.
+			FVector Spot;
+			if (!Hero || !Boat->FindLandingSpot(Spot))
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots boat: no land next to the boat"));
+				NextStep();
+				return true;
+			}
+			const FVector ToBoat = Boat->GetActorLocation() - Spot;
+			Hero->TeleportTo(Spot, FRotator(0.f, ToBoat.Rotation().Yaw, 0.f));
+			if (PC)
+			{
+				PC->SetControlRotation(FRotator(-20.f, ToBoat.Rotation().Yaw, 0.f));
+			}
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat: Twinsen at %s, %.0f cm from the boat"), *Spot.ToCompactString(), ToBoat.Size2D());
+		}
+		break;
+	case EBoatStep::Board:
+		if (BoatFrame == 0)
+		{
+			// Turned towards the boat (stepping ashore faces the land).
+			if (Hero && !Hero->IsRiding())
+			{
+				Hero->SetActorRotation(FRotator(0.f, (Boat->GetActorLocation() - Hero->GetActorLocation()).Rotation().Yaw, 0.f));
+			}
+			const bool bUsed = Hero && Hero->TryInteract();
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat: use %s, pawn now %s"), bUsed ? TEXT("ok") : TEXT("found nothing"), PC && PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"));
+		}
+		break;
+	case EBoatStep::Leave:
+	case EBoatStep::LeaveAtSea:
+		if (BoatFrame == 0)
+		{
+			const bool bOff = Boat->Leave();
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat: leave %s (%s), pawn now %s"), bOff ? TEXT("ok") : TEXT("refused"),
+				Step.Kind == EBoatStep::LeaveAtSea ? TEXT("at sea: refused expected") : TEXT("at the quay"), PC && PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"));
+		}
+		break;
+	case EBoatStep::Drive:
+	case EBoatStep::Stop:
+	{
+		if (PC && PC->GetPawn() != Boat)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots boat: the player isn't on the boat (%s)"), PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"));
+			BoatStep = NumSteps;
+			return true;
+		}
+		Boat->DisableInput(PC);
+		float Rudder = Step.Rudder;
+		if (Step.Steer != 0.f)
+		{
+			const FVector To = Step.Steer > 0.f ? IslandCenter - Boat->GetActorLocation() : Boat->GetActorLocation() - HomeCenter;
+			const double Desired = FMath::RadiansToDegrees(FMath::Atan2(To.Y, To.X));
+			Rudder = float(FMath::Clamp(FRotator::NormalizeAxis(Desired - Boat->GetActorRotation().Yaw) / 30.0, -1.0, 1.0));
+		}
+		const float Speed = Boat->GetBoatMovement()->GetForwardSpeed();
+		const float Throttle = Step.Kind == EBoatStep::Stop && Speed < 50.f ? 0.f : Step.Throttle;
+		Boat->SetDriveInput(FVector2D(Rudder, Throttle));
+		BoatTopSpeed = FMath::Max(BoatTopSpeed, Speed);
+		if (Elapsed >= BoatNextReport)
+		{
+			BoatNextReport = Elapsed + 1.0;
+			const double ToTarget = Planets->GetPlanetAsset()->Radius / 100.0 * FMath::Acos(FMath::Clamp(FVector::DotProduct(
+				Planets->GetPlanetToWorld().InverseTransformPosition(Boat->GetActorLocation()).GetSafeNormal(), Island.GetUp()), -1.0, 1.0));
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat %s t=%.1f: %.1f m/s, turning %.1f deg/s, throttle %.1f rudder %.2f, %s, %.0f m from %s, %s, %d turns"),
+				Step.Name, StepTime, Speed / 100.f, Boat->GetBoatMovement()->GetTurnRate(), Throttle, Rudder,
+				Boat->GetBoatMovement()->IsAfloat() ? TEXT("afloat") : TEXT("NO WATER"), ToTarget, *Island.Island.ToString(),
+				Planets->IsAnchored() ? *FString::Printf(TEXT("held at %s"), *Planets->GetPlanetAsset()->Islands[Planets->GetAnchor()].Island.ToString()) : TEXT("at sea"),
+				Planets->GetRecenterCount());
+		}
+		if (Step.bUntilHeld && Planets->IsAnchored() && Planets->GetAnchor() == Target)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat: the world is held at %s after %.1f s"), *Island.Island.ToString(), StepTime);
+			Shoot(Step.Name);
+			Boat->SetDriveInput(FVector2D::ZeroVector);
+			NextStep();
+			return true;
+		}
+		if (Step.Kind == EBoatStep::Drive && BoatFrame > 0 && StepTime >= Step.Duration * 0.5 && StepTime - DeltaTime < Step.Duration * 0.5)
+		{
+			Shoot(FString(Step.Name) + TEXT("_mid"));
+		}
+		break;
+	}
+	}
+	++BoatFrame;
+	if (StepTime >= Step.Duration)
+	{
+		Shoot(Step.Name);
+		Boat->SetDriveInput(FVector2D::ZeroVector);
+		NextStep();
 	}
 	return true;
 }
@@ -1740,6 +1966,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bGlobe)
 	{
 		return TickGlobe(World, DeltaTime);
+	}
+	if (bBoat)
+	{
+		return TickBoat(World, DeltaTime);
 	}
 	if (bScenes)
 	{

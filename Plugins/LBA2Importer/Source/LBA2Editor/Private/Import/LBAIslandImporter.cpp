@@ -21,6 +21,9 @@
 #include "Import/LBAWater.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
+#include "LBA2Settings.h"
+#include "LBABoat.h"
+#include "LBAEntityAsset.h"
 #include "LBATypes.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "MaterialEditingLibrary.h"
@@ -627,6 +630,34 @@ namespace
 		OutBounds = FBox2D(FVector2D(Min) * TexelSize, FVector2D(Max) * TexelSize);
 		return Texture;
 	}
+
+	/**
+	 * Whether two bodies have the same shape: as many points and polygons, at rest within about the same box. An island's
+	 * copy of a character's body is flattened into one group, its points made absolute (the ferry: 14 groups in
+	 * BODY.HQR, 1 in the islands' OBL, 246 points and 253 polygons in both).
+	 */
+	bool IsSameBodyShape(const FLBABody& A, const FLBABody& B)
+	{
+		if (A.Points.Num() != B.Points.Num() || A.Polys.Num() != B.Polys.Num() || A.Points.IsEmpty())
+		{
+			return false;
+		}
+		auto RestBounds = [](const FLBABody& Body)
+		{
+			const TArray<FIntVector> Origins = Body.ComputeGroupOrigins();
+			FBox Bounds(ForceInit);
+			for (int32 Point = 0; Point < Body.Points.Num(); ++Point)
+			{
+				Bounds += FVector(Body.GetRestPosition(Point, Origins));
+			}
+			return Bounds;
+		};
+		const FBox BoundsA = RestBounds(A);
+		const FBox BoundsB = RestBounds(B);
+		// Within 3% of the body's size: the copy's parts may be slightly posed (the ferry's: one by 90 of 5900 units).
+		const double Tolerance = 0.03 * BoundsB.GetSize().GetMax();
+		return BoundsA.Min.Equals(BoundsB.Min, Tolerance) && BoundsA.Max.Equals(BoundsB.Max, Tolerance);
+	}
 }
 
 FLBAIslandImporter::FLBAIslandImporter(FLBAImportContext& InContext)
@@ -717,9 +748,37 @@ bool FLBAIslandImporter::ImportIsland(const FString& IslandName)
 
 	if (Context.GetProjectSettings().bCreateIslandLevels)
 	{
-		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes, Glow);
+		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes, Glow, FindBoatBodies(Island));
 	}
 	return true;
+}
+
+TSet<int32> FLBAIslandImporter::FindBoatBodies(const FLBAIsland& Island) const
+{
+	TSet<int32> Found;
+	const ULBAEntityAsset* Boat = GetDefault<ULBA2Settings>()->Boat.LoadSynchronous();
+	const FLBAEntityBody* BoatBody = Boat ? Boat->Bodies.Find(0) : nullptr;
+	const FLBAHqrFile* BodyHqr = Context.GetHqr(TEXT("BODY.HQR"));
+	const FLBAHqrFile* Obl = Context.GetHqr(Island.Name + TEXT(".OBL"));
+	FLBABody Reference;
+	if (!BoatBody || BoatBody->SourceBody == INDEX_NONE || !BodyHqr || !Obl || !Reference.Parse(BodyHqr->GetEntry(BoatBody->SourceBody)))
+	{
+		if (!Boat)
+		{
+			Context.Warn(FString::Printf(TEXT("Island %s: no boat entity (import the Characters layer first), no boats moored"), *Island.Name));
+		}
+		return Found;
+	}
+	for (int32 Index = 0; Index < Obl->Num(); ++Index)
+	{
+		FLBABody Body;
+		if (Body.Parse(Obl->GetEntry(Index)) && IsSameBodyShape(Body, Reference))
+		{
+			Found.Add(Index);
+		}
+
+	}
+	return Found;
 }
 
 namespace
@@ -1068,7 +1127,7 @@ UStaticMesh* FLBAIslandImporter::BuildGroundMesh(const FLBAIsland& Island, const
 }
 
 void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& IslandFolder, const TArray<UStaticMesh*>& GroundMeshes,
-	const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow)
+	const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow, const TSet<int32>& BoatBodies)
 {
 	UWorld* World = Context.BeginLevel(IslandFolder, TEXT("L_") + Island.Name);
 	if (!World)
@@ -1119,6 +1178,16 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 			}
 			const FIntVector P = Origin + Decor.Position;
 			const FTransform Transform(LBA::BetaToRotator(Decor.Beta), LBA::ToUnreal(P.X, P.Y, P.Z, Scale));
+			if (BoatBodies.Contains(Decor.Body))
+			{
+				// The island's ferry: a boat moored there, facing the same way (the boat's bow is +X, bodies face +Y).
+				const FTransform Mooring(LBA::BetaToRotator(Decor.Beta) + FRotator(0.f, 90.f, 0.f), Transform.GetLocation());
+				if (Context.SpawnGeneratedActor<ALBABoat>(World, Mooring, TEXT("Boat"), TEXT("Boats")))
+				{
+					UE_LOG(LogLBA2, Display, TEXT("Island %s: decor %d is the boat's body, a boat moored at %s"), *Island.Name, Decor.Body, *Mooring.GetLocation().ToCompactString());
+				}
+				continue;
+			}
 			const bool bConditional = Decor.ConditionVar != 0;
 			AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, Transform,
 				FString::Printf(TEXT("Decor_%03d"), Decor.Body), bConditional ? ConditionalFolder : SectionFolder);
