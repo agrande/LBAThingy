@@ -105,9 +105,6 @@ public:
 	/** Moving, or steered by someone: still boats don't update. */
 	bool IsUnderWay() const;
 
-	/** The world was moved with the boat (globe mode, ULBAPlanetSubsystem): turns its directions along. */
-	void OnWorldMoved(const FTransform& Delta);
-
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual float GetMaxSpeed() const override { return MaxSpeed; }
 
@@ -209,7 +206,6 @@ public:
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void PawnClientRestart() override;
@@ -219,9 +215,6 @@ private:
 	void CreateInput();
 	void UpdateHull(float DeltaSeconds);
 	void UpdateCamera(float DeltaSeconds);
-	/** Globe mode: the world moved, maybe with the boat (ULBAPlanetSubsystem::OnRecentered). */
-	void HandleWorldMoved(const FTransform& Delta, const AActor* MovedAlong);
-	FDelegateHandle WorldMovedHandle;
 	void DrawDebug() const;
 
 	void OnDrive(const FInputActionValue& Value);

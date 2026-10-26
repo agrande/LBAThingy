@@ -1346,8 +1346,6 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 				Component->SetStaticMesh(SeabedMesh);
 				Component->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 				Component->SetCastShadow(false);
-				// Globe mode swaps it for its bent twin (LBAPlanetBuilder).
-				Actor->Tags.Add(TEXT("LBA_Seabed"));
 				GroundActors.Add(Actor);
 			}
 		}
@@ -1363,7 +1361,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		Preset.WaterNeutralLight = LBAWater::Spawn(Context, World, Water, Preset, Lights);
 		if (LBAPlanetBuilder::IsPlaced(Island.Name))
 		{
-			LBAPlanetBuilder::AddIsland(Context, Island, IslandFolder, Seabed, Preset, Lights);
+			LBAPlanetBuilder::AddIsland(Context, Island, IslandFolder, Preset, Lights);
 		}
 	}
 	if (UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")))

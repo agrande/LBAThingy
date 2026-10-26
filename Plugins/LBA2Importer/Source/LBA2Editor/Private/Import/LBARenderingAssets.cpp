@@ -387,7 +387,8 @@ UMaterial* FLBARenderingAssets::GetMaster()
 UMaterial* FLBARenderingAssets::CreateMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 30;
+	// v31: globe mode's bend (MPC_LBA_Planet's PlanetBend and PlanetView).
+	constexpr int32 Version = 31;
 
 	CreateDitherTextures();
 	UMaterialParameterCollection* PlanetCollection = GetPlanetParameters();
@@ -456,7 +457,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		const TCHAR* Name;
 		UMaterialExpression* Expression;
 	};
-	// Globe mode's world to anchor level transform (MPC_LBA_Planet, LBAPlanet.ush).
+	// Globe mode's bend of the view (MPC_LBA_Planet, LBAPlanet.ush).
 	auto Planet = [&](const TCHAR* Name, int32 Y) -> UMaterialExpression*
 	{
 		UMaterialExpressionCollectionParameter* Node = Cast<UMaterialExpressionCollectionParameter>(Add(UMaterialExpressionCollectionParameter::StaticClass(), -900, Y));
@@ -482,11 +483,8 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("HalftoneRamp"), TextureObject(TEXT("HalftoneRamp"), HalftoneRamp, 960) },
 		// The island's sea texture, set per level (LBAEnvironment), for cartoon water.
 		{ TEXT("SeaTexture"), TextureObject(TEXT("SeaTexture"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1080) },
-		{ TEXT("PlanetX"), Planet(TEXT("PlanetPatternX"), 1200) },
-		{ TEXT("PlanetY"), Planet(TEXT("PlanetPatternY"), 1280) },
-		{ TEXT("PlanetZ"), Planet(TEXT("PlanetPatternZ"), 1360) },
-		{ TEXT("PlanetPattern"), Planet(TEXT("PlanetPattern"), 1440) },
-		{ TEXT("PlanetCap"), Planet(TEXT("PlanetPatternCap"), 1520) },
+		{ TEXT("PlanetBend"), Planet(TEXT("PlanetBend"), 1200) },
+		{ TEXT("PlanetView"), Planet(TEXT("PlanetView"), 1280) },
 		{ TEXT("Strength"), Scalar(TEXT("Strength"), 1.f, TEXT("Palette")) },
 		{ TEXT("NeutralRow"), Scalar(TEXT("NeutralRow"), 12.f, TEXT("Palette")) },
 		{ TEXT("NeutralLight"), Scalar(TEXT("NeutralLight"), 1.f, TEXT("Palette")) },
@@ -619,11 +617,8 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Dither.StretchSmoothness = StretchSmoothness;\n"
 		"S.Halftone.DotPixels = max(DotSpacing, 1.0);\n"
 		"S.Halftone.Contrast = DotContrast;\n"
-		"S.Planet.X = PlanetX;\n"
-		"S.Planet.Y = PlanetY;\n"
-		"S.Planet.Z = PlanetZ;\n"
-		"S.Planet.Pattern = PlanetPattern;\n"
-		"S.Planet.Cap = PlanetCap;\n"
+		"S.Planet.Bend = PlanetBend;\n"
+		"S.Planet.View = PlanetView.xyz;\n"
 		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture,\n"
 		"    Dither, DitherSampler, DitherRamp, DitherRampSampler, HalftoneRamp, HalftoneRampSampler, S);"), DitherDotsPerSide);
 
@@ -782,26 +777,11 @@ UMaterialParameterCollection* FLBARenderingAssets::GetPlanetParameters()
 	// Defaults: no planet (LBAPlanet.ush). Existing parameters keep their ids (materials refer to them by id).
 	const TPair<const TCHAR*, FLinearColor> Defaults[] =
 	{
-		{ TEXT("PlanetSea"), FLinearColor::Transparent },
-		{ TEXT("PlanetSeaX"), FLinearColor(1.f, 0.f, 0.f, 0.f) },
-		{ TEXT("PlanetSeaY"), FLinearColor(0.f, 1.f, 0.f, 0.f) },
-		{ TEXT("PlanetSeaZ"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
-		{ TEXT("PlanetCenter"), FLinearColor::Transparent },
-		{ TEXT("PlanetCap0"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
-		{ TEXT("PlanetCapEdge0"), FLinearColor::Transparent },
-		{ TEXT("PlanetCap1"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
-		{ TEXT("PlanetCapEdge1"), FLinearColor::Transparent },
-		{ TEXT("PlanetPatternX"), FLinearColor(1.f, 0.f, 0.f, 0.f) },
-		{ TEXT("PlanetPatternY"), FLinearColor(0.f, 1.f, 0.f, 0.f) },
-		{ TEXT("PlanetPatternZ"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
-		{ TEXT("PlanetPattern"), FLinearColor::Transparent },
-		{ TEXT("PlanetPatternCap"), FLinearColor::Transparent },
-		// Last frame, for the sea's motion vectors: the disc's axes, and the world's move since (current to previous).
-		{ TEXT("PlanetSeaXPrev"), FLinearColor(1.f, 0.f, 0.f, 0.f) },
-		{ TEXT("PlanetSeaYPrev"), FLinearColor(0.f, 1.f, 0.f, 0.f) },
-		{ TEXT("PlanetPreviousX"), FLinearColor(1.f, 0.f, 0.f, 0.f) },
-		{ TEXT("PlanetPreviousY"), FLinearColor(0.f, 1.f, 0.f, 0.f) },
-		{ TEXT("PlanetPreviousZ"), FLinearColor(0.f, 0.f, 1.f, 0.f) },
+		{ TEXT("PlanetBend"), FLinearColor(200000.f, 0.f, 0.f, 0.f) },
+		{ TEXT("PlanetView"), FLinearColor::Transparent },
+		// Last frame, for motion vectors: the camera, and the sea disc's move since.
+		{ TEXT("PlanetViewPrevious"), FLinearColor::Transparent },
+		{ TEXT("PlanetSeaMove"), FLinearColor::Transparent },
 	};
 	// Parameters dropped from the list go (only generated materials use the collection).
 	bool bChanged = PlanetParameters->VectorParameters.RemoveAll([&Defaults](const FCollectionVectorParameter& Parameter)
@@ -843,7 +823,8 @@ UMaterial* FLBARenderingAssets::GetPlanetSeaMaster()
 		return PlanetSeaMaster;
 	}
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	constexpr int32 Version = 5;
+	// v6: a flat disc under the camera, bent like the rest of the world.
+	constexpr int32 Version = 6;
 
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(GetFolder(), TEXT("M_LBA_PlanetSea"), &bExisted);
@@ -855,7 +836,8 @@ UMaterial* FLBARenderingAssets::GetPlanetSeaMaster()
 	UMaterialParameterCollection* Collection = GetPlanetParameters();
 
 	// Single layer water like the islands' Unreal ocean, so the palette shading draws it as cartoon water. The disc is
-	// bent onto the planet by its world position offset; its normal (world space) is the planet's, with ripples.
+	// bent like the rest of the world by its world position offset; its normal (world space) is the bent sea's, with
+	// ripples.
 	Material->MaterialDomain = MD_Surface;
 	Material->BlendMode = BLEND_Opaque;
 	Material->SetShadingModel(MSM_SingleLayerWater);
@@ -909,52 +891,44 @@ UMaterial* FLBARenderingAssets::GetPlanetSeaMaster()
 		return Custom;
 	};
 
-	UMaterialExpression* Sea = Planet(TEXT("PlanetSea"), -800);
-	UMaterialExpression* SeaX = Planet(TEXT("PlanetSeaX"), -720);
-	UMaterialExpression* SeaY = Planet(TEXT("PlanetSeaY"), -640);
-	UMaterialExpression* SeaZ = Planet(TEXT("PlanetSeaZ"), -560);
-	UMaterialExpression* Center = Planet(TEXT("PlanetCenter"), -480);
-	UMaterialExpression* Cap0 = Planet(TEXT("PlanetCap0"), -400);
-	UMaterialExpression* Edge0 = Planet(TEXT("PlanetCapEdge0"), -320);
-	UMaterialExpression* Cap1 = Planet(TEXT("PlanetCap1"), -240);
-	UMaterialExpression* Edge1 = Planet(TEXT("PlanetCapEdge1"), -160);
-	UMaterialExpression* PatternX = Planet(TEXT("PlanetPatternX"), -80);
-	UMaterialExpression* PatternY = Planet(TEXT("PlanetPatternY"), 0);
+	UMaterialExpression* Bend = Planet(TEXT("PlanetBend"), -800);
+	UMaterialExpression* View = Planet(TEXT("PlanetView"), -720);
+	UMaterialExpression* ViewPrevious = Planet(TEXT("PlanetViewPrevious"), -1200);
+	// A position relative to a camera, subtracted in double precision.
+	auto FromCamera = [&](UMaterialExpression* Position, UMaterialExpression* Camera, int32 Y) -> UMaterialExpression*
+	{
+		UMaterialExpressionComponentMask* XYZ = Cast<UMaterialExpressionComponentMask>(Add(UMaterialExpressionComponentMask::StaticClass(), -750, Y + 80));
+		XYZ->R = XYZ->G = XYZ->B = true;
+		XYZ->A = false;
+		XYZ->Input.Connect(0, Camera);
+		UMaterialExpressionSubtract* Subtract = Cast<UMaterialExpressionSubtract>(Add(UMaterialExpressionSubtract::StaticClass(), -600, Y));
+		Subtract->A.Connect(0, Position);
+		Subtract->B.Connect(0, XYZ);
+		return Subtract;
+	};
 
-	// The disc slides over the sea under the player: its motion vectors (which TSR and motion blur rely on) follow the
-	// sea, not the disc (LBAPlanetSeaPreviousOffset).
-	UMaterialExpression* Local = Add(UMaterialExpressionLocalPosition::StaticClass(), -900, -900);
-	UMaterialExpressionCustom* Offset = MakeCustom(TEXT("LBA planet sea offset"), -600,
-		{ { TEXT("Local"), Local }, { TEXT("Sea"), Sea }, { TEXT("SeaX"), SeaX }, { TEXT("SeaY"), SeaY }, { TEXT("SeaZ"), SeaZ },
-		  { TEXT("Center"), Center }, { TEXT("Cap0"), Cap0 }, { TEXT("Edge0"), Edge0 }, { TEXT("Cap1"), Cap1 }, { TEXT("Edge1"), Edge1 } },
-		TEXT("return LBAPlanetSeaOffset(Local, Sea, SeaX.xyz, SeaY.xyz, SeaZ.xyz, Center.xyz, Cap0, Edge0, Cap1, Edge1);"));
-	UMaterialExpressionCustom* PreviousOffset = MakeCustom(TEXT("LBA planet sea offset (last frame)"), -1100,
-		{ { TEXT("Local"), Local }, { TEXT("Sea"), Sea }, { TEXT("SeaX"), SeaX }, { TEXT("SeaY"), SeaY }, { TEXT("SeaZ"), SeaZ },
-		  { TEXT("Center"), Center }, { TEXT("Cap0"), Cap0 }, { TEXT("Edge0"), Edge0 }, { TEXT("Cap1"), Cap1 }, { TEXT("Edge1"), Edge1 },
-		  { TEXT("PreviousSeaX"), Planet(TEXT("PlanetSeaXPrev"), -1400) }, { TEXT("PreviousSeaY"), Planet(TEXT("PlanetSeaYPrev"), -1320) },
-		  { TEXT("PreviousX"), Planet(TEXT("PlanetPreviousX"), -1240) }, { TEXT("PreviousY"), Planet(TEXT("PlanetPreviousY"), -1160) },
-		  { TEXT("PreviousZ"), Planet(TEXT("PlanetPreviousZ"), -1080) } },
-		TEXT("return LBAPlanetSeaPreviousOffset(Local, Sea, SeaX.xyz, SeaY.xyz, SeaZ.xyz, Center.xyz, Cap0, Edge0, Cap1, Edge1,\n")
-		TEXT("    PreviousSeaX.xyz, PreviousSeaY.xyz, PreviousX, PreviousY, PreviousZ);"));
+	// The disc stays under the camera: its motion vectors (which TSR and motion blur rely on) follow the sea, not the
+	// disc (LBAPlanetSeaPreviousOffset). In the last frame's branch, the world position is the vertex's last frame's.
+	UMaterialExpression* Vertex = Add(UMaterialExpressionWorldPosition::StaticClass(), -900, -900);
+	UMaterialExpressionCustom* Offset = MakeCustom(TEXT("LBA planet bend"), -600,
+		{ { TEXT("FromView"), FromCamera(Vertex, View, -760) }, { TEXT("View"), View }, { TEXT("Bend"), Bend } },
+		TEXT("return LBAPlanetBendOffset(FromView, View.xyz, Bend);"));
+	UMaterialExpressionCustom* PreviousOffset = MakeCustom(TEXT("LBA planet sea bend (last frame)"), -1100,
+		{ { TEXT("FromViewPrevious"), FromCamera(Vertex, ViewPrevious, -1160) }, { TEXT("ViewPrevious"), ViewPrevious },
+		  { TEXT("SeaMove"), Planet(TEXT("PlanetSeaMove"), -1040) }, { TEXT("Bend"), Bend } },
+		TEXT("return LBAPlanetSeaPreviousOffset(FromViewPrevious, ViewPrevious.xyz, SeaMove.xyz, Bend);"));
 	UMaterialExpressionPreviousFrameSwitch* Switch = Cast<UMaterialExpressionPreviousFrameSwitch>(Add(UMaterialExpressionPreviousFrameSwitch::StaticClass(), -100, -800));
 	Switch->CurrentFrame.Connect(0, Offset);
 	Switch->PreviousFrame.Connect(0, PreviousOffset);
 	UMaterialEditingLibrary::ConnectMaterialProperty(Switch, TEXT(""), MP_WorldPositionOffset);
 
-	// The pixel's position relative to the disc's center, subtracted in double precision.
-	UMaterialExpression* World = Add(UMaterialExpressionWorldPosition::StaticClass(), -900, 100);
-	UMaterialExpressionComponentMask* SeaCenter = Cast<UMaterialExpressionComponentMask>(Add(UMaterialExpressionComponentMask::StaticClass(), -750, 180));
-	SeaCenter->R = SeaCenter->G = SeaCenter->B = true;
-	SeaCenter->A = false;
-	SeaCenter->Input.Connect(0, Sea);
-	UMaterialExpressionSubtract* FromSea = Cast<UMaterialExpressionSubtract>(Add(UMaterialExpressionSubtract::StaticClass(), -600, 120));
-	FromSea->A.Connect(0, World);
-	FromSea->B.Connect(0, SeaCenter);
+	// The pixel's flat position (before the bend): the bent sea's up there, ripples laid out on the flat sea.
+	UMaterialExpressionWorldPosition* Flat = Cast<UMaterialExpressionWorldPosition>(Add(UMaterialExpressionWorldPosition::StaticClass(), -900, 100));
+	Flat->WorldPositionShaderOffset = WPT_ExcludeAllShaderOffsets;
 	UMaterialExpressionCustom* Normal = MakeCustom(TEXT("LBA planet sea normal"), 0,
-		{ { TEXT("FromSea"), FromSea }, { TEXT("World"), World }, { TEXT("Time"), Add(UMaterialExpressionTime::StaticClass(), -900, 260) },
-		  { TEXT("Sea"), Sea }, { TEXT("Center"), Center }, { TEXT("Cap0"), Cap0 }, { TEXT("Edge0"), Edge0 }, { TEXT("Cap1"), Cap1 },
-		  { TEXT("Edge1"), Edge1 }, { TEXT("PatternX"), PatternX }, { TEXT("PatternY"), PatternY }, { TEXT("RippleSlope"), Scalar(TEXT("RippleSlope"), 0.05f) } },
-		TEXT("return LBAPlanetSeaNormal(FromSea, World, Time, Sea, Center.xyz, Cap0, Edge0, Cap1, Edge1, PatternX, PatternY, RippleSlope);"));
+		{ { TEXT("FromView"), FromCamera(Flat, View, 120) }, { TEXT("Flat"), Flat }, { TEXT("Time"), Add(UMaterialExpressionTime::StaticClass(), -900, 260) },
+		  { TEXT("Bend"), Bend }, { TEXT("RippleSlope"), Scalar(TEXT("RippleSlope"), 0.05f) } },
+		TEXT("return LBAPlanetSeaNormal(FromView, Flat.xy, Time, Bend, RippleSlope);"));
 	UMaterialEditingLibrary::ConnectMaterialProperty(Normal, TEXT(""), MP_Normal);
 	UMaterialEditingLibrary::ConnectMaterialProperty(Scalar(TEXT("Roughness"), 0.06f), TEXT(""), MP_Roughness);
 

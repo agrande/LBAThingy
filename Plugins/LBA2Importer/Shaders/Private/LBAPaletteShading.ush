@@ -124,18 +124,20 @@ struct FLBADitherFrame
 
 // World-aligned dither frame: the world position projected along the dominant axis of the geometric normal (taken
 // from depth, so normal maps don't break the projection up). Dots are spaced in centimetres of world space. In globe
-// mode, of the anchor island's level space (LBAPlanet.ush), so they stay put when the world turns.
-FLBADitherFrame LBADitherSurfaceFrame(float2 ViewportUV, float Depth, float2 PixelSize, FLBAPlanetPattern Planet)
+// mode, of the flat world where the view bends (LBAPlanet.ush), so they stay put on far surfaces as the camera moves.
+FLBADitherFrame LBADitherSurfaceFrame(float2 ViewportUV, float Depth, float2 PixelSize, FLBAPlanetView Planet)
 {
 	const float3 Center = LBATranslatedPositionAt(ViewportUV, Depth);
 	float3 DPDX = LBASurfaceDelta(ViewportUV, float2(PixelSize.x, 0.0), Center, Depth);
 	float3 DPDY = LBASurfaceDelta(ViewportUV, float2(0.0, PixelSize.y), Center, Depth);
 	FDFVector3 WorldPos = DFFastSubtract(Center, PrimaryView.PreViewTranslation);
-	if (LBAPlanetPatternTurned(Planet))
+	const float3 World = DFDemote(WorldPos);
+	if (LBAPlanetBent(Planet) && length(World.xy - Planet.View.xy) > Planet.Bend.y)
 	{
-		WorldPos = DFPromote(LBAPlanetPatternPosition(Planet, DFDemote(WorldPos)));
-		DPDX = LBAPlanetPatternVector(Planet, DPDX);
-		DPDY = LBAPlanetPatternVector(Planet, DPDY);
+		const float3 Flat = LBAPlanetUnbend(Planet, World);
+		DPDX = LBAPlanetUnbend(Planet, World + DPDX) - Flat;
+		DPDY = LBAPlanetUnbend(Planet, World + DPDY) - Flat;
+		WorldPos = DFPromote(Flat);
 	}
 	const float3 Axis = abs(cross(DPDX, DPDY));
 
@@ -277,7 +279,7 @@ struct FLBAPaletteShadingSettings
 	FLBADither3DSettings Dither;
 	FLBAHalftoneSettings Halftone;
 	FLBACartoonWaterSettings Cartoon;
-	FLBAPlanetPattern Planet;	// globe mode: world to the anchor island's level space (LBAPlanet.ush)
+	FLBAPlanetView Planet;		// globe mode: how the view bends onto the planet (LBAPlanet.ush)
 };
 
 // Viewport UV of the point at a horizontal world offset from a translated world position; false off screen.
@@ -406,11 +408,10 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 {
 	const FLBACartoonWaterSettings C = S.Cartoon;
 	const float3 Translated = LBATranslatedPositionAt(ViewportUV, Depth);
-	// Sea coordinates: world XY, or in globe mode along the planet from the anchor island (LBAPlanet.ush).
+	// Sea coordinates: world XY, in globe mode of the flat world where the view bends (LBAPlanet.ush).
 	const float3 World = DFDemote(DFFastSubtract(Translated, PrimaryView.PreViewTranslation));
-	const float3 Level = LBAPlanetPatternTurned(S.Planet) ? LBAPlanetPatternPosition(S.Planet, World) : World;
-	const float2 P = LBAPlanetSeaCoordinates(S.Planet, Level);
-	const float2 Bend = LBAPlanetPatternTurned(S.Planet) ? LBAPlanetPatternVector(S.Planet, WorldNormal).xy : WorldNormal.xy;
+	const float2 P = LBAPlanetUnbend(S.Planet, World).xy;
+	const float2 Bend = LBAPlanetBent(S.Planet) ? LBAPlanetUnbendVector(S.Planet, World, WorldNormal).xy : WorldNormal.xy;
 	const float Time = View.GameTime;
 	const float BaseLuma = max(LBALuma(BaseColor), 1e-4);
 	// World size of a pixel on the water (its longest side, at grazing angles along the view): details smaller than a

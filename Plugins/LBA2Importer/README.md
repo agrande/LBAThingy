@@ -491,79 +491,68 @@ the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScene
 
 ### Globe mode (prototype)
 
-Islands placed on a planet can open on it: a small round planet (Twinsun: 2 km radius) whose sea curves away to a
-real horizon, the island sitting on it as imported. `lba.Globe.Open CITABAU` opens Citadel (sunny) that way; so does
-any travel to it with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel and
-the desert island are placed, 840 m apart: open either one and the other is out there, across the sea. The Dinofly is
-the sea vehicle (it floats and skims on the planet's sea).
+Islands placed on a planet can open on it: a tiny round planet (Twinsun: 750 m radius) whose sea curves away to a
+horizon, far islands sinking below it until they come close. `lba.Globe.Open CITABAU` opens Citadel (sunny) that way;
+so does any travel to it with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
+and the desert island are placed, 315 m apart: open either one and the other is out there, across the sea. The Dinofly
+and the ferry are the sea vehicles.
 
-How it holds together:
+How it holds together (the world is flat and still; only the view is round):
 
-- **The island stays flat.** Its level is unchanged: on and near the island the world is exactly where the level
-  has it, and everything (characters, scenes, zones, the storm formula) works as before. The sea is flat over a
-  *cap* around the island (its land plus 20 m) and bends down to the sphere across a 150 m ring
-  (`FLBAPlanetCap`, mirrored in `Shaders/Private/LBAPlanet.ush`). In globe mode the level's Water plugin ocean and its
-  invisible sea floor are removed, and its seabed is swapped for a copy bent with the sea.
-- **Out at sea the world turns under the player.** Whenever the sea's up under the player is more than 0.5 degrees
-  from the world's +Z, everything but the player is rotated about the player to make it +Z again
-  (`ULBAPlanetSubsystem`). Gameplay code keeps its flat-world assumptions (gravity -Z, Z = height) within that half
-  degree. The camera is tilted by the angle left (`ULBAPlanetCameraModifier`), so the turns don't show; surface
-  patterns (dither dots, cartoon sea) are laid out in the island level's space, and the sea's motion vectors follow
-  the sea, so TSR and motion blur don't see them either. Near an island again (within its flat sea and 30 m), the
-  world snaps to where that island's level has it, taking the player along: that island is the *anchor*. The snap
-  is a camera cut (no motion blur or TSR smear), and the player's pawn turns its world-space state along
-  (`OnRecentered`: the Dinofly's camera, flight heading and airflow strokes). Invisible markers (volumes, starts,
-  target points) skip the turns and are put back on their islands at each snap.
-- **Other islands stream in.** The opened island is the *home*; every other placed island's level is loaded as a
-  level instance where it is on the planet, without what the home island's level brings for the whole planet (sun
-  and lights, sky atmosphere, sky light, clouds, height fog, look volume, rain, storm, player starts) and without its
-  scenes (an empty island for now). Patterns stay laid out in the home island's space everywhere, so they don't jump
-  when the anchor changes.
-- **The sea** is a disc of rings kept under the player and bent onto the planet by its material (`M_LBA_PlanetSea`:
-  single layer water with the home island's water colour, so the palette shading draws it as cartoon water); sea
-  queries (`GetSeaSurface`, used by the Dinofly's floating and its altitude for air density) are analytic.
-- **Sky:** the island's sky atmosphere becomes the planet's (centered on it, 2 km ground radius); a second sun on
-  the other side of the planet lights the other hemisphere (each sun is switched off below its horizon). Its clouds
-  keep their level's layer (5 to 15 km up: the cloud material forms nothing in a layer lower than 2 km). Such a small
-  planet's sky is as bright overhead as the level's, but twice as dark 40 degrees up and three to four times near the
-  horizon, with fewer clouds there: low rays leave its air almost as fast as rays going straight up, where on an
-  Earth-sized planet they cross about 28 times more. Its sky light, captured from that sky, would light the island
-  half as much, so it is made brighter by the island's `SkyLightGain` (Citadel 1.55, desert 1.35, in the builder's
-  table), measured until the ground is as light as in the level from the same poses (now within 4 to 17 percent,
-  a little bright and bluer; the sun's own light is the same on the globe). The sky itself stays darker towards the
-  horizon. The clouds cost about 10 fps in the voyage (141 to 129 on average).
+- **Islands laid flat on a map.** The opened island's level is where it was saved; every other placed island's level
+  is streamed in as a level instance where it is on the planet's flat map (`FLBAPlanetIsland::GetLevelToMap`): the
+  northern hemisphere laid flat around the north pole, distances from the pole and longitudes kept (azimuthal
+  equidistant), so distances between islands near the pole are kept too (Citadel to desert: 315 m on the planet and on
+  the map; they stretch east-west by 11% at 45 degrees from the pole). Nothing moves: collision, navigation, gravity
+  and every gameplay system see a flat world, static objects stay static. Streamed islands come without what the
+  opened island's level brings for the whole planet (sun and lights, sky atmosphere, sky light, clouds, height fog,
+  look volume, rain, storm, player starts) and without their scenes (empty islands for now).
+- **The view bends.** Past a flat circle around the camera (100 m), every generated material moves its vertices down
+  onto a sphere of the planet's radius (`LBAPlanetBendOffset` in `Shaders/Private/LBAPlanet.ush`, added to the master
+  materials by `LBAMaterials::AddPlanetBend`): a point Distance away goes Distance - 100 m along the sphere from the
+  circle's edge, its height above the sea becoming height above the sphere (far islands tilt away). It is centered on
+  the camera's final location each frame (`ULBAPlanetCameraModifier` writes `MPC_LBA_Planet`), and last frame's camera
+  gives the motion vectors (previous frame switch), so TSR and motion blur follow the bend. Without a planet the
+  offset is zero. The palette shading undoes the bend (`LBAPlanetUnbend`) for its dither dots and cartoon sea, so
+  they stay put on far surfaces. From the desert's shore, Citadel's center is 30 m down; from the water 285 m away,
+  Citadel is entirely below the horizon (at 2 km radius it stood on it).
+- **The sea** is a flat disc of rings kept under the camera, bent like the rest by its material (`M_LBA_PlanetSea`:
+  single layer water with the home island's water colour, so the palette shading draws it as cartoon water); the
+  islands' Water plugin ocean and invisible sea floor are removed, their seabeds stay (bent by their material). Sea
+  queries (`GetSeaSurface`: the Dinofly's and the boat's floating, air density) answer the sea level, Z 0.
+- **Sky:** the island's sky atmosphere becomes a planet of the same radius centered under the camera, so its horizon
+  stays below the sea's. Its clouds keep their level's layer (5 to 15 km up: the cloud material forms nothing in a
+  layer lower than 2 km). Such a small planet's sky is darker towards the horizon (low rays leave its air fast), so
+  the sky light is made brighter by the island's `SkyLightGain` (Citadel 1.55, desert 1.35, measured at 2 km). At
+  750 m the island's ground is as light as in its level (park 0.99 to 1.07); the sky near the horizon is about 20%
+  darker, and the sea is darker than the level's Water plugin sea, most in shallow water (harbour).
 - **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
-  (HOLOMAP.HQR, ARROW.BIN: latitude, longitude) and is turned so its calibrated sun keeps its angles. The planet's
-  sun is the direction that gives every listed island its sun's elevation (Citadel 31.3 and Desert 36.8 degrees,
-  both exact). Output: `/Game/LBA2/Planets/DA_Planet_TWINSUN`, the sea disc and material, and each placed island's
-  `SM_<ISLAND>_Seabed_Globe`. The planets list is a table in `LBAPlanetBuilder.cpp`; the builder warns when two
-  islands' flat seas would overlap. Twinsun: Citadel at latitude 65.1, longitude 332.4; the desert island at 89.0,
-  5.7 (heading -150.4), each with about 110 m of land and 130 m of flat sea.
+  (HOLOMAP.HQR, ARROW.BIN: latitude, longitude) and is turned so its calibrated sun keeps its angles; the planet's sun
+  is the direction that gives every listed island its sun's elevation (Citadel 31.3 and desert 36.8 degrees, both
+  exact). One sun lights the flat world: the opened island's. Output: `/Game/LBA2/Planets/DA_Planet_TWINSUN` (radius,
+  flat radius, islands) and the sea disc and material. The planets list (radius, flat radius, islands) is a table in
+  `LBAPlanetBuilder.cpp`; the builder logs each pair's distance on the planet and on the map, and warns when two
+  islands' reaches (land plus 20 m) overlap on the map. Twinsun: Citadel at latitude 65.1, longitude 332.4 (heading
+  127.7); the desert island at 89.0, 5.7 (heading -150.4).
 
-Measured on Citadel (`-LBA2Shots=globe`, open the level with `?Globe`): about 20 turns flying 400 m out and as many
-back; at each, the camera's path on the planet has no jerk (0.1 to 2 cm, as between ordinary frames). A frozen
-frame turned 0.5 degrees differs from untouched ones by 1.1 (mean, 0-255; untouched frames 0.3), all gone the next
-frame; turned 3 degrees, by 4.8, mostly the sky near the horizon (Unreal's height fog is flat in the world). A turn
-moves about 540 actors in 4 ms; the snap back near the island takes one 36 ms frame. 140 fps on average in
-standalone game. `-LBA2GlobeQuick` stops after the turn test, `-LBA2GlobeTurn=0.5` sets its angle.
-
-Voyage (`-LBA2Shots=globe -LBA2GlobeTo=DESERT` on Citadel): the Dinofly flies from Citadel to the desert island
-(about 75 s at 8 m/s, 45 turns), the island rising over the horizon from 670 m away, until the world is held there,
-then looks at both islands from high above and lands. The desert streams in at the start (348 actors, about 150 ms
-over a few frames). The snap to the desert turns the world 115 degrees: the camera's path on the planet moves 5 cm
-and 0.002 degrees that frame, like any other. Turns stay at about 7 ms frames with both islands loaded.
-Console: `lba.Globe.Debug 1` (state on screen; 2 logs every turn, 3 their cost by class), `lba.Globe.Turns 0`
-(stops turning, the camera keeps correcting), `lba.Globe.Recenter 3` (turns the world 3 degrees: it must not show),
-`lba.Globe.Islands 0` (the next island opened comes alone), `lba.Globe.SkyLightGain 1.4` (overrides the island's
-sky light gain, for the next island opened), `lba.Globe.Clouds 5 10` (sets the cloud layer, km),
+Tests: `-LBA2Shots=globe` on Citadel (open the level with `?Globe`): the Dinofly flies out to sea and back, floats,
+shots from 500 m and 1.5 km up (the whole planet, both islands on it). 129 fps on average in standalone game (the 2 km
+world-turning prototype: 140). `-LBA2GlobeTo=DESERT`: across to the desert until within its reach, looks back from
+above, lands. `-LBA2Shots=boat -LBA2BoatTo=DESERT` crosses by ferry. Shots: Saved/LookDev/flatglobe750 (and
+flatglobe1000, flatglobe1 for 1 and 2 km, compare_750_1000.png, flatglobe_cmp.png against the flat level).
+Console: `lba.Globe.Bend 0` (the flat world unbent, to compare), `lba.Globe.FlatRadius 150` (m),
+`lba.Globe.Radius 1000` (m, for the next level opened: places and bend; the sea disc is built for the asset's radius),
+`lba.Globe.Debug 1` (camera height, nearest island and how far it sinks, horizon distance), `lba.Globe.Islands 0`
+(the next island opened comes alone), `lba.Globe.SkyLightGain 1.4`, `lba.Globe.Clouds 5 10` (km),
 `lba.Globe.SeaErrors` (the sea material's compile errors).
 
-Not done yet: the other islands (stubs from the holomap and LBA1), the Hamalayi belt and its passes, the
-other islands' scenes and looks (they borrow the home island's sun, sky, sea color and look), streaming by distance
-(every placed island is loaded), the fast travel menu landing on the globe, space; packaged builds don't cook the
-planet asset yet. Out at sea, markers stay where their island last was until the next snap. Height fog stays flat in
-the world (it shifts with each turn: visible only on large turns); views from high above are hazy (an island 1 km
-away is lost in the fog). A streamed island is lit by the opened island's sky light and gain.
+Not done yet: the other islands (stubs from the holomap and LBA1), the southern hemisphere (its own flat map, joined to
+this one through the Hamalayi belt's passes), the other islands' scenes and looks (they borrow the home island's sun,
+sky, sea color and look), streaming by distance (every placed island is loaded), the fast travel menu landing on the
+globe, space; packaged builds don't cook the planet asset yet. Bounds aren't grown by the bend (a far object whose
+flat place is off screen while its bent one is on screen would be culled; not seen in the shots). Every generated
+material now has a world position offset (zero without a planet): virtual shadow maps may stop caching those meshes
+outside globe mode too (not measured; `ShadowCacheInvalidationBehavior` Rigid on static meshes would fix it).
 
 ### The ferry (boat)
 
@@ -580,7 +569,7 @@ stick look around. Use again, slow (under 3 m/s) and next to land, to step ashor
 drag), the rudder turns 75 degrees/s under way, 40% of it when still, at most 1.1 g sideways (about 23 degrees/s and a
 70 m circle at full speed), the keel kills sideways slides at 2.5/s; it floats at the surface (the planet's sea or
 Water bodies) and runs aground where its keel (60 cm) meets the seabed. The hull rises when planing, leans into
-turns and rocks. In globe mode it crosses from Citadel to the desert island in about 40 s, the world turning under it.
+turns and rocks. In globe mode it crosses from Citadel to the desert island in about 15 s at full speed.
 `lba.Boat.Debug 1` shows its speed, `lba.Boat.Spawn` puts one in front of the player. Test: `-LBA2Shots=boat` on
 `L_CITABAU?Globe` (boards, steps ashore and back, backs out, full speed, turns, stops, refuses to leave at sea; shots
 and log), `-LBA2BoatTo=DESERT` crosses to the desert instead.
@@ -912,7 +901,7 @@ color, shade row / light, surfaces without fog).
 - [x] Dinofly flight choices: pump A (climb rate), hold X (dive), Morse on B (brake, tires), stalls when not pumping, lift from speed in thick air, attitude from the flight's forces, procedural wings, pain (hit stars, flinch), death and retry
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [x] Travel menu by planet, island and scene (interiors included), after lba2remake's teleport menu
-- [ ] Globe mode: islands on a round 2 km planet, the world turning under the player at sea (prototype: Citadel, the
+- [ ] Globe mode: islands laid flat on a 750 m planet's map, the view bent round (prototype: Citadel, the
       Dinofly at sea; next: island stubs, the Hamalayi belt, a boat, fast travel onto the globe, space)
 - [x] Tests tab, feature test map (stations, gateways; default map), editor level selector on the toolbar
 - [x] Twinsen's life points: falls, hit zones and enemies that hurt on touch, hit stars, death screen and retry

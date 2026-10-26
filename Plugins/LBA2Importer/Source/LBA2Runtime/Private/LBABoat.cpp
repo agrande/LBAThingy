@@ -24,7 +24,6 @@
 #include "LBAControls.h"
 #include "LBAEntityAsset.h"
 #include "LBAFlightMovementComponent.h"
-#include "LBAPlanetSubsystem.h"
 #include "LBATypes.h"
 #include "WaterBodyActor.h"
 
@@ -79,12 +78,6 @@ float ULBABoatMovementComponent::GetForwardSpeed() const
 bool ULBABoatMovementComponent::IsUnderWay() const
 {
 	return (PawnOwner && PawnOwner->GetController()) || Velocity.SizeSquared() > 1.0 || FMath::Abs(TurnRate) > 0.01f;
-}
-
-void ULBABoatMovementComponent::OnWorldMoved(const FTransform& Delta)
-{
-	// Velocity is the mover's (ULBAPlanetSubsystem::MoveWorld).
-	Acceleration = Delta.TransformVectorNoScale(Acceleration);
 }
 
 void ULBABoatMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -313,34 +306,6 @@ void ALBABoat::BeginPlay()
 	ApplyEntity();
 	CameraBase = FRotator(-14.f, GetActorRotation().Yaw, 0.f);
 	RockClock = FMath::FRandRange(0.f, 100.f);
-	if (ULBAPlanetSubsystem* Planets = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>())
-	{
-		WorldMovedHandle = Planets->OnRecentered.AddUObject(this, &ALBABoat::HandleWorldMoved);
-	}
-}
-
-void ALBABoat::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	if (ULBAPlanetSubsystem* Planets = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>())
-	{
-		Planets->OnRecentered.Remove(WorldMovedHandle);
-	}
-	Super::EndPlay(EndPlayReason);
-}
-
-void ALBABoat::HandleWorldMoved(const FTransform& Delta, const AActor* MovedAlong)
-{
-	if (MovedAlong != this)
-	{
-		return;
-	}
-	// The camera's rotations are in the world (the boom's is absolute): they turn with the view.
-	const ULBAPlanetSubsystem* Planets = GetWorld()->GetSubsystem<ULBAPlanetSubsystem>();
-	const FQuat ViewTurn = Planets ? Planets->GetViewTurn(Delta) : Delta.GetRotation();
-	const FRotator Base = (ViewTurn * CameraBase.Quaternion()).Rotator();
-	CameraBase = FRotator(Base.Pitch, Base.Yaw, 0.f);
-	CameraBoom->SetWorldRotation(ViewTurn * CameraBoom->GetComponentQuat());
-	Movement->OnWorldMoved(Delta);
 }
 
 void ALBABoat::Tick(float DeltaSeconds)

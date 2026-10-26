@@ -85,26 +85,6 @@ void ULBAAirflowComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void ULBAAirflowComponent::OnWorldMoved(const FTransform& Delta)
-{
-	for (FSourceState& State : SourceStates)
-	{
-		State.LastCenter = Delta.TransformPosition(State.LastCenter);
-		State.Velocity = Delta.TransformVectorNoScale(State.Velocity);
-		State.Acceleration = Delta.TransformVectorNoScale(State.Acceleration);
-	}
-	LastVelocity = Delta.TransformVectorNoScale(LastVelocity);
-	SmoothedAcceleration = Delta.TransformVectorNoScale(SmoothedAcceleration);
-	for (UNiagaraComponent* Stroke : Strokes)
-	{
-		if (Stroke)
-		{
-			Stroke->ResetSystem();
-		}
-	}
-	LiveStrokes.Reset();
-}
-
 USceneComponent* ULBAAirflowComponent::GetSourceParent() const
 {
 	AActor* Owner = GetOwner();

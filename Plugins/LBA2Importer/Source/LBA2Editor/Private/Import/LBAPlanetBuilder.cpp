@@ -7,7 +7,6 @@
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBARenderingAssets.h"
-#include "Import/LBASeabed.h"
 #include "Import/LBAWater.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
@@ -39,16 +38,19 @@ namespace
 		const TCHAR* Name;
 		/** Sea level radius (cm). */
 		double Radius;
+		/** The world stays flat this far around the camera (cm), then bends (ULBAPlanetAsset::FlatRadius). */
+		float FlatRadius;
 		/** The first placed island is the planet's home: its sea's look is the planet's. */
 		TArray<FPlanetIslandPreset> Islands;
 	};
 
 	const TArray<FPlanetPreset>& GetPresets()
 	{
-		// Twinsun at 2 km (decided 2026-10-25): Citadel island (its sunny variant) and the desert island, 840 m apart.
+		// Twinsun at 750 m (2026-10-26, was 2 km): Citadel island (its sunny variant) and the desert island, 315 m apart.
+		// Flat 100 m around the camera: the island under it stays flat, the desert sinks 30 m seen from Citadel.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 200000.0, { { TEXT("CITABAU"), 0, true, 1.55f }, { TEXT("DESERT"), 2, true, 1.35f } } },
+			{ TEXT("TWINSUN"), 75000.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f }, { TEXT("DESERT"), 2, true, 1.35f } } },
 		};
 		return Presets;
 	}
@@ -68,9 +70,8 @@ namespace
 		return nullptr;
 	}
 
-	/** Flat sea kept around an island's land (cm), then the ring where it bends to the sphere. */
-	constexpr double CapMargin = 2000.0;
-	constexpr double BlendWidth = 15000.0;
+	/** Sea around an island's land that is still its own (cm): its reach. */
+	constexpr double ReachMargin = 2000.0;
 
 	/** Sea disc rings: from the center out to this share of half the planet's circumference, each this much wider. */
 	constexpr double SeaReach = 0.9;
@@ -168,7 +169,7 @@ namespace
 		return FRotator::NormalizeAxis(FMath::RadiansToDegrees(PlanetAzimuth - LevelAzimuth));
 	}
 
-	/** The sea disc: rings around its center in its XY plane, which the sea material bends onto the planet. */
+	/** The sea disc: flat rings around its center, which the sea material bends onto the planet. */
 	UStaticMesh* BuildSeaDisc(FLBAImportContext& Context, const FString& Folder, const FString& Name, double Radius, UMaterialInterface* Material)
 	{
 		const double Reach = SeaReach * UE_DOUBLE_PI * Radius;
@@ -215,9 +216,9 @@ namespace
 		UStaticMesh* Mesh = Context.CreateStaticMesh(Folder, Name, MoveTemp(Description), Materials, Slots, Options);
 		if (Mesh)
 		{
-			// Bent onto the planet, the disc wraps down around it and the island caps lift it a little.
+			// Bent onto the planet, the disc wraps down around it.
 			Mesh->SetNegativeBoundsExtension(FVector(0.0, 0.0, 2.0 * Radius));
-			Mesh->SetPositiveBoundsExtension(FVector(0.0, 0.0, 0.1 * Radius));
+			Mesh->SetPositiveBoundsExtension(FVector::ZeroVector);
 			Mesh->CalculateExtendedBounds();
 			Context.MarkForSave(Mesh);
 		}
@@ -235,8 +236,8 @@ bool LBAPlanetBuilder::IsPlaced(const FString& IslandName)
 	});
 }
 
-void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& Island, const FString& IslandFolder, const FLBASeabedSettings& Seabed,
-	const FLBAEnvironmentPreset& Preset, const FLBAEnvironmentLights& Lights)
+void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& Island, const FString& IslandFolder, const FLBAEnvironmentPreset& Preset,
+	const FLBAEnvironmentLights& Lights)
 {
 	const FPlanetPreset* Planet = FindPreset(Island.Name);
 	if (!Planet || !IsPlaced(Island.Name))
@@ -275,7 +276,7 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	const FString LevelName = TEXT("L_") + Island.Name;
 	Entry.Level = TSoftObjectPtr<UWorld>(FSoftObjectPath(IslandFolder / LevelName + TEXT(".") + LevelName));
 
-	// The flat cap holds the island's land and a margin; the sea is round past the ring.
+	// The island's land and a margin around it.
 	FBox2D Land(ForceInit);
 	TArray<FVector2D> LandPoints;
 	for (const FLBAIslandSection& Section : Island.Sections)
@@ -300,15 +301,8 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	{
 		LandRadius = FMath::Max(LandRadius, FVector2D::Distance(Point, Entry.Center));
 	}
-	Entry.CapRadius = float(LandRadius + CapMargin);
-	Entry.BlendRadius = float(LandRadius + CapMargin + BlendWidth);
-
-	// The seabed, bent with the sea past the cap.
+	Entry.Reach = float(LandRadius + ReachMargin);
 	const FString PlanetFolder = Context.GetContentPath(TEXT("Planets"));
-	const FLBAPlanetCap Cap = Entry.GetCap(Radius);
-	FLBASeabedSettings Bent = Seabed;
-	Bent.Transform = [Cap, Center = Entry.Center](const FVector& Point) { return Cap.Bend(Point, Center); };
-	Entry.Seabed = LBASeabed::Build(Context, Bent, IslandFolder / TEXT("Ground"), FString::Printf(TEXT("SM_%s_Seabed_Globe"), *Island.Name));
 
 	// The planet's shared assets; the home island gives the sea its look.
 	FLBARenderingAssets& Rendering = Context.GetRendering();
@@ -334,6 +328,7 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	}
 	Asset->Modify();
 	Asset->Radius = Radius;
+	Asset->FlatRadius = Planet->FlatRadius;
 	Asset->SunDirection = PlanetSun;
 	Asset->SeaMesh = SeaMesh;
 	Asset->SeaMaterial = SeaMaterial;
@@ -348,20 +343,28 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	{
 		Asset->Islands.Add(Entry);
 	}
-	// Each island needs its flat cap: two caps can't overlap (their rings may).
+	// Laid flat side by side, islands can't overlap; on the map, distances stretch away from the pole.
 	for (const FLBAPlanetIsland& Other : Asset->Islands)
 	{
 		const double Apart = Radius * FMath::Acos(FMath::Clamp(FVector::DotProduct(Other.GetUp(), Entry.GetUp()), -1.0, 1.0));
-		if (Other.Island != Entry.Island && Apart < Other.CapRadius + Entry.CapRadius)
+		const double OnMap = FVector2D::Distance(Other.GetMapLocation(Radius), Entry.GetMapLocation(Radius));
+		if (Other.Island == Entry.Island)
 		{
-			Context.Warn(FString::Printf(TEXT("Planet %s: %s and %s are %.0f m apart, their flat seas overlap (%.0f and %.0f m)"),
-				Planet->Name, *Island.Name, *Other.Island.ToString(), Apart / 100.0, Entry.CapRadius / 100.0, Other.CapRadius / 100.0));
+			continue;
+		}
+		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s: %s to %s, %.0f m on the planet, %.0f m on the map"), Planet->Name, *Island.Name, *Other.Island.ToString(),
+			Apart / 100.0, OnMap / 100.0);
+		if (OnMap < Other.Reach + Entry.Reach)
+		{
+			Context.Warn(FString::Printf(TEXT("Planet %s: %s and %s are %.0f m apart on the map, they overlap (%.0f and %.0f m)"),
+				Planet->Name, *Island.Name, *Other.Island.ToString(), OnMap / 100.0, Entry.Reach / 100.0, Other.Reach / 100.0));
 		}
 	}
 	Context.MarkForSave(Asset);
 
 	const double Elevation = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(PlanetSun, Entry.GetUp()), -1.0, 1.0)));
-	UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s: %s at latitude %.1f, longitude %.1f, heading %.1f; sun elevation %.1f on the planet vs %.1f in the level; land %.0f m around (%.0f, %.0f), flat sea to %.0f m, round from %.0f m; sun towards %s"),
-		Planet->Name, *Island.Name, Entry.Latitude, Entry.Longitude, Entry.Heading, Elevation, FMath::RadiansToDegrees(FMath::Asin(LevelSun.Z)),
-		LandRadius / 100.0, Entry.Center.X, Entry.Center.Y, Entry.CapRadius / 100.0, Entry.BlendRadius / 100.0, *PlanetSun.ToString());
+	const FVector2D Map = Entry.GetMapLocation(Radius);
+	UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s: %s at latitude %.1f, longitude %.1f, heading %.1f (map (%.0f, %.0f) m, yaw %.1f); sun elevation %.1f on the planet vs %.1f in the level; land %.0f m around (%.0f, %.0f); sun towards %s"),
+		Planet->Name, *Island.Name, Entry.Latitude, Entry.Longitude, Entry.Heading, Map.X / 100.0, Map.Y / 100.0, Entry.GetMapYaw(), Elevation,
+		FMath::RadiansToDegrees(FMath::Asin(LevelSun.Z)), LandRadius / 100.0, Entry.Center.X, Entry.Center.Y, *PlanetSun.ToString());
 }

@@ -6,6 +6,7 @@ class FLBAImportContext;
 class UMaterial;
 class UMaterialInterface;
 class UMaterialInstanceConstant;
+class UMaterialParameterCollection;
 class UTexture2D;
 
 /**
@@ -55,6 +56,11 @@ namespace LBAMaterials
 	void AddVersionStamp(UMaterial* Material, int32 Version);
 	/** Sets usages, recompiles and marks the material for saving. */
 	UMaterial* EndRebuild(FLBAImportContext& Context, UMaterial* Material);
+	/**
+	 * Bends the material's surface with globe mode's view (world position offset, LBAPlanetBendOffset in
+	 * Shaders/Private/LBAPlanet.ush), last frame's camera for motion vectors. Nothing moves without a planet.
+	 */
+	void AddPlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet);
 }
 
 class FLBAMaterialLibrary

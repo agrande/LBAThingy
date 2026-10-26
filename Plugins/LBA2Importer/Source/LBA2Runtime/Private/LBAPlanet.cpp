@@ -1,54 +1,6 @@
 #include "LBAPlanet.h"
 
-#include "Components/DirectionalLightComponent.h"
 #include "Components/StaticMeshComponent.h"
-
-double FLBAPlanetCap::GetAngle(double Distance) const
-{
-	return Distance <= CapRadius ? FMath::Atan(Distance / Radius) : GetCapAngle() + (Distance - CapRadius) / Radius;
-}
-
-double FLBAPlanetCap::GetDistance(double Angle) const
-{
-	const double CapAngle = GetCapAngle();
-	return Angle <= CapAngle ? Radius * FMath::Tan(Angle) : CapRadius + (Angle - CapAngle) * Radius;
-}
-
-double FLBAPlanetCap::GetRoundness(double Distance) const
-{
-	if (BlendRadius <= CapRadius)
-	{
-		return Distance > CapRadius ? 1.0 : 0.0;
-	}
-	return FMath::SmoothStep(CapRadius, BlendRadius, Distance);
-}
-
-double FLBAPlanetCap::GetSeaRadius(double Angle) const
-{
-	const double Roundness = GetRoundness(GetDistance(Angle));
-	if (Roundness >= 1.0)
-	{
-		return Radius;
-	}
-	// The cap's plane is Radius / cos(Angle) from the center.
-	return FMath::Lerp(Radius / FMath::Cos(Angle), Radius, Roundness);
-}
-
-FVector FLBAPlanetCap::Bend(const FVector& Point, const FVector2D& Center) const
-{
-	const FVector2D Offset = FVector2D(Point) - Center;
-	const double Distance = Offset.Size();
-	if (Distance <= CapRadius)
-	{
-		return Point;
-	}
-	const FVector2D Along = Offset / Distance;
-	const double Angle = GetAngle(Distance);
-	const FVector Direction(Along * FMath::Sin(Angle), FMath::Cos(Angle));
-	const FVector Up = FMath::Lerp(FVector::UpVector, Direction, GetRoundness(Distance)).GetSafeNormal();
-	const FVector PlanetCenter(Center, -Radius);
-	return PlanetCenter + Direction * GetSeaRadius(Angle) + Up * Point.Z;
-}
 
 FVector FLBAPlanetIsland::GetUp() const
 {
@@ -57,31 +9,29 @@ FVector FLBAPlanetIsland::GetUp() const
 	return FVector(FMath::Cos(Lat) * FMath::Cos(Lon), FMath::Cos(Lat) * FMath::Sin(Lon), FMath::Sin(Lat));
 }
 
-FQuat FLBAPlanetIsland::GetRotation() const
+FVector2D FLBAPlanetIsland::GetMapLocation(double Radius) const
 {
+	const double FromPole = Radius * FMath::DegreesToRadians(90.0 - Latitude);
+	const double Lon = FMath::DegreesToRadians(Longitude);
+	return FVector2D(FMath::Cos(Lon), FMath::Sin(Lon)) * FromPole;
+}
+
+double FLBAPlanetIsland::GetMapYaw() const
+{
+	// On the map, east turns about the pole (along +longitude) and north points at the pole.
 	const double Lon = FMath::DegreesToRadians(Longitude);
 	const double Head = FMath::DegreesToRadians(Heading);
-	const FVector Up = GetUp();
-	const FVector East(-FMath::Sin(Lon), FMath::Cos(Lon), 0.0);
-	const FVector North = FVector::CrossProduct(Up, East);
-	const FVector X = East * FMath::Cos(Head) + North * FMath::Sin(Head);
-	const FVector Y = FVector::CrossProduct(Up, X);
-	return FQuat(FMatrix(X, Y, Up, FVector::ZeroVector)).GetNormalized();
+	const FVector2D East(-FMath::Sin(Lon), FMath::Cos(Lon));
+	const FVector2D North(-FMath::Cos(Lon), -FMath::Sin(Lon));
+	const FVector2D X = East * FMath::Cos(Head) + North * FMath::Sin(Head);
+	return FMath::RadiansToDegrees(FMath::Atan2(X.Y, X.X));
 }
 
-FTransform FLBAPlanetIsland::GetLevelToPlanet(double Radius) const
+FTransform FLBAPlanetIsland::GetLevelToMap(double Radius) const
 {
-	const FQuat Rotation = GetRotation();
-	return FTransform(Rotation, -Rotation.RotateVector(FVector(Center, -Radius)));
-}
-
-FLBAPlanetCap FLBAPlanetIsland::GetCap(double Radius) const
-{
-	FLBAPlanetCap Cap;
-	Cap.Radius = Radius;
-	Cap.CapRadius = CapRadius;
-	Cap.BlendRadius = FMath::Max(BlendRadius, CapRadius);
-	return Cap;
+	const FQuat Rotation(FVector::UpVector, FMath::DegreesToRadians(GetMapYaw()));
+	const FVector Location(GetMapLocation(Radius), 0.0);
+	return FTransform(Rotation, Location - Rotation.RotateVector(FVector(Center, 0.0)));
 }
 
 const FLBAPlanetIsland* ULBAPlanetAsset::FindIsland(FName Island) const
@@ -95,24 +45,14 @@ ALBAPlanetActor::ALBAPlanetActor()
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Frame"));
 	RootComponent->SetMobility(EComponentMobility::Movable);
 
-	// The disc is placed every frame under the player (absolute), its material bends it onto the planet: no collision
+	// The disc is placed every frame under the camera, its material bends it onto the planet: no collision
 	// (ULBAPlanetSubsystem answers sea queries), no shadows, not part of the distance fields Lumen traces.
 	Sea = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Sea"));
 	Sea->SetupAttachment(RootComponent);
 	Sea->SetMobility(EComponentMobility::Movable);
-	Sea->SetUsingAbsoluteLocation(true);
-	Sea->SetUsingAbsoluteRotation(true);
-	Sea->SetUsingAbsoluteScale(true);
 	Sea->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Sea->SetCastShadow(false);
 	Sea->bAffectDistanceFieldLighting = false;
 	Sea->bAffectDynamicIndirectLighting = false;
 	Sea->SetCanEverAffectNavigation(false);
-
-	SecondSun = CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("SecondSun"));
-	SecondSun->SetupAttachment(RootComponent);
-	SecondSun->SetMobility(EComponentMobility::Movable);
-	SecondSun->SetAtmosphereSunLight(true);
-	SecondSun->SetAtmosphereSunLightIndex(1);
-	SecondSun->SetVisibility(false);
 }

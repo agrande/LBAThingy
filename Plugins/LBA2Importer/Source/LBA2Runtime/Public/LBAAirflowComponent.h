@@ -252,12 +252,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Airflow")
 	FVector GetWind() const { return Wind + LevelWind; }
 
-	/**
-	 * The world was moved with the owner (globe mode, ULBAPlanetSubsystem): its motion is moved along, the strokes in
-	 * the air (simulated in the world) are dropped rather than left behind.
-	 */
-	void OnWorldMoved(const FTransform& Delta);
-
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;

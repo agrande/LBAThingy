@@ -30,8 +30,8 @@ class UVolumeTexture;
  *    rain get their own instances (LBAEnvironment).
  *  - MPC_LBA_Wind: the storm wind for shaders (FLBAStormWind::ShaderParameterNames, Shaders/Private/LBAWind.ush),
  *    written each frame by ULBAWindSubsystem; all zero (no wind) without a storm.
- *  - MPC_LBA_Planet: globe mode's planet for shaders (Shaders/Private/LBAPlanet.ush), written each frame by
- *    ULBAPlanetSubsystem; off without a planet. M_LBA_PlanetSea: a planet's sea (single layer water bent onto it).
+ *  - MPC_LBA_Planet: globe mode's bend of the view for shaders (Shaders/Private/LBAPlanet.ush), written each frame
+ *    by ULBAPlanetSubsystem; off without a planet. M_LBA_PlanetSea: a planet's sea (single layer water, bent).
  */
 class FLBARenderingAssets
 {
@@ -52,6 +52,8 @@ public:
 
 	/** Globe mode's parameter collection, MPC_LBA_Planet (created on first use, see LBAPlanet.ush). */
 	UMaterialParameterCollection* GetPlanetParameters();
+	/** Whether this import changed MPC_LBA_Planet's layout: the materials using it must be rebuilt. */
+	bool HavePlanetParametersChanged() const { return bPlanetParametersChanged; }
 
 	/** A planet's sea: single layer water on the sea disc, bent onto the planet (created on first use). */
 	UMaterial* GetPlanetSeaMaster();

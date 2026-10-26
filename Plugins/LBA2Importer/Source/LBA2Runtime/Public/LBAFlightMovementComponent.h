@@ -401,9 +401,6 @@ public:
 	/** Horizontal direction of travel (or facing, when still). */
 	FVector GetHeading() const { return Heading; }
 
-	/** The world was moved with the Dinofly (globe mode, ULBAPlanetSubsystem): turns its directions along. */
-	void OnWorldMoved(const FTransform& Delta);
-
 	/** Height of the water surface (with waves) at Location, if there is water there: the planet's sea, or Water bodies. */
 	static bool FindWaterSurface(const UWorld* World, const FVector& Location, float& OutSurfaceZ);
 

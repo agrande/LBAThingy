@@ -6,15 +6,14 @@ class FLBAImportContext;
 struct FLBAEnvironmentLights;
 struct FLBAEnvironmentPreset;
 struct FLBAIsland;
-struct FLBASeabedSettings;
 
 /**
- * Globe mode (prototype): islands placed on a round planet (ULBAPlanetAsset, see ULBAPlanetSubsystem).
+ * Globe mode (prototype): islands placed on a planet (ULBAPlanetAsset, see ULBAPlanetSubsystem), laid flat side by
+ * side on its map; the view bends.
  *
  * Output under <Root>/Planets/:
  *   DA_Planet_<PLANET>         the planet: radius, sun, placed islands
  *   SM_LBA_PlanetSea_<PLANET>  the sea disc, MI_LBA_PlanetSea_<PLANET> its material (the home island's water)
- * and per placed island <Root>/Islands/<ISLAND>/Ground/SM_<ISLAND>_Seabed_Globe, its seabed bent with the sea.
  *
  * Where an island goes: its position on the original's holomap (HOLOMAP.HQR, ARROW.BIN), turned so that its sun (its
  * first section's light angles, as calibrated for its level) is where the planet's sun is. The planet's sun is the
@@ -27,10 +26,9 @@ namespace LBAPlanetBuilder
 	bool IsPlaced(const FString& IslandName);
 
 	/**
-	 * Places an island on its planet: builds its bent seabed (from the level's flat seabed settings) and the planet's
-	 * shared assets, and writes its placement into the planet asset. The water look is the island's (Preset, Lights)
-	 * when it is the planet's home island (first listed).
+	 * Places an island on its planet: builds the planet's shared assets and writes the island's placement into the
+	 * planet asset. The water look is the island's (Preset, Lights) when it is the planet's home island (first listed).
 	 */
-	void AddIsland(FLBAImportContext& Context, const FLBAIsland& Island, const FString& IslandFolder, const FLBASeabedSettings& Seabed,
-		const FLBAEnvironmentPreset& Preset, const FLBAEnvironmentLights& Lights);
+	void AddIsland(FLBAImportContext& Context, const FLBAIsland& Island, const FString& IslandFolder, const FLBAEnvironmentPreset& Preset,
+		const FLBAEnvironmentLights& Lights);
 }

@@ -2,9 +2,11 @@
 
 #include "Engine/Texture2D.h"
 #include "Import/LBAImportContext.h"
+#include "Import/LBARenderingAssets.h"
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionComment.h"
 #include "Materials/MaterialExpressionCustom.h"
 #include "Materials/MaterialExpressionComponentMask.h"
@@ -12,13 +14,16 @@
 #include "Materials/MaterialExpressionDivide.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionPreviousFrameSwitch.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionTime.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionVertexColor.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
 #include "Materials/MaterialInstanceConstant.h"
+#include "Materials/MaterialParameterCollection.h"
 
 namespace
 {
@@ -183,6 +188,55 @@ void LBAMaterials::AddVersionStamp(UMaterial* Material, int32 Version)
 	Material->GetExpressionCollection().AddComment(Stamp);
 }
 
+void LBAMaterials::AddPlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet)
+{
+	auto Add = [Material](UClass* Class, int32 X, int32 Y)
+	{
+		return UMaterialEditingLibrary::CreateMaterialExpression(Material, Class, X, Y);
+	};
+	auto Parameter = [&](const TCHAR* Name, int32 Y)
+	{
+		UMaterialExpressionCollectionParameter* Node = Cast<UMaterialExpressionCollectionParameter>(Add(UMaterialExpressionCollectionParameter::StaticClass(), -1200, Y));
+		Node->Collection = Planet;
+		Node->ParameterName = Name;
+		Node->ParameterId = Planet ? Planet->GetParameterId(Name) : FGuid();
+		return Node;
+	};
+	UMaterialExpression* Vertex = Add(UMaterialExpressionWorldPosition::StaticClass(), -1200, 900);
+	UMaterialExpression* Bend = Parameter(TEXT("PlanetBend"), 1000);
+	// The vertex relative to a camera, subtracted in double precision, then bent for that camera. In the last frame's
+	// branch the world position is the vertex's last frame's.
+	auto Bent = [&](const TCHAR* Camera, int32 Y)
+	{
+		UMaterialExpression* View = Parameter(Camera, Y);
+		UMaterialExpressionComponentMask* XYZ = Cast<UMaterialExpressionComponentMask>(Add(UMaterialExpressionComponentMask::StaticClass(), -1000, Y));
+		XYZ->R = XYZ->G = XYZ->B = true;
+		XYZ->A = false;
+		XYZ->Input.Connect(0, View);
+		UMaterialExpressionSubtract* FromView = Cast<UMaterialExpressionSubtract>(Add(UMaterialExpressionSubtract::StaticClass(), -850, Y));
+		FromView->A.Connect(0, Vertex);
+		FromView->B.Connect(0, XYZ);
+		UMaterialExpressionCustom* Custom = Cast<UMaterialExpressionCustom>(Add(UMaterialExpressionCustom::StaticClass(), -650, Y));
+		Custom->Description = TEXT("LBA planet bend");
+		Custom->OutputType = CMOT_Float3;
+		Custom->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBAPlanet.ush") };
+		Custom->Inputs.Reset();
+		const TPair<const TCHAR*, UMaterialExpression*> Inputs[] = { { TEXT("FromView"), FromView }, { TEXT("View"), View }, { TEXT("Bend"), Bend } };
+		for (const TPair<const TCHAR*, UMaterialExpression*>& Input : Inputs)
+		{
+			FCustomInput& CustomInput = Custom->Inputs.AddDefaulted_GetRef();
+			CustomInput.InputName = Input.Key;
+			CustomInput.Input.Connect(0, Input.Value);
+		}
+		Custom->Code = TEXT("return LBAPlanetBendOffset(FromView, View.xyz, Bend);");
+		return Custom;
+	};
+	UMaterialExpressionPreviousFrameSwitch* Switch = Cast<UMaterialExpressionPreviousFrameSwitch>(Add(UMaterialExpressionPreviousFrameSwitch::StaticClass(), -400, 1100));
+	Switch->CurrentFrame.Connect(0, Bent(TEXT("PlanetView"), 1100));
+	Switch->PreviousFrame.Connect(0, Bent(TEXT("PlanetViewPrevious"), 1250));
+	UMaterialEditingLibrary::ConnectMaterialProperty(Switch, TEXT(""), MP_WorldPositionOffset);
+}
+
 UMaterial* LBAMaterials::EndRebuild(FLBAImportContext& Context, UMaterial* Material)
 {
 	if (Material->MaterialDomain == MD_Surface)
@@ -233,12 +287,14 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	// Bump when a graph below changes. v2: BakedShading off by default, opaque textured sea, sky. v3: sky brightness.
 	// v4: vertex colors decoded from sRGB. v5: duller sea. v6: cloud clearance.
 	// v7: no specular on palette surfaces (the original has none, and it would read as light in the palette shading).
-	// v8: unshaded sea, like the original's. v9: textured glow (lit windows).
-	constexpr int32 Version = 9;
+	// v8: unshaded sea, like the original's. v9: textured glow (lit windows). v10: bent in globe mode.
+	constexpr int32 Version = 10;
 
+	FLBARenderingAssets& Rendering = Context.GetRendering();
+	UMaterialParameterCollection* Planet = Rendering.GetPlanetParameters();
 	bool bExisted = false;
 	UMaterial* Material = Context.CreateOrReuseAsset<UMaterial>(Folder, Name, &bExisted);
-	if (!Material || (bExisted && LBAMaterials::IsGeneratedVersion(Material, Version)))
+	if (!Material || (bExisted && LBAMaterials::IsGeneratedVersion(Material, Version) && !Rendering.HavePlanetParametersChanged()))
 	{
 		// Keep user edits to existing masters.
 		return Material;
@@ -412,6 +468,11 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	}
 	default:
 		break;
+	}
+	// Everything visible bends with globe mode's view, far islands sinking below the horizon.
+	if (Kind != ELBAMaterial::Invisible)
+	{
+		LBAMaterials::AddPlanetBend(Material, Planet);
 	}
 
 	return LBAMaterials::EndRebuild(Context, Material);

@@ -60,10 +60,9 @@ private:
 	/** -LBA2Shots=dinofly: Twinsen summons the Dinofly, which flies a scripted sequence of inputs. */
 	bool bDinofly = false;
 	/**
-	 * -LBA2Shots=globe (open the island with ?Globe): the Dinofly flies out to sea and back while the world turns under
-	 * it; the camera's path in planet space is checked for jumps at every turn, a frozen frame is compared across a
-	 * forced turn, and the planet is shot from high above. With -LBA2GlobeTo=ISLAND, it flies to that island instead
-	 * (until the world is held there), looks at both islands from high above and lands.
+	 * -LBA2Shots=globe (open the island with ?Globe): the Dinofly flies out to sea and back, the island sinking below
+	 * the bent horizon and rising again, and the planet is shot from high above. With -LBA2GlobeTo=ISLAND, it flies to
+	 * that island instead (until within its reach), looks at both islands from high above and lands.
 	 */
 	bool bGlobe = false;
 	/** -LBA2GlobeTo: the island (index in the planet asset) the voyage goes to, if any. */
@@ -71,9 +70,6 @@ private:
 	int32 GlobeStep = -1;
 	double GlobeStepStart = 0.0;
 	int32 GlobeFrame = 0;
-	int32 GlobeTurns = 0;
-	FVector GlobeLastCamera = FVector::ZeroVector;
-	FQuat GlobeLastView = FQuat::Identity;
 	double GlobeFrameTime = 0.0;
 	int32 GlobeFrames = 0;
 	double GlobeWorstFrame = 0.0;
