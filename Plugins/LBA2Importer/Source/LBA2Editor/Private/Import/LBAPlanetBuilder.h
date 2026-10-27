@@ -20,6 +20,9 @@ struct FLBAWaterSea;
  *                              shows from the islands, an ocean per island (each keeping its coastline dry), in the
  *                              island's water look (its level's ocean material and waves)
  *   L_<PLANET>_Belt            Twinsun's Hamalayi belt around the islands' hemisphere (LBAPlanetBelt)
+ *   L_<PLANET>                 the planet's level: the placed islands' levels and their scenes, the belt and the home
+ *                              island's sea as sub-levels, the islands where they are on the map around the home island
+ *                              (the first placed), whose level keeps its place
  *
  * Where an island goes: its position on the original's holomap (HOLOMAP.HQR, ARROW.BIN), turned so that its sun (its
  * first section's light angles, as calibrated for its level) is where the planet's sun is. The planet's sun is the
@@ -39,4 +42,7 @@ namespace LBAPlanetBuilder
 	 */
 	void AddIsland(FLBAImportContext& Context, const FLBAIsland& Island, const FString& IslandFolder, const FLBAEnvironmentPreset& Preset,
 		const FLBAEnvironmentLights& Lights, const TArray<FVector2D>& Coastline, const FLBAWaterSea& Sea);
+
+	/** Rebuilds the level of the planet an island is placed on (L_<PLANET>), with the island's sub-levels as they are now. */
+	void UpdatePlanetLevel(FLBAImportContext& Context, const FString& IslandName);
 }

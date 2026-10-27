@@ -114,6 +114,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Planet")
 	TArray<FLBAPlanetIsland> Islands;
 
+	/** The island whose sky, lights and sea are the planet's in its level (Level): its own level is where it is there. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Planet")
+	FName HomeIsland;
+
+	/**
+	 * The planet as a level (built by the importer): every placed island's level and its scenes, the belt and the home
+	 * island's sea, as sub-levels where they are on the map around the home island. Plays in globe mode by itself.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Planet")
+	TSoftObjectPtr<UWorld> Level;
+
+	/** An island's level to the home island's (its place in Level), at a radius (cm). */
+	FTransform GetIslandToHome(int32 Island, double InRadius) const;
+
 	/**
 	 * Mountains all around the islands' hemisphere that close it (Twinsun's Hamalayi belt), laid on the planet's flat
 	 * map (its pole at the origin) for this Radius; their actors are tagged BeltTag. Streamed in around the opened island.
@@ -152,6 +166,7 @@ public:
 	float CloudHeight = 0.f;
 
 	const FLBAPlanetIsland* FindIsland(FName Island) const;
+	int32 FindIslandIndex(FName Island) const;
 };
 
 /** A planet in play: the sea, a disc kept under the camera (bent by its material). Spawned by ULBAPlanetSubsystem. */

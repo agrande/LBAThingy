@@ -17,6 +17,7 @@
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBAPlanetBuilder.h"
 #include "Import/LBARemakeAssets.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
@@ -571,6 +572,15 @@ int32 FLBASceneImporter::ImportAll()
 	for (const TPair<FString, TArray<FStreamedScene>>& Pair : Streamed)
 	{
 		AddStreamedScenes(Pair.Key, Pair.Value);
+	}
+	// A planet's level lists its islands' scenes itself.
+	for (const TPair<FString, TArray<FStreamedScene>>& Pair : Streamed)
+	{
+		const FString Level = FPackageName::GetShortName(Pair.Key);
+		if (Level.StartsWith(TEXT("L_")))
+		{
+			LBAPlanetBuilder::UpdatePlanetLevel(Context, Level.RightChop(2));
+		}
 	}
 	UE_LOG(LogLBA2, Display, TEXT("Scenes: %d objects with a 3D body placed (%d without a mesh for their body type), %d sprite meshes, %d sprites replaced by remake models, %d doors"),
 		NumObjects, NumMissingBodies, SpriteMeshes.Num(), NumReplacedSprites, NumDoors);

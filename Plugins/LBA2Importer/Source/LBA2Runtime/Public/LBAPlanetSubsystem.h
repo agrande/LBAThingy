@@ -9,6 +9,7 @@
 class ALBAPlanetActor;
 class APawn;
 class ULevel;
+class ULevelStreaming;
 class ULevelStreamingDynamic;
 class USkyAtmosphereComponent;
 
@@ -28,11 +29,15 @@ class USkyAtmosphereComponent;
  * radius centered under the camera, so its horizon follows. The planet's belt (ULBAPlanetAsset::BeltLevel: Twinsun's
  * Hamalayi mountains) is streamed in on the map around them, closing the islands' hemisphere by its shape alone.
  *
- *   lba.Globe 0/1             globe mode off/on for the next level opened (-1: the project setting)
+ * The planet's own level (ULBAPlanetAsset::Level) is that world built ahead: its sub-levels are the islands' levels and
+ * their scenes, the belt and the home island's sea, where they are around the home island. It always plays in globe
+ * mode, with the home island opened; an island level opened alone plays on its planet when globe mode is requested.
+ *
+ *   lba.Globe 0/1             globe mode off/on for the next island level opened (-1: the project setting)
  *   lba.Globe.Open ISLAND     opens an island in globe mode
  *   lba.Globe.Bend 0/1        the view bent onto the planet (0: the flat world as it is, to compare)
  *   lba.Globe.FlatRadius M    overrides the flat radius around the camera (m; negative: the planet's)
- *   lba.Globe.Radius M        overrides the planet's radius for the next level opened (m): the islands' places and the bend
+ *   lba.Globe.Radius M        overrides the planet's radius for the next island level opened (m): the islands' places and the bend
  *   lba.Globe.Debug 1         prints where the camera is on screen
  *   lba.Globe.Sea 0           the sea disc alone for the next level opened (to compare)
  *   lba.Globe.Belt 0          no belt for the next level opened
@@ -83,6 +88,10 @@ private:
 	/** Makes a level's content fit the planet (see the class comment). */
 	void AdaptLevel(ULevel* Level, int32 Island);
 	void OnLevelAdded(ULevel* Level, UWorld* InWorld);
+	/** The planet's sea or belt level, which stay as they are. */
+	bool IsPlanetLevel(const ULevel* Level) const;
+	/** The island (index in the planet asset) a level of the world belongs to: its own level or one of its scenes. */
+	int32 FindIsland(const ULevel* Level) const;
 	/** Streams in the planet's other islands. */
 	void LoadIslands();
 	void DrawDebug() const;
@@ -93,15 +102,17 @@ private:
 	TWeakObjectPtr<ALBAPlanetActor> Planet;
 	/** Index of the island whose level is open. */
 	int32 Home = INDEX_NONE;
+	/** The world is the planet's level (ULBAPlanetAsset::Level): its sub-levels are the islands, the sea and the belt. */
+	bool bPlanetLevel = false;
 	double Radius = 200000.0;
 	/** The other islands' streamed levels, by island. */
 	TArray<TWeakObjectPtr<ULevelStreamingDynamic>> IslandStreams;
 	TWeakObjectPtr<USkyAtmosphereComponent> Atmosphere;
 	/** The opened island's sea level (Water plugin oceans) is the sea (lba.Globe.Sea); the sea disc lies under it. */
 	bool bWaterSea = false;
-	TWeakObjectPtr<ULevelStreamingDynamic> SeaStream;
+	TWeakObjectPtr<ULevelStreaming> SeaStream;
 	/** The planet's belt (ULBAPlanetAsset::BeltLevel), on its map. */
-	TWeakObjectPtr<ULevelStreamingDynamic> BeltStream;
+	TWeakObjectPtr<ULevelStreaming> BeltStream;
 
 	/** The view this frame and the last, for motion vectors of the bent world. */
 	FVector View = FVector::ZeroVector;

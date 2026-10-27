@@ -180,11 +180,22 @@ TStatId ULBAPlanetSubsystem::GetStatId() const
 void ULBAPlanetSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+	const FString Map = UWorld::RemovePIEPrefix(InWorld.GetMapName());
+	for (const TSoftObjectPtr<ULBAPlanetAsset>& Soft : GetDefault<ULBA2Settings>()->Planets)
+	{
+		ULBAPlanetAsset* Loaded = Soft.LoadSynchronous();
+		const int32 HomeIndex = Loaded ? Loaded->FindIslandIndex(Loaded->HomeIsland) : INDEX_NONE;
+		if (HomeIndex != INDEX_NONE && Loaded->Level.GetAssetName() == Map)
+		{
+			bPlanetLevel = true;
+			Activate(Loaded, HomeIndex);
+			return;
+		}
+	}
 	if (!IsGlobeRequested(&InWorld))
 	{
 		return;
 	}
-	const FString Map = UWorld::RemovePIEPrefix(InWorld.GetMapName());
 	for (const TSoftObjectPtr<ULBAPlanetAsset>& Soft : GetDefault<ULBA2Settings>()->Planets)
 	{
 		ULBAPlanetAsset* Loaded = Soft.LoadSynchronous();
@@ -205,7 +216,8 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 	UWorld* World = GetWorld();
 	Asset = InAsset;
 	Home = InHome;
-	const float RadiusOverride = CVarGlobeRadius.GetValueOnGameThread();
+	// The planet's level has its islands where they are at its own radius.
+	const float RadiusOverride = bPlanetLevel ? 0.f : CVarGlobeRadius.GetValueOnGameThread();
 	Radius = RadiusOverride > 0.f ? RadiusOverride * 100.0 : Asset->Radius;
 
 	FActorSpawnParameters Params;
@@ -222,12 +234,37 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 	Spawned->GetSea()->SetMaterial(0, Asset->SeaMaterial.LoadSynchronous());
 	Asset->MaterialParameters.LoadSynchronous();
 
+	if (bPlanetLevel)
+	{
+		// Already sub-levels of the world.
+		const FName SeaPackage(*Asset->Islands[Home].SeaLevel.ToSoftObjectPath().GetLongPackageName());
+		const FName BeltPackage(*Asset->BeltLevel.ToSoftObjectPath().GetLongPackageName());
+		for (ULevelStreaming* Streaming : World->GetStreamingLevels())
+		{
+			const FName Package = Streaming ? Streaming->GetWorldAssetPackageFName() : NAME_None;
+			if (Package == SeaPackage)
+			{
+				SeaStream = Streaming;
+			}
+			else if (Package == BeltPackage)
+			{
+				BeltStream = Streaming;
+			}
+		}
+		bWaterSea = SeaStream.IsValid();
+	}
 	for (ULevel* Level : World->GetLevels())
 	{
-		AdaptLevel(Level, Home);
+		if (!IsPlanetLevel(Level))
+		{
+			AdaptLevel(Level, FindIsland(Level));
+		}
 	}
 	LevelAddedHandle = FWorldDelegates::LevelAddedToWorld.AddUObject(this, &ULBAPlanetSubsystem::OnLevelAdded);
-	LoadIslands();
+	if (!bPlanetLevel)
+	{
+		LoadIslands();
+	}
 
 	const FLBAPlanetIsland& Island = Asset->Islands[Home];
 	const FVector2D Map = Island.GetMapLocation(Radius);
@@ -297,29 +334,62 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 
 void ULBAPlanetSubsystem::OnLevelAdded(ULevel* Level, UWorld* InWorld)
 {
-	if (InWorld != GetWorld() || !IsActive() || !Level || (SeaStream.IsValid() && SeaStream->GetLoadedLevel() == Level))
+	if (InWorld != GetWorld() || !IsActive() || !Level)
 	{
 		return;
 	}
-	if (BeltStream.IsValid() && BeltStream->GetLoadedLevel() == Level)
+	if (IsPlanetLevel(Level))
 	{
-		UE_LOG(LogLBA2, Display, TEXT("Globe mode: the belt streamed in, %d actors"), Level->Actors.Num());
-		return;
-	}
-	// The other islands' levels come in where they are on the map; the opened island's sub-levels are its own.
-	int32 IslandIndex = Home;
-	for (int32 Index = 0; Index < IslandStreams.Num(); ++Index)
-	{
-		if (IslandStreams[Index].IsValid() && IslandStreams[Index]->GetLoadedLevel() == Level)
+		if (BeltStream.IsValid() && BeltStream->GetLoadedLevel() == Level)
 		{
-			IslandIndex = Index;
+			UE_LOG(LogLBA2, Display, TEXT("Globe mode: the belt streamed in, %d actors"), Level->Actors.Num());
 		}
+		return;
 	}
+	const int32 IslandIndex = FindIsland(Level);
 	AdaptLevel(Level, IslandIndex);
 	if (IslandIndex != Home)
 	{
 		UE_LOG(LogLBA2, Display, TEXT("Globe mode: %s streamed in, %d actors"), *Asset->Islands[IslandIndex].Island.ToString(), Level->Actors.Num());
 	}
+}
+
+bool ULBAPlanetSubsystem::IsPlanetLevel(const ULevel* Level) const
+{
+	return Level && ((SeaStream.IsValid() && SeaStream->GetLoadedLevel() == Level) || (BeltStream.IsValid() && BeltStream->GetLoadedLevel() == Level));
+}
+
+int32 ULBAPlanetSubsystem::FindIsland(const ULevel* Level) const
+{
+	// The other islands' levels come in where they are on the map; the opened island's sub-levels are its own.
+	for (int32 Index = 0; Index < IslandStreams.Num(); ++Index)
+	{
+		if (IslandStreams[Index].IsValid() && IslandStreams[Index]->GetLoadedLevel() == Level)
+		{
+			return Index;
+		}
+	}
+	// In the planet's level, an island's level and its scenes are its sub-levels where the island is.
+	const UWorld* World = GetWorld();
+	if (!bPlanetLevel || !World)
+	{
+		return Home;
+	}
+	for (const ULevelStreaming* Streaming : World->GetStreamingLevels())
+	{
+		if (!Streaming || Streaming->GetLoadedLevel() != Level)
+		{
+			continue;
+		}
+		for (int32 Index = 0; Index < Asset->Islands.Num(); ++Index)
+		{
+			if (Streaming->LevelTransform.GetTranslation().Equals(GetIslandToWorld(Index).GetTranslation(), 1.0))
+			{
+				return Index;
+			}
+		}
+	}
+	return Home;
 }
 
 void ULBAPlanetSubsystem::LoadIslands()

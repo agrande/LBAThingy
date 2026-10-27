@@ -1,6 +1,9 @@
 #include "Import/LBAPlanetBuilder.h"
 
+#include "Engine/LevelStreamingAlwaysLoaded.h"
+#include "Engine/LevelStreamingDynamic.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "Formats/LBAHqr.h"
 #include "Formats/LBAIsland.h"
 #include "Import/LBAEnvironment.h"
@@ -418,6 +421,82 @@ namespace
 			Opened.SeaLevel = TSoftObjectPtr<UWorld>(FSoftObjectPath(Folder / Name + TEXT(".") + Name));
 		}
 	}
+
+	/**
+	 * The planet's level (ULBAPlanetAsset::Level): an empty persistent level whose sub-levels are every placed island's
+	 * level, where it is on the map around the home island's, and that level's own sub-levels (its scenes: a sub-level's
+	 * sub-levels are never loaded), then the belt and the home island's sea.
+	 */
+	void BuildPlanetLevel(FLBAImportContext& Context, ULBAPlanetAsset* Asset, const TCHAR* PlanetName, const FString& Folder)
+	{
+		const int32 Home = Asset->FindIslandIndex(Asset->HomeIsland);
+		if (Home == INDEX_NONE)
+		{
+			return;
+		}
+		const FString Name = FString::Printf(TEXT("L_%s"), PlanetName);
+		UWorld* World = Context.BeginLevel(Folder, Name);
+		if (!World)
+		{
+			return;
+		}
+		TArray<ULevelStreaming*> Old(World->GetStreamingLevels());
+		for (ULevelStreaming* Streaming : Old)
+		{
+			World->RemoveStreamingLevel(Streaming);
+		}
+		auto AddLevel = [World](FName Package, const FTransform& Transform, const FLinearColor& Color, const ULevelStreaming* Source = nullptr)
+		{
+			UClass* Class = Source ? Source->GetClass() : ULevelStreamingAlwaysLoaded::StaticClass();
+			ULevelStreaming* Streaming = NewObject<ULevelStreaming>(World, Class, NAME_None, RF_NoFlags);
+			Streaming->SetWorldAssetByPackageName(Package);
+			Streaming->LevelTransform = Transform;
+			Streaming->LevelColor = Color;
+			const ULevelStreamingDynamic* SourceDynamic = Cast<ULevelStreamingDynamic>(Source);
+			if (ULevelStreamingDynamic* Dynamic = Cast<ULevelStreamingDynamic>(Streaming); Dynamic && SourceDynamic)
+			{
+				Dynamic->bInitiallyLoaded = SourceDynamic->bInitiallyLoaded;
+				Dynamic->bInitiallyVisible = SourceDynamic->bInitiallyVisible;
+			}
+			World->AddStreamingLevel(Streaming);
+		};
+
+		int32 NumLevels = 0;
+		for (int32 Index = 0; Index < Asset->Islands.Num(); ++Index)
+		{
+			const FLBAPlanetIsland& Island = Asset->Islands[Index];
+			const UWorld* IslandWorld = Island.Level.LoadSynchronous();
+			if (!IslandWorld)
+			{
+				Context.Warn(FString::Printf(TEXT("Planet %s: no level for %s (%s)"), PlanetName, *Island.Island.ToString(), *Island.Level.ToString()));
+				continue;
+			}
+			const FTransform ToHome = Asset->GetIslandToHome(Index, Asset->Radius);
+			const FLinearColor Color = FLinearColor::IntToDistinctColor(Index, 0.8f, 0.9f);
+			AddLevel(IslandWorld->GetPackage()->GetFName(), ToHome, Color);
+			++NumLevels;
+			for (const ULevelStreaming* Streaming : IslandWorld->GetStreamingLevels())
+			{
+				if (Streaming)
+				{
+					AddLevel(Streaming->GetWorldAssetPackageFName(), Streaming->LevelTransform * ToHome, Streaming->LevelColor, Streaming);
+					++NumLevels;
+				}
+			}
+		}
+		if (!Asset->BeltLevel.IsNull())
+		{
+			AddLevel(FName(*Asset->BeltLevel.ToSoftObjectPath().GetLongPackageName()), Asset->Islands[Home].GetLevelToMap(Asset->Radius).Inverse(), FLinearColor::White);
+		}
+		if (!Asset->Islands[Home].SeaLevel.IsNull())
+		{
+			AddLevel(FName(*Asset->Islands[Home].SeaLevel.ToSoftObjectPath().GetLongPackageName()), FTransform::Identity, FLinearColor::Blue);
+		}
+		Context.EndLevel(World);
+		Asset->Level = TSoftObjectPtr<UWorld>(FSoftObjectPath(Folder / Name + TEXT(".") + Name));
+		Context.MarkForSave(Asset);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s: level %s, %d island and scene levels around %s"), PlanetName, *Name, NumLevels, *Asset->HomeIsland.ToString());
+	}
 }
 
 bool LBAPlanetBuilder::IsPlaced(const FString& IslandName)
@@ -427,6 +506,21 @@ bool LBAPlanetBuilder::IsPlaced(const FString& IslandName)
 	{
 		return Entry.bPlaced && IslandName.Equals(Entry.Island, ESearchCase::IgnoreCase);
 	});
+}
+
+void LBAPlanetBuilder::UpdatePlanetLevel(FLBAImportContext& Context, const FString& IslandName)
+{
+	const FPlanetPreset* Planet = FindPreset(IslandName);
+	if (!Planet || !IsPlaced(IslandName))
+	{
+		return;
+	}
+	const FString PlanetFolder = Context.GetContentPath(TEXT("Planets"));
+	const FString AssetName = FString::Printf(TEXT("DA_Planet_%s"), Planet->Name);
+	if (ULBAPlanetAsset* Asset = LoadObject<ULBAPlanetAsset>(nullptr, *(PlanetFolder / AssetName + TEXT(".") + AssetName), nullptr, LOAD_NoWarn))
+	{
+		BuildPlanetLevel(Context, Asset, Planet->Name, PlanetFolder);
+	}
 }
 
 void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& Island, const FString& IslandFolder, const FLBAEnvironmentPreset& Preset,
@@ -526,6 +620,7 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 		return;
 	}
 	Asset->Modify();
+	Asset->HomeIsland = Planet->Islands.FindByPredicate([](const FPlanetIslandPreset& Listed) { return Listed.bPlaced; })->Island;
 	Asset->Radius = Radius;
 	Asset->FlatRadius = Planet->FlatRadius;
 	Asset->SunDirection = PlanetSun;
@@ -566,6 +661,7 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	{
 		Asset->BeltLevel = LBAPlanetBelt::Build(Context, Planet->Name, Radius, PlanetFolder);
 	}
+	BuildPlanetLevel(Context, Asset, Planet->Name, PlanetFolder);
 	Context.MarkForSave(Asset);
 
 	const double Elevation = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(PlanetSun, Entry.GetUp()), -1.0, 1.0)));

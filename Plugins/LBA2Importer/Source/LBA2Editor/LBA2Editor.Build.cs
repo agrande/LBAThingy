@@ -26,6 +26,7 @@ public class LBA2Editor : ModuleRules
 			"PropertyEditor",
 			"DesktopPlatform",
 			"DeveloperSettings",
+			"DeveloperToolSettings",
 			"Projects",
 			"Json",
 			"AssetTools",

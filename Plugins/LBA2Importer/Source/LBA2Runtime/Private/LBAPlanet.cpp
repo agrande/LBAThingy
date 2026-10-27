@@ -41,6 +41,21 @@ const FLBAPlanetIsland* ULBAPlanetAsset::FindIsland(FName Island) const
 	return Islands.FindByPredicate([Island](const FLBAPlanetIsland& Entry) { return Entry.Island == Island; });
 }
 
+int32 ULBAPlanetAsset::FindIslandIndex(FName Island) const
+{
+	return Islands.IndexOfByPredicate([Island](const FLBAPlanetIsland& Entry) { return Entry.Island == Island; });
+}
+
+FTransform ULBAPlanetAsset::GetIslandToHome(int32 Island, double InRadius) const
+{
+	const int32 Home = FindIslandIndex(HomeIsland);
+	if (!Islands.IsValidIndex(Island) || !Islands.IsValidIndex(Home))
+	{
+		return FTransform::Identity;
+	}
+	return Islands[Island].GetLevelToMap(InRadius) * Islands[Home].GetLevelToMap(InRadius).Inverse();
+}
+
 ALBAPlanetActor::ALBAPlanetActor()
 {
 	PrimaryActorTick.bCanEverTick = false;

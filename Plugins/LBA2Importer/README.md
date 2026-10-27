@@ -478,7 +478,7 @@ Startup*; Play In Editor and `-LBA2Shots` runs do not).
   into the plugin's `Content/UI` by `Tools/import_location_icons.py`; `ULBAIslandMenu`'s *Style* properties take
   others.
 
-Nothing references the island levels, scenes or icons, so the LBA2Editor module adds them to each cook
+Nothing references the island levels, scenes, icons or planets, so the LBA2Editor module adds them to each cook
 (`ModifyCook` delegate). It lives in `ALBAPlayerController` (the controller of `LBAGameMode`), `ULBAIslandMenu` (a
 UMG widget built in C++, `IslandMenuClass` takes a Blueprint subclass), `ULBAIslandTravelSubsystem` (`GetIslands`,
 `TravelToIsland`) and `ULBASceneTravelSubsystem` (`FindMenuScenes`, `TravelToSceneOnIsland`, `GetCurrentScene`).
@@ -492,10 +492,20 @@ the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScene
 ### Globe mode (prototype)
 
 Islands placed on a planet can open on it: a tiny round planet (Twinsun: 400 m radius) whose sea curves away to a
-horizon, far islands sinking below it until they come close. In the editor, the toolbar's **Globe** button (next to
-Levels; also Tools > Play on the Globe, or `lba.Globe.Play ISLAND`) plays Citadel (sunny) that way without opening its
-level here (lba.Globe is on for the session only). In game, `lba.Globe.Open CITABAU` opens it; so does any travel to it
-with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
+horizon, far islands sinking below it until they come close. The planet is a level of its own,
+`/Game/LBA2/Planets/L_TWINSUN`, the game's default map: an empty persistent level whose sub-levels are the placed
+islands' levels where they are on the planet's map, each with its scenes (Unreal never loads a sub-level's own
+sub-levels, so the planet lists them itself), the belt and the home island's sea. The home island (Citadel, sunny: the
+first placed) keeps its level's place, so its coordinates are the same as in its own level; its sky, lights and look are
+the planet's, the other islands' go when it plays. Importing an island of the planet (Islands layer) or its scenes
+(Scenes layer) rebuilds it; open in the editor (not playing), it shows every island's own sky and sun.
+
+In the editor, the toolbar's **Globe** button (next to Levels; also Tools > Play on the Globe, or `lba.Globe.Play`)
+plays the planet's level in the level viewport without opening it here. **Packaged** (Tools > Play on the Globe
+(Packaged Game), `lba.Globe.PlayPackaged`) starts the last packaged game (Platforms > Package Project, from
+*Platforms > Packaging Settings > Staging Directory*`/Windows`) on it. An island's own level opens on the planet too
+(the other islands streamed in around it): in game, `lba.Globe.Open CITABAU`, or any travel to it with `?Globe`,
+`lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
 and the desert island are placed where the holomap has them, 283 m apart: open either one and the other is out there,
 across the sea. The Dinofly and the ferry are the sea vehicles. All around, past the equator, the Hamalayi belt closes the islands' hemisphere.
 
@@ -624,8 +634,8 @@ Test Levels**): the feature test map first, apart and in its own color, then the
 stations under it, with what to try there; picking one goes straight to it. Test levels open with `LBAGameMode`
 (*Play Test Levels As Twinsen*), so the template levels have Twinsen and the menu too.
 
-The feature test map, `/Game/LBA2/Tests/L_FeatureTest` (*Feature Level*), is the project's default map (game and
-editor). The **Tests** import layer builds it from prototype blocks (run it after Characters and Scenes; it only
+The feature test map, `/Game/LBA2/Tests/L_FeatureTest` (*Feature Level*), is the editor's startup map (the game's
+is the planet, see Globe mode). The **Tests** import layer builds it from prototype blocks (run it after Characters and Scenes; it only
 rebuilds what it generated, your own actors stay). It is a tight course, all of it in sight from the start and
 within 50 m, each zone a station of the menu:
 
