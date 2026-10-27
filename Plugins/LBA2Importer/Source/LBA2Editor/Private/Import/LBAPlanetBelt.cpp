@@ -53,7 +53,7 @@ namespace
 	constexpr double MaxFarSide = 5000.0;
 
 	/** Mesh: columns around the pole (3.3 m apart at the shore), in sectors of 11.25 degrees. */
-	constexpr int32 Columns = 2048;
+	constexpr int32 BeltColumns = 2048;
 	constexpr int32 Sectors = 32;
 
 	enum class EPart : uint8 { Skirt, Flank, Cliff, Upslope, FarSide };
@@ -273,10 +273,10 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 
 	// Each mesh column's profile, with some detail the holomap is too coarse for: the shore wanders, peaks vary.
 	TArray<FProfile> Profiles;
-	Profiles.SetNum(Columns);
-	for (int32 Column = 0; Column < Columns; ++Column)
+	Profiles.SetNum(BeltColumns);
+	for (int32 Column = 0; Column < BeltColumns; ++Column)
 	{
-		const double Longitude = 360.0 * Column / Columns;
+		const double Longitude = 360.0 * Column / BeltColumns;
 		const double TexturePosition = Longitude / 360.0 * TextureSize - 0.5;
 		FProfile& Profile = Profiles[Column];
 		Profile.Shore = SampleAround(Shores, TexturePosition);
@@ -293,12 +293,12 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 	const TArray<FRow> Rows = MakeRows();
 	const int32 NumRows = Rows.Num();
 	TArray<FVector> Points;
-	Points.SetNum(Columns * NumRows);
-	auto PointIndex = [NumRows](int32 Column, int32 Row) { return ((Column % Columns + Columns) % Columns) * NumRows + Row; };
-	for (int32 Column = 0; Column < Columns; ++Column)
+	Points.SetNum(BeltColumns * NumRows);
+	auto PointIndex = [NumRows](int32 Column, int32 Row) { return ((Column % BeltColumns + BeltColumns) % BeltColumns) * NumRows + Row; };
+	for (int32 Column = 0; Column < BeltColumns; ++Column)
 	{
 		const FProfile& Profile = Profiles[Column];
-		const double Angle = 2.0 * UE_DOUBLE_PI * Column / Columns;
+		const double Angle = 2.0 * UE_DOUBLE_PI * Column / BeltColumns;
 		const FVector2D Outward(FMath::Cos(Angle), FMath::Sin(Angle));
 		const double CliffFoot = Profile.Flank;
 		const double Crest = CliffFoot + CliffRun + Profile.Upslope;
@@ -348,7 +348,7 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 	}
 	TArray<FVector> Normals;
 	Normals.SetNum(Points.Num());
-	for (int32 Column = 0; Column < Columns; ++Column)
+	for (int32 Column = 0; Column < BeltColumns; ++Column)
 	{
 		for (int32 Row = 0; Row < NumRows; ++Row)
 		{
@@ -395,13 +395,13 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 	{
 		return nullptr;
 	}
-	constexpr int32 SectorColumns = Columns / Sectors;
+	constexpr int32 SectorColumns = BeltColumns / Sectors;
 	int32 Triangles = 0;
 	for (int32 Sector = 0; Sector < Sectors; ++Sector)
 	{
 		const int32 First = Sector * SectorColumns;
 		const int32 Middle = First + SectorColumns / 2;
-		const double Angle = 2.0 * UE_DOUBLE_PI * Middle / Columns;
+		const double Angle = 2.0 * UE_DOUBLE_PI * Middle / BeltColumns;
 		const FVector Pivot(FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Profiles[Middle].Shore, 0.0);
 
 		FLBAMeshBuilder Builder;
