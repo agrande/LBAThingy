@@ -491,22 +491,22 @@ the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScene
 
 ### Globe mode (prototype)
 
-Islands placed on a planet can open on it: a tiny round planet (Twinsun: 650 m radius) whose sea curves away to a
+Islands placed on a planet can open on it: a tiny round planet (Twinsun: 400 m radius) whose sea curves away to a
 horizon, far islands sinking below it until they come close. In the editor, the toolbar's **Globe** button (next to
 Levels; also Tools > Play on the Globe, or `lba.Globe.Play ISLAND`) plays Citadel (sunny) that way without opening its
 level here (lba.Globe is on for the session only). In game, `lba.Globe.Open CITABAU` opens it; so does any travel to it
 with `?Globe`, `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
-and the desert island are placed, 273 m apart: open either one and the other is out there, across the sea. The Dinofly
-and the ferry are the sea vehicles. All around, past the equator, the Hamalayi belt closes the islands' hemisphere.
+and the desert island are placed where the holomap has them, 283 m apart: open either one and the other is out there,
+across the sea. The Dinofly and the ferry are the sea vehicles. All around, past the equator, the Hamalayi belt closes the islands' hemisphere.
 
 How it holds together (the world is flat and still; only the view is round):
 
 - **Islands laid flat on a map.** The opened island's level is where it was saved; every other placed island's level
   is streamed in as a level instance where it is on the planet's flat map (`FLBAPlanetIsland::GetLevelToMap`): the
   hemisphere of Citadel and the desert laid flat around its pole, distances from the pole and longitudes kept
-  (azimuthal equidistant; the code calls it north, from the holomap's positive latitudes, but in the story it is the
-  southern hemisphere), so distances between islands near the pole are kept too (Citadel to desert: 273 m on the planet and on
-  the map; they stretch east-west by 11% at 45 degrees from the pole). Nothing moves: collision, navigation, gravity
+  (azimuthal equidistant; the code calls it north, the holomap's -Y pole turned on top, but in the story it is the
+  southern hemisphere), so distances between islands near the pole are kept too (Citadel to desert: 283 m on the
+  planet and on the map; they stretch east-west by 11% at 45 degrees from the pole). Nothing moves: collision, navigation, gravity
   and every gameplay system see a flat world, static objects stay static. Streamed islands come without what the
   opened island's level brings for the whole planet (sun and lights, sky atmosphere, sky light, clouds, height fog,
   look volume, rain, storm, player starts) and without their scenes (empty islands for now).
@@ -541,27 +541,33 @@ How it holds together (the world is flat and still; only the view is round):
   darker, and so are its reflections on the sea: Citadel's harbour is (1, 112, 158) sRGB against (43, 156, 199) in
   the level (the sea disc gave (7, 48, 79)); open water (138, 202, 245) against (155, 206, 239).
 - **The Hamalayi belt** (`LBAPlanetBelt`, `/Game/LBA2/Planets/L_TWINSUN_Belt`, streamed in on the map around the
-  opened island, `ULBAPlanetAsset::BeltLevel`): low icy mountains all around, 870 to 1050 m from the pole, traced
+  opened island, `ULBAPlanetAsset::BeltLevel`): low icy mountains all around, 530 to 640 m from the pole, traced
   from the original's holomap (HOLOMAP.HQR: its texture gives the belt's shore, the foot of its snow and its far
   edge at each longitude, its altitudes where the crest is higher or lower), a third as wide as the holomap's band.
   Across it: a beach and flank up to 6 m (walkable, the Dinofly lands there), a cliff band up to 16 m at 68 degrees
   (steeper than Twinsen walks: 55), snow up to crests of 20 to 30 m, the far side down into the other hemisphere's
   sea. Nothing but its shape stops anyone: boats run aground, Twinsen stops at the cliff, the Dinofly flies over it
   (32 sectors of 11.25 degrees, vertex colored with `M_LBA_Color`, collision from their triangles; 200k
-  triangles). Laid on the map, its length is stretched sideways by about half (6.0 km around at the shore against
-  4.1 km on a real planet of that size). `lba.Globe.Belt 0` leaves it out; it is laid out for the asset's radius,
+  triangles). Laid on the map, its length is stretched sideways by about half (3.6 km around at the shore against
+  2.5 km on a real planet of that size). `lba.Globe.Belt 0` leaves it out; it is laid out for the asset's radius,
   so `lba.Globe.Radius` leaves it out too.
 - **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
-  (HOLOMAP.HQR, ARROW.BIN: latitude, longitude) and is turned so its calibrated sun keeps its angles; the planet's sun
-  is the direction that gives every listed island its sun's elevation (Citadel 31.3 and desert 36.8 degrees, both
+  (HOLOMAP.HQR, ARROW.BIN: two angles that turn the arrow onto the globe as HOLOGLOB.CPP does, not latitude and
+  longitude themselves) and is turned as it is painted on the holomap's globe (a heading in the planets table), else
+  so its calibrated sun keeps its angles; the planet's sun is the direction that gives every listed island its sun's elevation (Citadel 31.3 and desert 36.8 degrees, both
   exact). One sun lights the flat world: the opened island's. Output: `/Game/LBA2/Planets/DA_Planet_TWINSUN` (radius,
   flat radius, islands, each island's coastline, ocean material and waves, sea level), the sea levels, the sea disc
   and its material; every placed island's import rebuilds every sea level. The planets list (radius, flat radius, islands) is a table in
   `LBAPlanetBuilder.cpp`; the builder logs each pair's distance on the planet and on the map, and warns when two
   islands' reaches (land plus 20 m) overlap on the map. Each island's ocean is a rectangle of the zone keeping its
   coastline dry, the rectangles split by straight cuts through the sea between the islands' land, turned all together
-  when no cut along the world's axes fits (islands close together diagonally). Twinsun: Citadel at latitude 65.1, longitude 332.4 (heading
-  127.7); the desert island at 89.0, 5.7 (heading -150.4).
+  when no cut along the world's axes fits (islands close together diagonally). Twinsun: Citadel at latitude 53.5,
+  longitude -141.2, heading 2 (its painting's: 0.69 of overlap, mirrored 0.59; its sun's would be -14.9), about halfway
+  from the pole (255 m) to the belt's shore (554 m there); the desert island at 84.2, -9.6, 40 m from the pole, heading
+  -74.7 (its sun's: its painting, smeared over the pole, fits as well either way round). The painted islands are
+  bigger than the real ones on a 400 m planet (Citadel 1.2 times, the desert 1.6). `Tools/dump_planet.py` (in the
+  editor) then `Tools/holomap_fit.py` lay the holomap's texture on the flat map with the placed coastlines and fit
+  each island to its painting (`Saved/LookDev/holomap`).
 
 Tests: `-LBA2Shots=globe` on Citadel (open the level with `?Globe`): the Dinofly flies out to sea and back, floats,
 shots from 500 m and 1.5 km up (the whole planet, both islands on it). 102 fps on average in standalone game (123
@@ -938,7 +944,7 @@ color, shade row / light, surfaces without fog).
 - [x] Dinofly flight choices: pump A (climb rate), hold X (dive), Morse on B (brake, tires), stalls when not pumping, lift from speed in thick air, attitude from the flight's forces, procedural wings, pain (hit stars, flinch), death and retry
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [x] Travel menu by planet, island and scene (interiors included), after lba2remake's teleport menu
-- [ ] Globe mode: islands laid flat on a 650 m planet's map, the view bent round (prototype: Citadel, the
+- [ ] Globe mode: islands laid flat on a 400 m planet's map, the view bent round (prototype: Citadel, the
       desert, the Water plugin's sea, the Hamalayi belt, the Dinofly and the ferry at sea; next: LBA1's southern
       islands, fast travel onto the globe, space)
 - [x] Tests tab, feature test map (stations, gateways; default map), editor level selector on the toolbar

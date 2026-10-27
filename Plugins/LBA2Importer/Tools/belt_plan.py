@@ -18,8 +18,8 @@ import hqr  # noqa: E402
 
 GAME = os.environ.get("LBA2_GAME", "C:/GOG Games/Little Big Adventure 2")
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../Saved/LookDev/belt")
-RADIUS = 650.0  # m
-ISLANDS = {"CITABAU": (65.1, 332.4), "DESERT": (89.0, 5.7)}
+RADIUS = 400.0  # m
+ISLANDS = {"CITABAU": (53.5, 218.8), "DESERT": (84.2, 350.4)}
 
 
 def load():

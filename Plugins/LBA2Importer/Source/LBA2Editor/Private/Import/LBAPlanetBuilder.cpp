@@ -33,6 +33,12 @@ namespace
 		 * 1.02 of the globe's light; desert: sand and town, 0.93; the clouds vary from run to run).
 		 */
 		float SkyLightGain = 1.f;
+		/**
+		 * Its heading on the planet, from its painting on the holomap's globe (Tools/holomap_fit.py fits its coastline
+		 * to it; Citadel: 2 degrees, 0.69 of overlap, mirrored worse). Unset: turned so its level's sun is the
+		 * planet's (the desert: its painting is smeared over the pole and fits as well either way round).
+		 */
+		TOptional<double> Heading;
 	};
 
 	struct FPlanetPreset
@@ -50,11 +56,12 @@ namespace
 
 	const TArray<FPlanetPreset>& GetPresets()
 	{
-		// Twinsun at 650 m (2026-10-27, was 750 m, before that 2 km; 500 m put the islands too close): Citadel island (its
-		// sunny variant) and the desert island, 273 m apart. Flat 100 m around the camera: the island under it stays flat.
+		// Twinsun at 400 m (2026-10-27, was 650 m, 750 m, before that 2 km): Citadel island (its sunny variant) and the
+		// desert island where the holomap has them, 283 m apart, Citadel about halfway from the desert at the pole to the
+		// Hamalayi belt. Flat 100 m around the camera: the island under it stays flat.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 65000.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f }, { TEXT("DESERT"), 2, true, 1.35f } }, true },
+			{ TEXT("TWINSUN"), 40000.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f } }, true },
 		};
 		return Presets;
 	}
@@ -85,8 +92,11 @@ namespace
 
 	/**
 	 * An island's place on the holomap: ARROW.BIN (HOLOMAP.HQR entry 12) holds 32-byte T_ARROW records (HOLO.H), the
-	 * first ones per island; Alpha is its latitude, Beta its longitude (4096 per turn; HOLOGLOB.CPP places them by
-	 * turning +Z by Alpha, then Beta). North is positive Alpha (assumed; the holomap's east-west sense isn't checked).
+	 * first ones per island, with two angles (4096 per turn). HOLOGLOB.CPP turns (0, 0, Alt) by the camera matrix of
+	 * (Alpha, Beta, 0) (LIB386 InitMatrixStd): (sin B, -sin A cos B, cos A cos B) in the holomap's frame (Y up), whose
+	 * globe is textured (CoorMapp.HMM) from +Y at the top to -Y at the bottom, U turning about Y. Citadel's hemisphere
+	 * is -Y: in Unreal's axes (X, Z, Y), turned half a turn about X to put it on top, the latitude is asin(sin A cos B)
+	 * and the longitude atan2(-cos A cos B, sin B), the texture's U (as LBAPlanetBelt reads it).
 	 */
 	bool ReadHolomapPosition(FLBAImportContext& Context, int32 HolomapIsland, double& OutLatitude, double& OutLongitude)
 	{
@@ -103,8 +113,10 @@ namespace
 		int32 Beta = 0;
 		FMemory::Memcpy(&Alpha, Arrow + 12, sizeof(int32));
 		FMemory::Memcpy(&Beta, Arrow + 16, sizeof(int32));
-		OutLatitude = LBA::AngleToDegrees(Alpha);
-		OutLongitude = LBA::AngleToDegrees(Beta);
+		const double A = FMath::DegreesToRadians(LBA::AngleToDegrees(Alpha));
+		const double B = FMath::DegreesToRadians(LBA::AngleToDegrees(Beta));
+		OutLatitude = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FMath::Sin(A) * FMath::Cos(B), -1.0, 1.0)));
+		OutLongitude = FMath::RadiansToDegrees(FMath::Atan2(-FMath::Cos(A) * FMath::Cos(B), FMath::Sin(B)));
 		return true;
 	}
 
@@ -430,6 +442,7 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 
 	// Where every listed island is, and its sun: the planet's sun follows from them.
 	FVector LevelSun = FVector::UpVector;
+	TOptional<double> Heading;
 	FLBAPlanetIsland Entry;
 	TArray<TPair<FVector, double>> Elevations;
 	for (const FPlanetIslandPreset& Listed : Planet->Islands)
@@ -449,10 +462,12 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 			Entry.Latitude = Latitude;
 			Entry.Longitude = Longitude;
 			LevelSun = Sun;
+			Heading = Listed.Heading;
 		}
 	}
 	const FVector PlanetSun = SolveSunDirection(Elevations);
-	Entry.Heading = SolveHeading(Entry, LevelSun, PlanetSun);
+	const double SunHeading = SolveHeading(Entry, LevelSun, PlanetSun);
+	Entry.Heading = Heading.Get(SunHeading);
 	Entry.Island = FName(*Island.Name);
 	const FString LevelName = TEXT("L_") + Island.Name;
 	Entry.Level = TSoftObjectPtr<UWorld>(FSoftObjectPath(IslandFolder / LevelName + TEXT(".") + LevelName));
@@ -555,7 +570,7 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 
 	const double Elevation = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(PlanetSun, Entry.GetUp()), -1.0, 1.0)));
 	const FVector2D Map = Entry.GetMapLocation(Radius);
-	UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s: %s at latitude %.1f, longitude %.1f, heading %.1f (map (%.0f, %.0f) m, yaw %.1f); sun elevation %.1f on the planet vs %.1f in the level; land %.0f m around (%.0f, %.0f); sun towards %s"),
-		Planet->Name, *Island.Name, Entry.Latitude, Entry.Longitude, Entry.Heading, Map.X / 100.0, Map.Y / 100.0, Entry.GetMapYaw(), Elevation,
+	UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s: %s at latitude %.1f, longitude %.1f, heading %.1f (its sun's %.1f; map (%.0f, %.0f) m, yaw %.1f); sun elevation %.1f on the planet vs %.1f in the level; land %.0f m around (%.0f, %.0f); sun towards %s"),
+		Planet->Name, *Island.Name, Entry.Latitude, Entry.Longitude, Entry.Heading, SunHeading, Map.X / 100.0, Map.Y / 100.0, Entry.GetMapYaw(), Elevation,
 		FMath::RadiansToDegrees(FMath::Asin(LevelSun.Z)), LandRadius / 100.0, Entry.Center.X, Entry.Center.Y, *PlanetSun.ToString());
 }
