@@ -236,12 +236,12 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 
 	if (bPlanetLevel)
 	{
-		// Already sub-levels of the world.
-		const FName SeaPackage(*Asset->Islands[Home].SeaLevel.ToSoftObjectPath().GetLongPackageName());
-		const FName BeltPackage(*Asset->BeltLevel.ToSoftObjectPath().GetLongPackageName());
+		// Already sub-levels of the world (renamed UEDPIE_<n>_<level> in PIE).
+		const FString SeaPackage = Asset->Islands[Home].SeaLevel.ToSoftObjectPath().GetLongPackageName();
+		const FString BeltPackage = Asset->BeltLevel.ToSoftObjectPath().GetLongPackageName();
 		for (ULevelStreaming* Streaming : World->GetStreamingLevels())
 		{
-			const FName Package = Streaming ? Streaming->GetWorldAssetPackageFName() : NAME_None;
+			const FString Package = Streaming ? UWorld::RemovePIEPrefix(Streaming->GetWorldAssetPackageName()) : FString();
 			if (Package == SeaPackage)
 			{
 				SeaStream = Streaming;
