@@ -6,6 +6,7 @@
 #include "Import/LBAEnvironment.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBAPlanetBelt.h"
 #include "Import/LBARenderingAssets.h"
 #include "Import/LBAWater.h"
 #include "WaterWaves.h"
@@ -43,15 +44,17 @@ namespace
 		float FlatRadius;
 		/** The first placed island is the planet's home: its sea's look is the planet's. */
 		TArray<FPlanetIslandPreset> Islands;
+		/** Twinsun's Hamalayi belt from the holomap closes the islands' hemisphere (LBAPlanetBelt). */
+		bool bBelt = false;
 	};
 
 	const TArray<FPlanetPreset>& GetPresets()
 	{
-		// Twinsun at 750 m (2026-10-26, was 2 km): Citadel island (its sunny variant) and the desert island, 315 m apart.
-		// Flat 100 m around the camera: the island under it stays flat, the desert sinks 30 m seen from Citadel.
+		// Twinsun at 650 m (2026-10-27, was 750 m, before that 2 km; 500 m put the islands too close): Citadel island (its
+		// sunny variant) and the desert island, 273 m apart. Flat 100 m around the camera: the island under it stays flat.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 75000.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f }, { TEXT("DESERT"), 2, true, 1.35f } } },
+			{ TEXT("TWINSUN"), 65000.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f }, { TEXT("DESERT"), 2, true, 1.35f } }, true },
 		};
 		return Presets;
 	}
@@ -227,9 +230,36 @@ namespace
 		return Mesh;
 	}
 
-	/** Sea kept around an island's coastline inside its ocean's cell (cm), and how much neighbouring cells overlap. */
-	constexpr double CellMargin = 1000.0;
+	/** A cut between two islands' cells needs this much sea between their land (cm); neighbouring cells overlap this much. */
+	constexpr double MinCellGap = 200.0;
 	constexpr double CellOverlap = 5.0;
+	/** The cells' frame is turned in steps of this much (degrees) until a cut fits between every island. */
+	constexpr double CellYawStep = 2.0;
+
+	/** The widest gap (cm) between Islands' Land boxes along X or Y, where to cut (the gap's middle) and along which axis. */
+	double FindCut(const TArray<int32>& Islands, const TArray<FBox2D>& Land, int32& OutAxis, double& OutCut)
+	{
+		double BestGap = TNumericLimits<double>::Lowest();
+		OutAxis = INDEX_NONE;
+		for (int32 Axis = 0; Axis < 2; ++Axis)
+		{
+			TArray<int32> Sorted = Islands;
+			Sorted.Sort([&Land, Axis](int32 A, int32 B) { return Land[A].Min[Axis] < Land[B].Min[Axis]; });
+			double Reach = TNumericLimits<double>::Lowest();
+			for (int32 Index = 0; Index + 1 < Sorted.Num(); ++Index)
+			{
+				Reach = FMath::Max(Reach, Land[Sorted[Index]].Max[Axis]);
+				const double Gap = Land[Sorted[Index + 1]].Min[Axis] - Reach;
+				if (Gap > BestGap)
+				{
+					BestGap = Gap;
+					OutAxis = Axis;
+					OutCut = Reach + 0.5 * Gap;
+				}
+			}
+		}
+		return BestGap;
+	}
 
 	/**
 	 * Splits Cell among Islands (indices into Land, their land's boxes): a cut along X or Y through the widest gap
@@ -243,25 +273,11 @@ namespace
 			Out[Islands[0]].Cell = Cell;
 			return;
 		}
-		double BestGap = 0.0;
 		int32 BestAxis = INDEX_NONE;
 		double BestCut = 0.0;
-		for (int32 Axis = 0; Axis < 2; ++Axis)
+		if (FindCut(Islands, Land, BestAxis, BestCut) < MinCellGap)
 		{
-			TArray<int32> Sorted = Islands;
-			Sorted.Sort([&Land, Axis](int32 A, int32 B) { return Land[A].Min[Axis] < Land[B].Min[Axis]; });
-			double Reach = TNumericLimits<double>::Lowest();
-			for (int32 Index = 0; Index + 1 < Sorted.Num(); ++Index)
-			{
-				Reach = FMath::Max(Reach, Land[Sorted[Index]].Max[Axis]);
-				const double Gap = Land[Sorted[Index + 1]].Min[Axis] - Reach;
-				if (Gap > BestGap)
-				{
-					BestGap = Gap;
-					BestAxis = Axis;
-					BestCut = Reach + 0.5 * Gap;
-				}
-			}
+			BestAxis = INDEX_NONE;
 		}
 		if (BestAxis == INDEX_NONE)
 		{
@@ -308,12 +324,14 @@ namespace
 			Settings.Waves = Opened.WaterWaves.LoadSynchronous();
 			TArray<FBox2D> Land;
 			TArray<int32> Islands;
+			TArray<FVector2D> Centers;
 			for (const FLBAPlanetIsland& Island : Asset->Islands)
 			{
 				const FTransform LevelToWorld = Island.GetLevelToMap(Radius) * MapToWorld;
 				FLBAGlobeSeaSettings::FIsland& Entry = Settings.Islands.AddDefaulted_GetRef();
 				Entry.Name = Island.Island.ToString();
 				const FVector2D Center(LevelToWorld.TransformPosition(FVector(Island.Center, 0.0)));
+				Centers.Add(Center);
 				FBox2D Box(Center, Center);
 				for (const FVector2D& Point : Island.Coastline)
 				{
@@ -326,7 +344,7 @@ namespace
 						*Opened.Island.ToString(), *Entry.Name));
 				}
 				Islands.Add(Land.Num());
-				Land.Add(Box.ExpandBy(CellMargin));
+				Land.Add(Box);
 				Settings.Bounds += Center - FVector2D(Island.Reach);
 				Settings.Bounds += Center + FVector2D(Island.Reach);
 			}
@@ -335,7 +353,47 @@ namespace
 			{
 				Settings.Bounds += Box;
 			}
-			Partition(Context, Settings.Bounds, Islands, Land, Settings.Islands);
+
+			// The cells are rectangles in a frame turned so that cuts fit between the islands' land: the world's own
+			// when they do, else the turn with the widest gap (islands close together diagonally).
+			auto LandInFrame = [&](double Yaw)
+			{
+				TArray<FBox2D> Boxes;
+				for (int32 Index = 0; Index < Settings.Islands.Num(); ++Index)
+				{
+					FBox2D Box(Centers[Index].GetRotated(-Yaw), Centers[Index].GetRotated(-Yaw));
+					for (const FVector2D& Point : Settings.Islands[Index].Coastline)
+					{
+						Box += Point.GetRotated(-Yaw);
+					}
+					Boxes.Add(Box);
+				}
+				return Boxes;
+			};
+			int32 Axis = INDEX_NONE;
+			double Cut = 0.0;
+			double BestGap = Islands.Num() > 1 ? FindCut(Islands, Land, Axis, Cut) : 0.0;
+			for (double Yaw = CellYawStep; Islands.Num() > 1 && BestGap < MinCellGap && Yaw < 180.0; Yaw += CellYawStep)
+			{
+				const double Gap = FindCut(Islands, LandInFrame(Yaw), Axis, Cut);
+				if (Gap > BestGap + 1.0)
+				{
+					BestGap = Gap;
+					Settings.CellYaw = Yaw;
+				}
+			}
+			FBox2D Frame(ForceInit);
+			for (const FVector2D& Corner : { Settings.Bounds.Min, Settings.Bounds.Max, FVector2D(Settings.Bounds.Min.X, Settings.Bounds.Max.Y),
+				FVector2D(Settings.Bounds.Max.X, Settings.Bounds.Min.Y) })
+			{
+				Frame += Corner.GetRotated(-Settings.CellYaw);
+			}
+			if (Settings.CellYaw != 0.0)
+			{
+				UE_LOG(LogLBA2, Display, TEXT("LBA2 globe sea of %s: the oceans' cells turned %.0f degrees, %.1f m of sea between the islands' land"),
+					*Opened.Island.ToString(), Settings.CellYaw, BestGap / 100.0);
+			}
+			Partition(Context, Frame, Islands, LandInFrame(Settings.CellYaw), Settings.Islands);
 
 			const FString Name = FString::Printf(TEXT("L_%s_GlobeSea"), *Opened.Island.ToString());
 			UWorld* World = Context.BeginLevel(Folder, Name);
@@ -489,6 +547,10 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	}
 	// The island's coastline and sea changed: every opened island's sea level, which leaves it dry.
 	BuildSeaLevels(Context, Asset, PlanetFolder);
+	if (Planet->bBelt)
+	{
+		Asset->BeltLevel = LBAPlanetBelt::Build(Context, Planet->Name, Radius, PlanetFolder);
+	}
 	Context.MarkForSave(Asset);
 
 	const double Elevation = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(PlanetSun, Entry.GetUp()), -1.0, 1.0)));

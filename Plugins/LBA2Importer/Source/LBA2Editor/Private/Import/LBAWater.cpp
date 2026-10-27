@@ -320,11 +320,12 @@ namespace
 	}
 
 	/**
-	 * An ocean in Zone, its coastline (world cm) left dry: filling the zone from Location, or only Cell (world cm) when
-	 * it is valid. Without a coastline, a 2 m loop around Location (a point on land) is the only dry place.
+	 * An ocean in Zone, its coastline left dry: filling the zone from Location, or only Cell when it is valid. Without a
+	 * coastline, a 2 m loop around Location (a point on land) is the only dry place. Location, Coastline and Cell are
+	 * in cm, in the world turned by Yaw (degrees), and so is the ocean.
 	 */
 	void SpawnOcean(FLBAImportContext& Context, UWorld* World, AWaterZone* Zone, const FVector2D& Location, const TArray<FVector2D>& Coastline,
-		const FBox2D& Cell, UMaterialInterface* Material, UWaterWavesAsset* WavesAsset, const FString& Label, const FName& Folder)
+		const FBox2D& Cell, UMaterialInterface* Material, UWaterWavesAsset* WavesAsset, const FString& Label, const FName& Folder, double Yaw = 0.0)
 	{
 		// Water bodies build their render data (the meshes the water zone draws and renders into its water info) only
 		// when the application can render, and save it with the level. Import commandlets can't, so they would save an
@@ -333,7 +334,8 @@ namespace
 
 		// A cell's rectangle is centered on its ocean.
 		const FVector2D Origin = Cell.bIsValid ? Cell.GetCenter() : Location;
-		AWaterBodyOcean* Ocean = Context.SpawnGeneratedActorWithFactory<AWaterBodyOcean>(World, FTransform(FVector(Origin, 0.0)), Label, Folder);
+		AWaterBodyOcean* Ocean = Context.SpawnGeneratedActorWithFactory<AWaterBodyOcean>(World,
+			FTransform(FRotator(0.0, Yaw, 0.0), FVector(Origin.GetRotated(Yaw), 0.0)), Label, Folder);
 		UWaterBodyOceanComponent* Body = Ocean ? Cast<UWaterBodyOceanComponent>(Ocean->GetWaterBodyComponent()) : nullptr;
 		if (!Body)
 		{
@@ -451,8 +453,13 @@ void LBAWater::SpawnGlobeSea(FLBAImportContext& Context, UWorld* World, const FL
 			continue;
 		}
 		// Without a coastline, the ocean's dry loop goes in its cell's corner, out at sea.
-		SpawnOcean(Context, World, Zone, Island.Cell.Min + FVector2D(200.0), Island.Coastline, Island.Cell, Settings.Material, Settings.Waves,
-			TEXT("Ocean_") + Island.Name, Folder);
+		TArray<FVector2D> Coastline;
+		for (const FVector2D& Point : Island.Coastline)
+		{
+			Coastline.Add(Point.GetRotated(-Settings.CellYaw));
+		}
+		SpawnOcean(Context, World, Zone, Island.Cell.Min + FVector2D(200.0), Coastline, Island.Cell, Settings.Material, Settings.Waves,
+			TEXT("Ocean_") + Island.Name, Folder, Settings.CellYaw);
 	}
 	Zone->MarkForRebuild(EWaterZoneRebuildFlags::All);
 	UE_LOG(LogLBA2, Display, TEXT("LBA2 globe sea: zone %.0f x %.0f m around (%.0f, %.0f) m, %d texels across, %d islands"),

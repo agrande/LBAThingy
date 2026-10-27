@@ -25,7 +25,8 @@ class USkyAtmosphereComponent;
  * one Water plugin zone over all the sea in view, an ocean per island keeping its coastline dry, its water bent by its
  * material), over a disc kept under the camera for the sea beyond it (or alone, without a sea level). The islands' own
  * water and invisible sea floors are gone; sea queries answer the sea level. The sky atmosphere is a planet of that
- * radius centered under the camera, so its horizon follows.
+ * radius centered under the camera, so its horizon follows. The planet's belt (ULBAPlanetAsset::BeltLevel: Twinsun's
+ * Hamalayi mountains) is streamed in on the map around them, closing the islands' hemisphere by its shape alone.
  *
  *   lba.Globe 0/1             globe mode off/on for the next level opened (-1: the project setting)
  *   lba.Globe.Open ISLAND     opens an island in globe mode
@@ -34,6 +35,7 @@ class USkyAtmosphereComponent;
  *   lba.Globe.Radius M        overrides the planet's radius for the next level opened (m): the islands' places and the bend
  *   lba.Globe.Debug 1         prints where the camera is on screen
  *   lba.Globe.Sea 0           the sea disc alone for the next level opened (to compare)
+ *   lba.Globe.Belt 0          no belt for the next level opened
  */
 UCLASS()
 class LBA2RUNTIME_API ULBAPlanetSubsystem : public UTickableWorldSubsystem
@@ -54,6 +56,8 @@ public:
 
 	/** An island's level to world (the opened island's is identity). */
 	FTransform GetIslandToWorld(int32 Island) const;
+	/** The planet's flat map (cm, its pole at the origin) to world. */
+	FTransform GetMapToWorld() const;
 	/** World location of an island's center. */
 	FVector GetIslandCenter(int32 Island) const;
 
@@ -96,6 +100,8 @@ private:
 	/** The opened island's sea level (Water plugin oceans) is the sea (lba.Globe.Sea); the sea disc lies under it. */
 	bool bWaterSea = false;
 	TWeakObjectPtr<ULevelStreamingDynamic> SeaStream;
+	/** The planet's belt (ULBAPlanetAsset::BeltLevel), on its map. */
+	TWeakObjectPtr<ULevelStreamingDynamic> BeltStream;
 
 	/** The view this frame and the last, for motion vectors of the bent world. */
 	FVector View = FVector::ZeroVector;

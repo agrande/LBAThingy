@@ -46,6 +46,8 @@ namespace
 		TEXT("0: the planet's other islands aren't streamed in (debug, for the next level opened)."));
 	TAutoConsoleVariable<int32> CVarGlobeSea(TEXT("lba.Globe.Sea"), 1,
 		TEXT("The sea for the next level opened: 1 the opened island's sea level (Water plugin oceans), the planet's sea disc beyond; 0 the sea disc alone."));
+	TAutoConsoleVariable<int32> CVarGlobeBelt(TEXT("lba.Globe.Belt"), 1,
+		TEXT("0: the planet's belt (Twinsun's Hamalayi mountains) isn't streamed in (for the next level opened)."));
 
 	/**
 	 * Under the sea level's water, the sea disc lies this much lower (cm), out of sight: far from the camera, the water
@@ -299,6 +301,11 @@ void ULBAPlanetSubsystem::OnLevelAdded(ULevel* Level, UWorld* InWorld)
 	{
 		return;
 	}
+	if (BeltStream.IsValid() && BeltStream->GetLoadedLevel() == Level)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("Globe mode: the belt streamed in, %d actors"), Level->Actors.Num());
+		return;
+	}
 	// The other islands' levels come in where they are on the map; the opened island's sub-levels are its own.
 	int32 IslandIndex = Home;
 	for (int32 Index = 0; Index < IslandStreams.Num(); ++Index)
@@ -329,6 +336,24 @@ void ULBAPlanetSubsystem::LoadIslands()
 			bWaterSea = false;
 		}
 	}
+	if (!Asset->BeltLevel.IsNull() && CVarGlobeBelt.GetValueOnGameThread() != 0)
+	{
+		if (Radius != Asset->Radius)
+		{
+			// Its shape is laid on the map for the asset's radius.
+			UE_LOG(LogLBA2, Display, TEXT("Globe mode: no belt at a radius of %.0f m (it is built for %.0f m)"), Radius / 100.0, Asset->Radius / 100.0);
+		}
+		else
+		{
+			bool bLoaded = false;
+			BeltStream = ULevelStreamingDynamic::LoadLevelInstanceBySoftObjectPtr(GetWorld(), Asset->BeltLevel, GetMapToWorld(), bLoaded,
+				Asset->BeltLevel.GetAssetName() + TEXT("_Instance"));
+			if (!bLoaded)
+			{
+				UE_LOG(LogLBA2, Warning, TEXT("Globe mode: couldn't stream in the belt (%s)"), *Asset->BeltLevel.ToString());
+			}
+		}
+	}
 	IslandStreams.SetNum(Asset->Islands.Num());
 	for (int32 Index = 0; Index < Asset->Islands.Num(); ++Index)
 	{
@@ -353,7 +378,12 @@ FTransform ULBAPlanetSubsystem::GetIslandToWorld(int32 Island) const
 	{
 		return FTransform::Identity;
 	}
-	return Asset->Islands[Island].GetLevelToMap(Radius) * Asset->Islands[Home].GetLevelToMap(Radius).Inverse();
+	return Asset->Islands[Island].GetLevelToMap(Radius) * GetMapToWorld();
+}
+
+FTransform ULBAPlanetSubsystem::GetMapToWorld() const
+{
+	return IsActive() ? Asset->Islands[Home].GetLevelToMap(Radius).Inverse() : FTransform::Identity;
 }
 
 FVector ULBAPlanetSubsystem::GetIslandCenter(int32 Island) const

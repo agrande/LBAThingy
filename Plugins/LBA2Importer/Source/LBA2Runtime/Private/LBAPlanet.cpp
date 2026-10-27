@@ -34,6 +34,8 @@ FTransform FLBAPlanetIsland::GetLevelToMap(double Radius) const
 	return FTransform(Rotation, Location - Rotation.RotateVector(FVector(Center, 0.0)));
 }
 
+const FName ULBAPlanetAsset::BeltTag(TEXT("LBA_Belt"));
+
 const FLBAPlanetIsland* ULBAPlanetAsset::FindIsland(FName Island) const
 {
 	return Islands.FindByPredicate([Island](const FLBAPlanetIsland& Entry) { return Entry.Island == Island; });

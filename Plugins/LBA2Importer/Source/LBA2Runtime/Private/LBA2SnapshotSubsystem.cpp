@@ -2,6 +2,7 @@
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
@@ -84,6 +85,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	else if (Spec.Equals(TEXT("boat"), ESearchCase::IgnoreCase))
 	{
 		bBoat = true;
+		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("belt"), ESearchCase::IgnoreCase))
+	{
+		bBelt = true;
 		bPosesReady = true;
 	}
 	else if (Spec.Equals(TEXT("wind"), ESearchCase::IgnoreCase))
@@ -641,6 +647,50 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 	return true;
 }
 
+namespace
+{
+	/**
+	 * The planet's belt shore (world, at sea level) straight out from its pole past the opened island (the way out),
+	 * where its ground first rises above the sea; false while the belt isn't streamed in.
+	 */
+	bool FindBeltShore(UWorld* World, const ULBAPlanetSubsystem* Planets, FVector& OutShore, FVector& OutOutward)
+	{
+		TArray<UStaticMeshComponent*> Belt;
+		for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+		{
+			if (It->ActorHasTag(ULBAPlanetAsset::BeltTag))
+			{
+				Belt.Add(It->GetStaticMeshComponent());
+			}
+		}
+		if (!Planets || !Planets->IsActive() || Belt.IsEmpty())
+		{
+			return false;
+		}
+		const FVector Pole = Planets->GetMapToWorld().GetLocation();
+		const FVector Home = Planets->GetIslandCenter(Planets->GetHome());
+		const FVector Outward = (Home - Pole).GetSafeNormal2D().IsNearlyZero() ? FVector::ForwardVector : (Home - Pole).GetSafeNormal2D();
+		FCollisionQueryParams Params(TEXT("BeltShore"), true);
+		for (double Distance = FVector::Dist2D(Home, Pole); Distance < 3.0 * Planets->GetRadius(); Distance += 100.0)
+		{
+			const FVector Point = Pole + Outward * Distance;
+			for (UStaticMeshComponent* Component : Belt)
+			{
+				FHitResult Hit;
+				if (Component->LineTraceComponent(Hit, FVector(Point.X, Point.Y, 50000.0), FVector(Point.X, Point.Y, -5000.0), Params) && Hit.ImpactPoint.Z > 0.0)
+				{
+					OutShore = FVector(Point.X, Point.Y, 0.0);
+					OutOutward = Outward;
+					UE_LOG(LogLBA2, Display, TEXT("LBA2Shots: the belt's shore is %.0f m out from the pole, %.0f m from the opened island"),
+						Distance / 100.0, FVector::Dist2D(OutShore, Home) / 100.0);
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+}
+
 bool ULBA2SnapshotSubsystem::TickBoat(UWorld* World, float DeltaTime)
 {
 	enum class EBoatStep : uint8 { Approach, Board, Leave, Drive, Stop, LeaveAtSea };
@@ -684,8 +734,9 @@ bool ULBA2SnapshotSubsystem::TickBoat(UWorld* World, float DeltaTime)
 		{ TEXT("arrived"), 4.f, EBoatStep::Drive, 0.6f, 1.f, 0.f, 1 },
 		{ TEXT("stopped"), 6.f, EBoatStep::Stop, -1.f, 0.f, 0.f, 1 },
 	};
-	const FStep* Steps = BoatDestination != INDEX_NONE ? VoyageSteps : HomeSteps;
-	const int32 NumSteps = BoatDestination != INDEX_NONE ? UE_ARRAY_COUNT(VoyageSteps) : UE_ARRAY_COUNT(HomeSteps);
+	const bool bVoyage = BoatDestination != INDEX_NONE || bBoatToBelt;
+	const FStep* Steps = bVoyage ? VoyageSteps : HomeSteps;
+	const int32 NumSteps = bVoyage ? UE_ARRAY_COUNT(VoyageSteps) : UE_ARRAY_COUNT(HomeSteps);
 
 	APlayerController* PC = World->GetFirstPlayerController();
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
@@ -714,7 +765,21 @@ bool ULBA2SnapshotSubsystem::TickBoat(UWorld* World, float DeltaTime)
 		}
 		TestBoat = Boat;
 		FString Destination;
-		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2BoatTo="), Destination))
+		if (FParse::Value(FCommandLine::Get(), TEXT("LBA2BoatTo="), Destination) && Destination.Equals(TEXT("BELT"), ESearchCase::IgnoreCase))
+		{
+			if (!FindBeltShore(World, Planets, BeltShore, BeltOutward))
+			{
+				if (Elapsed > 30.0)
+				{
+					UE_LOG(LogLBA2, Error, TEXT("LBA2Shots boat: the planet has no belt out there"));
+					FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+					return false;
+				}
+				return true;
+			}
+			bBoatToBelt = true;
+		}
+		else if (!Destination.IsEmpty())
 		{
 			BoatDestination = Planets->GetPlanetAsset()->Islands.IndexOfByPredicate([&Destination](const FLBAPlanetIsland& Island)
 			{
@@ -755,9 +820,12 @@ bool ULBA2SnapshotSubsystem::TickBoat(UWorld* World, float DeltaTime)
 		BoatFrame = 0;
 	};
 	ALBACharacter* Hero = Boat->GetRider() ? Boat->GetRider() : Cast<ALBACharacter>(Pawn);
-	const int32 Target = Step.Target == 1 ? BoatDestination : Planets->GetHome();
+	// Towards the belt: a point 50 m in past its shore, so it drives into it.
+	const bool bToBelt = Step.Target == 1 && bBoatToBelt;
+	const int32 Target = Step.Target == 1 && !bBoatToBelt ? BoatDestination : Planets->GetHome();
 	const FLBAPlanetIsland& Island = Planets->GetPlanetAsset()->Islands[Target];
-	const FVector IslandCenter = Planets->GetIslandCenter(Target);
+	const FVector IslandCenter = bToBelt ? BeltShore + BeltOutward * 5000.0 : Planets->GetIslandCenter(Target);
+	const FString TargetName = bToBelt ? FString(TEXT("the belt")) : Island.Island.ToString();
 	const FVector HomeCenter = Planets->GetIslandCenter(Planets->GetHome());
 	// How far the boat is from the target's center (m).
 	const double ToTarget = FVector::Dist2D(Boat->GetActorLocation(), IslandCenter) / 100.0;
@@ -831,9 +899,18 @@ bool ULBA2SnapshotSubsystem::TickBoat(UWorld* World, float DeltaTime)
 			BoatNextReport = Elapsed + 1.0;
 			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat %s t=%.1f: %.1f m/s, turning %.1f deg/s, throttle %.1f rudder %.2f, %s, %.0f m from %s"),
 				Step.Name, StepTime, Speed / 100.f, Boat->GetBoatMovement()->GetTurnRate(), Throttle, Rudder,
-				Boat->GetBoatMovement()->IsAfloat() ? TEXT("afloat") : TEXT("NO WATER"), ToTarget, *Island.Island.ToString());
+				Boat->GetBoatMovement()->IsAfloat() ? TEXT("afloat") : TEXT("NO WATER"), ToTarget, *TargetName);
 		}
-		if (Step.bUntilHeld && ToTarget * 100.0 < Island.Reach)
+		if (Step.bUntilHeld && bToBelt && StepTime > 5.0 && Speed < 100.f)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat: aground at the belt after %.1f s, %.1f m past its shore, hull %.1f m above the sea"),
+				StepTime, FVector::DotProduct(Boat->GetActorLocation() - BeltShore, BeltOutward) / 100.0, Boat->GetActorLocation().Z / 100.0);
+			Shoot(Step.Name);
+			Boat->SetDriveInput(FVector2D::ZeroVector);
+			NextStep();
+			return true;
+		}
+		if (Step.bUntilHeld && !bToBelt && ToTarget * 100.0 < Island.Reach)
 		{
 			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots boat: within reach of %s after %.1f s"), *Island.Island.ToString(), StepTime);
 			Shoot(Step.Name);
@@ -877,7 +954,7 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 		float Height;
 		/** What it steers to or looks at: the opened island (0) or the voyage's destination (1). */
 		int32 Target = 0;
-		/** Ends once this near the target (m), or once within its reach. */
+		/** Ends once this near the target (share of the voyage's distance at the start), or once within its reach. */
 		float UntilWithin = 0.f;
 		bool bUntilHeld = false;
 	};
@@ -904,8 +981,8 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 		{ TEXT("takeoff"), 2.5f, EGlobeStep::Fly, 0.f, 0.f, 1.f, 0.f, false, 0.f },
 		{ TEXT("climb"), 6.f, EGlobeStep::Fly, 0.f, 0.f, 0.f, 0.4f, false, 0.f },
 		{ TEXT("leave_home"), 20.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1 },
-		{ TEXT("halfway"), 120.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1, 450.f },
-		{ TEXT("destination_ahead"), 120.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1, 250.f },
+		{ TEXT("halfway"), 120.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1, 0.5f },
+		{ TEXT("destination_ahead"), 120.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1, 0.3f },
 		{ TEXT("arrived"), 120.f, EGlobeStep::Fly, 1.f, 1.f, 0.f, 1.f, false, 0.f, 1, 0.f, true },
 		{ TEXT("over_destination"), 4.f, EGlobeStep::HighView, 0.f, 0.f, 0.f, 0.f, false, 50000.f, 1 },
 		{ TEXT("look_back"), 4.f, EGlobeStep::HighView, 0.f, 0.f, 0.f, 0.f, false, 20000.f, 0 },
@@ -948,6 +1025,7 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
 				return false;
 			}
+			GlobeVoyageDistance = FVector::Dist2D(Hero->GetActorLocation(), Planets->GetIslandCenter(GlobeDestination)) / 100.0;
 		}
 		GlobeStep = 0;
 		GlobeStepStart = Elapsed;
@@ -1067,10 +1145,249 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 	}
 
 	const bool bLandedEarly = Step.bUntilLanded && Dinofly->GetFlight()->IsLanded();
-	const bool bThere = (Step.UntilWithin > 0.f && ToTarget < Step.UntilWithin)
+	const bool bThere = (Step.UntilWithin > 0.f && ToTarget < Step.UntilWithin * GlobeVoyageDistance)
 		|| (Step.bUntilHeld && ToTarget * 100.0 < Island.Reach);
 	if (StepTime >= Step.Duration || bLandedEarly || bThere)
 	{
+		Shoot(Step.Name);
+		NextStep();
+	}
+	return true;
+}
+
+bool ULBA2SnapshotSubsystem::TickBelt(UWorld* World, float DeltaTime)
+{
+	enum class EBeltStep : uint8 { Fly, HighView, Dismount, Walk };
+	struct FStep
+	{
+		const TCHAR* Name;
+		float Duration;
+		EBeltStep Kind;
+		float Forward;
+		float Vertical;
+		/** Pumps the climb button every this many seconds (negative: taps the brake). */
+		float Pump;
+		/** Where it steers (or a high view looks): this far past the shore (m), or at the pole (bAtPole). */
+		float PastShore;
+		/** Ends once this near the point it steers to (m), or once landed. */
+		float UntilWithin = 0.f;
+		bool bUntilLanded = false;
+		/** High views: camera height above the pawn (cm). */
+		float Height = 0.f;
+		bool bAtPole = false;
+		/** Walks: jumps every this many seconds. */
+		float Jump = 0.f;
+	};
+	static const FStep Steps[] =
+	{
+		{ TEXT("takeoff"), 2.5f, EBeltStep::Fly, 0.f, 1.f, 0.f, 0.f },
+		{ TEXT("climb"), 6.f, EBeltStep::Fly, 0.f, 0.f, 0.4f, 0.f },
+		{ TEXT("to_the_belt"), 150.f, EBeltStep::Fly, 1.f, 0.f, 0.5f, 0.f, 30.f },
+		// The belt is low: the Dinofly flies over it.
+		{ TEXT("over_the_belt"), 60.f, EBeltStep::Fly, 1.f, 0.f, 0.5f, 200.f, 20.f },
+		{ TEXT("belt_from_above"), 4.f, EBeltStep::HighView, 0.f, 0.f, 0.f, 0.f, 0.f, false, 30000.f },
+		{ TEXT("whole_belt"), 4.f, EBeltStep::HighView, 0.f, 0.f, 0.f, 0.f, 0.f, false, 400000.f, true },
+		{ TEXT("back_to_flank"), 90.f, EBeltStep::Fly, 1.f, 0.f, 0.5f, 5.f, 15.f },
+		{ TEXT("land_on_flank"), 60.f, EBeltStep::Fly, 0.3f, 0.f, -0.45f, 5.f, 0.f, true },
+		{ TEXT("landed"), 2.f, EBeltStep::Fly, 0.f, 0.f, 0.f, 5.f },
+		{ TEXT("dismount"), 2.f, EBeltStep::Dismount, 0.f, 0.f, 0.f, 0.f },
+		{ TEXT("walk_up"), 30.f, EBeltStep::Walk, 1.f, 0.f, 0.f, 0.f },
+		{ TEXT("jump_up"), 12.f, EBeltStep::Walk, 1.f, 0.f, 0.f, 0.f, 0.f, false, 0.f, false, 1.2f },
+	};
+	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	ULBAPlanetSubsystem* Planets = World->GetSubsystem<ULBAPlanetSubsystem>();
+	if (BeltStep < 0)
+	{
+		ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+		if (!Hero || !FindBeltShore(World, Planets, BeltShore, BeltOutward))
+		{
+			if (Elapsed > 30.0)
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots belt: no planet (open the island with ?Globe), no ALBACharacter or no belt"));
+				FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+				return false;
+			}
+			return true;
+		}
+		if (!Hero->SummonDinofly())
+		{
+			return true;
+		}
+		BeltStep = 0;
+		BeltStepStart = Elapsed;
+		BeltFrame = 0;
+		NextReport = Elapsed;
+		return true;
+	}
+	if (BeltStep >= NumSteps)
+	{
+		// Twinsen's feet stay below the cliff band's top (16 m; the flank's top is 6 m). The Dinofly flies over.
+		const bool bHeld = BeltHeroTop < 1600.0;
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots belt done: the Dinofly got %.1f m above the sea and %.0f m past the shore; Twinsen's feet %.1f m (the flank's top: 6 m, the cliff's: 16 m): %s"),
+			BeltDinoflyTop / 100.0, BeltDeepest / 100.0, BeltHeroTop / 100.0, bHeld ? TEXT("the belt held him") : TEXT("TWINSEN CLIMBED THE BELT"));
+		FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+		return false;
+	}
+
+	const FStep& Step = Steps[BeltStep];
+	const double StepTime = Elapsed - BeltStepStart;
+	const FVector Pole = Planets->GetMapToWorld().GetLocation();
+	const FVector Point = Step.bAtPole ? FVector(Pole.X, Pole.Y, 0.0) : BeltShore + BeltOutward * (Step.PastShore * 100.0);
+	auto Shoot = [&](const FString& Name)
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Belt_%02d_%s.png"), BeltStep, *Name), false, false);
+	};
+	auto NextStep = [&]()
+	{
+		++BeltStep;
+		BeltStepStart = Elapsed;
+		BeltFrame = 0;
+	};
+	if (Pawn)
+	{
+		BeltDeepest = FMath::Max(BeltDeepest, FVector::DotProduct(Pawn->GetActorLocation() - BeltShore, BeltOutward));
+	}
+
+	switch (Step.Kind)
+	{
+	case EBeltStep::HighView:
+	{
+		ACameraActor* View = Cast<ACameraActor>(Camera.Get());
+		if (BeltFrame == 0 && Pawn)
+		{
+			// Over the pole, the whole hemisphere is in view: the camera bends it into a ball below.
+			const FVector Location = Step.bAtPole ? FVector(Pole.X, Pole.Y, Step.Height) : Pawn->GetActorLocation() + FVector(0.0, 0.0, Step.Height);
+			const FRotator Rotation = Step.bAtPole ? FRotator(-89.f, BeltOutward.Rotation().Yaw, 0.f) : (Point - Location).Rotation();
+			if (!View)
+			{
+				View = World->SpawnActor<ACameraActor>(Location, Rotation);
+				Camera = View;
+			}
+			View->SetActorLocationAndRotation(Location, Rotation);
+			View->GetCameraComponent()->SetFieldOfView(Step.bAtPole ? 35.f : 70.f);
+			PC->SetViewTarget(View);
+		}
+		// Meanwhile the Dinofly keeps beating (hands off, it would glide down: falling that far hurts).
+		static double NextBeat = 0.0;
+		ALBADinofly* Dinofly = Cast<ALBADinofly>(Pawn);
+		if (Dinofly && Elapsed >= NextBeat)
+		{
+			Dinofly->Flap();
+			NextBeat = Elapsed + 1.0;
+		}
+		break;
+	}
+	case EBeltStep::Fly:
+	{
+		ALBADinofly* Dinofly = Cast<ALBADinofly>(Pawn);
+		if (!Dinofly)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots belt: the player isn't on the Dinofly (%s)"), Pawn ? *Pawn->GetName() : TEXT("none"));
+			BeltStep = NumSteps;
+			return true;
+		}
+		Dinofly->DisableInput(PC);
+		if (PC->GetViewTarget() != Dinofly)
+		{
+			PC->SetViewTarget(Dinofly);
+		}
+		float Turn = 0.f;
+		if (Step.Forward != 0.f)
+		{
+			const FVector To = Point - Dinofly->GetActorLocation();
+			const double Desired = FMath::RadiansToDegrees(FMath::Atan2(To.Y, To.X));
+			Turn = float(FMath::Clamp(FRotator::NormalizeAxis(Desired - Dinofly->GetActorRotation().Yaw) / 30.0, -1.0, 1.0));
+		}
+		static double NextPump = 0.0;
+		if (BeltFrame == 0)
+		{
+			NextPump = Elapsed;
+		}
+		if (Step.Pump != 0.f && Elapsed >= NextPump)
+		{
+			Step.Pump > 0.f ? Dinofly->Flap() : Dinofly->BrakeTap();
+			NextPump += FMath::Abs(Step.Pump);
+		}
+		Dinofly->SetHoverInput(FVector2D(Turn, Step.Forward), Step.Vertical);
+		Dinofly->SetDiveInput(false);
+		const double Height = Dinofly->GetActorLocation().Z;
+		BeltDinoflyTop = FMath::Max(BeltDinoflyTop, Height);
+		const double ToPoint = FVector::Dist2D(Dinofly->GetActorLocation(), Point) / 100.0;
+		if (Elapsed >= NextReport)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots belt %s t=%.1f: %.0f m past the shore, %.1f m above the sea (highest %.1f), speed %.1f m/s, landed %d, life %.0f%s"),
+				Step.Name, StepTime, FVector::DotProduct(Dinofly->GetActorLocation() - BeltShore, BeltOutward) / 100.0, Height / 100.0,
+				BeltDinoflyTop / 100.0, Dinofly->GetFlight()->Velocity.Size() / 100.0, Dinofly->GetFlight()->IsLanded() ? 1 : 0,
+				Dinofly->GetHitPoints()->GetLife(), Dinofly->IsDead() ? TEXT(" DEAD") : TEXT(""));
+			NextReport = Elapsed + 1.0;
+		}
+		if ((Step.UntilWithin > 0.f && ToPoint < Step.UntilWithin) || (Step.bUntilLanded && Dinofly->GetFlight()->IsLanded()))
+		{
+			Shoot(Step.Name);
+			NextStep();
+			return true;
+		}
+		break;
+	}
+	case EBeltStep::Dismount:
+		if (BeltFrame == 0)
+		{
+			ALBADinofly* Dinofly = Cast<ALBADinofly>(Pawn);
+			const bool bOff = Dinofly && Dinofly->Dismount();
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots belt: dismount %s"), bOff ? TEXT("ok") : TEXT("refused"));
+		}
+		break;
+	case EBeltStep::Walk:
+	{
+		ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+		if (!Hero)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots belt: Twinsen isn't the player (%s)"), Pawn ? *Pawn->GetName() : TEXT("none"));
+			BeltStep = NumSteps;
+			return true;
+		}
+		if (BeltFrame == 0)
+		{
+			Hero->DisableInput(PC);
+			Hero->SetControlMode(ELBAControlMode::Modern);
+			PC->SetViewTarget(Hero);
+		}
+		// Straight out, up the belt: the stick is camera-relative.
+		PC->SetControlRotation(FRotator(-10.f, BeltOutward.Rotation().Yaw, 0.f));
+		Hero->SetMoveInput(FVector2D(0.f, Step.Forward));
+		static double NextJump = 0.0;
+		if (BeltFrame == 0)
+		{
+			NextJump = Elapsed;
+		}
+		if (Step.Jump > 0.f && Elapsed >= NextJump)
+		{
+			Hero->ModernJump();
+			NextJump += Step.Jump;
+		}
+		const double Feet = Hero->GetActorLocation().Z - Hero->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		BeltHeroTop = FMath::Max(BeltHeroTop, Feet);
+		if (Elapsed >= NextReport)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots belt %s t=%.1f: Twinsen %.0f m past the shore, feet %.1f m above the sea (highest %.1f), falling %d, life %.0f%s, %s"),
+				Step.Name, StepTime, FVector::DotProduct(Hero->GetActorLocation() - BeltShore, BeltOutward) / 100.0, Feet / 100.0, BeltHeroTop / 100.0,
+				Hero->GetCharacterMovement()->IsFalling() ? 1 : 0, Hero->GetHitPoints()->GetLife(), Hero->IsDead() ? TEXT(" DEAD") : TEXT(""),
+				*Hero->GetModernDebugString());
+			NextReport = Elapsed + 1.0;
+		}
+		break;
+	}
+	}
+	++BeltFrame;
+	if (StepTime >= Step.Duration)
+	{
+		if (ALBACharacter* Hero = Cast<ALBACharacter>(Pawn))
+		{
+			Hero->SetMoveInput(FVector2D::ZeroVector);
+		}
 		Shoot(Step.Name);
 		NextStep();
 	}
@@ -1884,6 +2201,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bBoat)
 	{
 		return TickBoat(World, DeltaTime);
+	}
+	if (bBelt)
+	{
+		return TickBelt(World, DeltaTime);
 	}
 	if (bScenes)
 	{

@@ -19,6 +19,7 @@ struct FLBAWaterSea;
  *   L_<ISLAND>_GlobeSea        the planet's sea when the island is opened: a water zone over all the sea the bent view
  *                              shows from the islands, an ocean per island (each keeping its coastline dry), in the
  *                              island's water look (its level's ocean material and waves)
+ *   L_<PLANET>_Belt            Twinsun's Hamalayi belt around the islands' hemisphere (LBAPlanetBelt)
  *
  * Where an island goes: its position on the original's holomap (HOLOMAP.HQR, ARROW.BIN), turned so that its sun (its
  * first section's light angles, as calibrated for its level) is where the planet's sun is. The planet's sun is the

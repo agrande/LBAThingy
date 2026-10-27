@@ -17,7 +17,9 @@ class ALBASceneActor;
  *   -LBA2Shots=door -LBA2Door=15:3        opens a door (scene:object) by interacting, walks through, checks it closes behind
  *   -LBA2Shots=attack -LBA2Attack=15:14   punches an enemy (scene:object) twice, checks it dies and vanishes
  *   -LBA2Shots=boat [-LBA2BoatTo=DESERT]  globe mode (open the island with ?Globe): gets on the moored boat, ashore and back,
- *                                         backs out, drives at full throttle, turns, (crosses to that island,) stops
+ *                                         backs out, drives at full throttle, turns, (crosses to that island,) stops;
+ *                                         -LBA2BoatTo=BELT drives straight at the planet's belt until it runs aground
+ *   -LBA2Shots=belt                       globe mode: the Dinofly and Twinsen against the planet's belt (how high they get)
  *   -LBA2ShotDir=<folder>                 where to write PNGs (default Saved/LBA2Shots)
  *   -LBA2HeroAt=x,y,yaw[,z]               with camera poses, hero or modern: stands the player pawn on the ground there first
  *                                         (the first surface below z, default: the highest; indoors, below the ceiling)
@@ -46,6 +48,7 @@ private:
 	bool TickMenu(UWorld* World, float DeltaTime);
 	bool TickGlobe(UWorld* World, float DeltaTime);
 	bool TickBoat(UWorld* World, float DeltaTime);
+	bool TickBelt(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
 	/** -LBA2HeroAt: stands the pawn on the first surface below the point, facing its yaw. */
 	void PlaceHero(UWorld* World, APawn* Pawn) const;
@@ -65,8 +68,9 @@ private:
 	 * that island instead (until within its reach), looks at both islands from high above and lands.
 	 */
 	bool bGlobe = false;
-	/** -LBA2GlobeTo: the island (index in the planet asset) the voyage goes to, if any. */
+	/** -LBA2GlobeTo: the island (index in the planet asset) the voyage goes to, if any, and how far it was (m). */
 	int32 GlobeDestination = INDEX_NONE;
+	double GlobeVoyageDistance = 0.0;
 	int32 GlobeStep = -1;
 	double GlobeStepStart = 0.0;
 	int32 GlobeFrame = 0;
@@ -76,12 +80,30 @@ private:
 	/** -LBA2Shots=boat: Twinsen takes the boat moored at the opened island out to sea (and to -LBA2BoatTo's island). */
 	bool bBoat = false;
 	int32 BoatDestination = INDEX_NONE;
+	/** -LBA2BoatTo=BELT: straight out at the planet's belt, until it runs aground. */
+	bool bBoatToBelt = false;
 	int32 BoatStep = -1;
 	double BoatStepStart = 0.0;
 	int32 BoatFrame = 0;
 	double BoatNextReport = 0.0;
 	float BoatTopSpeed = 0.f;
 	TWeakObjectPtr<class ALBABoat> TestBoat;
+	/**
+	 * -LBA2Shots=belt (globe mode): the Dinofly flies out to the planet's belt and over it, looks at it from above, comes
+	 * back and lands on its flank; Twinsen gets off and walks, then jumps, up it. Logs how high and how far past the
+	 * shore each got.
+	 */
+	bool bBelt = false;
+	int32 BeltStep = -1;
+	double BeltStepStart = 0.0;
+	int32 BeltFrame = 0;
+	/** The belt's shore (world, sea level) straight out from the pole past the opened island, and that way out. */
+	FVector BeltShore = FVector::ZeroVector;
+	FVector BeltOutward = FVector::ForwardVector;
+	/** The highest the Dinofly got above the sea, and Twinsen's feet; the farthest either got past the shore (cm). */
+	double BeltDinoflyTop = 0.0;
+	double BeltHeroTop = 0.0;
+	double BeltDeepest = 0.0;
 	/** -LBA2Shots=wind: the Dinofly hovers hands-off at places of Citadel's storm, then tries to fly away and climb. */
 	bool bWind = false;
 	bool bStepStarted = false;

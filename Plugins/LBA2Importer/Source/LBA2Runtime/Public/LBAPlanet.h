@@ -115,6 +115,15 @@ public:
 	TArray<FLBAPlanetIsland> Islands;
 
 	/**
+	 * Mountains all around the islands' hemisphere that close it (Twinsun's Hamalayi belt), laid on the planet's flat
+	 * map (its pole at the origin) for this Radius; their actors are tagged BeltTag. Streamed in around the opened island.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Planet")
+	TSoftObjectPtr<UWorld> BeltLevel;
+
+	static const FName BeltTag;
+
+	/**
 	 * Disc of sea kept under the camera, bent like everything else by its material (built by the importer): the sea
 	 * beyond the opened island's sea level (FLBAPlanetIsland::SeaLevel), or all of it without one.
 	 */

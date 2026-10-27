@@ -57,12 +57,14 @@ struct FLBAGlobeSeaSettings
 		FString Name;
 		/** Its coastline (world cm, closed loop), left dry; fewer than 3 points: none. */
 		TArray<FVector2D> Coastline;
-		/** The part of the zone its ocean covers (world cm): the islands' cells tile the zone. */
+		/** The part of the zone its ocean covers (cm, in the world turned by CellYaw): the islands' cells tile the zone. */
 		FBox2D Cell = FBox2D(ForceInit);
 	};
 
 	/** Area the water zone covers (world cm). */
 	FBox2D Bounds = FBox2D(ForceInit);
+	/** The cells' frame: the world turned this much (degrees, about its origin), so cuts fit between close islands. */
+	double CellYaw = 0.0;
 	TArray<FIsland> Islands;
 	/** The opened island's ocean material and waves: its sea is the planet's. */
 	UMaterialInterface* Material = nullptr;
