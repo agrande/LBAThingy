@@ -13,6 +13,7 @@
 #include "Engine/PostProcessVolume.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
@@ -26,6 +27,7 @@
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "NiagaraActor.h"
 #include "WaterBodyActor.h"
+#include "WaterBodyComponent.h"
 #include "WaterZoneActor.h"
 
 namespace
@@ -64,6 +66,44 @@ namespace
 
 	/** The camera jumped (a cut, a teleport): last frame's view is not where this one came from. */
 	constexpr double ViewJump = 5000.0;
+
+	/**
+	 * Gives World's water zones the indices 0..N-1 again. The Water plugin packs its zones' GPU data one after another,
+	 * but water bodies (and their materials) look their zone up by its index among all zones ever registered: once a
+	 * zone before it is destroyed, a zone's water points past the data and draws nothing.
+	 */
+	void CompactWaterZones(UWorld* World)
+	{
+		TArray<AWaterZone*> Zones;
+		for (TActorIterator<AWaterZone> It(World); It; ++It)
+		{
+			if (It->HasActorRegisteredAllComponents())
+			{
+				Zones.Add(*It);
+			}
+		}
+		if (!Zones.ContainsByPredicate([&Zones](const AWaterZone* Zone) { return Zone->GetWaterZoneIndex() >= Zones.Num(); }))
+		{
+			return;
+		}
+		// Each takes the lowest free index when registered again.
+		for (AWaterZone* Zone : Zones)
+		{
+			Zone->UnregisterAllComponents();
+		}
+		for (AWaterZone* Zone : Zones)
+		{
+			Zone->RegisterAllComponents();
+		}
+		for (TActorIterator<AWaterBody> It(World); It; ++It)
+		{
+			if (UWaterBodyComponent* Body = It->GetWaterBodyComponent())
+			{
+				Body->UpdateMaterialInstances();
+			}
+		}
+		UE_LOG(LogLBA2, Display, TEXT("Globe mode: %d water zones registered again"), Zones.Num());
+	}
 
 	FAutoConsoleCommandWithWorldAndArgs GlobeOpenCommand(TEXT("lba.Globe.Open"),
 		TEXT("Opens an island on its planet: lba.Globe.Open CITABAU"),
@@ -326,9 +366,15 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 			}
 		}
 	}
+	bool bZoneDestroyed = false;
 	for (AActor* Actor : Replaced)
 	{
+		bZoneDestroyed |= Actor->IsA<AWaterZone>();
 		Actor->Destroy();
+	}
+	if (bZoneDestroyed)
+	{
+		CompactWaterZones(GetWorld());
 	}
 }
 
