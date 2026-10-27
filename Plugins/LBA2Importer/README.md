@@ -460,8 +460,9 @@ interiors it opens on, nested (Twinsen's House Area > Twinsen's House > Cellar).
 island level itself. Picking an island row opens its level at its start (its first scene's hero start, see
 [Scenes](#scenes)); picking a scene goes to that scene's hero start. Where the player is shows in gold (planet,
 island, scene) and starts selected. Mouse, keyboard (arrows, Enter, Q / E for planets) and gamepad (d-pad, A,
-LB / RB) all work; Esc, B, M or Start close it. Packaged and standalone games open it at startup (*Island Menu At
-Startup*; Play In Editor and `-LBA2Shots` runs do not).
+LB / RB) all work; Esc, B, M or Start close it. Packaged and standalone games start playing on the planet
+([Globe mode](#globe-mode-prototype)); *Island Menu At Startup* opens the menu over it first instead (never in Play In
+Editor or `-LBA2Shots` runs).
 
 - Islands are the levels found under **Project Settings > Plugins > LBA2 > Island Menu > Islands Path**
   (`/Game/LBA2/Islands`); their names, planets and order are a table in `LBAIslandTravelSubsystem.cpp`. Island
@@ -501,9 +502,7 @@ the planet's, the other islands' go when it plays. Importing an island of the pl
 (Scenes layer) rebuilds it; open in the editor (not playing), it shows every island's own sky and sun.
 
 In the editor, the toolbar's **Globe** button (next to Levels; also Tools > Play on the Globe, or `lba.Globe.Play`)
-plays the planet's level in the level viewport without opening it here. **Packaged** (Tools > Play on the Globe
-(Packaged Game), `lba.Globe.PlayPackaged`) starts the last packaged game (Platforms > Package Project, from
-*Platforms > Packaging Settings > Staging Directory*`/Windows`) on it. An island's own level opens on the planet too
+plays the planet's level in the level viewport without opening it here; a packaged game starts on it. An island's own level opens on the planet too
 (the other islands streamed in around it): in game, `lba.Globe.Open CITABAU`, or any travel to it with `?Globe`,
 `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
 and the desert island are placed where the holomap has them, 283 m apart: open either one and the other is out there,

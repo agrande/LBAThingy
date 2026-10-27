@@ -3,11 +3,8 @@
 #include "Framework/Docking/TabManager.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "GameDelegates.h"
-#include "HAL/PlatformProcess.h"
 #include "IAssetViewport.h"
 #include "Interfaces/IPluginManager.h"
-#include "Misc/App.h"
-#include "Misc/Paths.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
 #include "LBAIslandMenu.h"
@@ -19,7 +16,6 @@
 #include "LevelSelector/LBALevelSelector.h"
 #include "Modules/ModuleManager.h"
 #include "PlanView/LBAPlanViews.h"
-#include "Settings/PlatformsMenuSettings.h"
 #include "SLBA2ImporterPanel.h"
 #include "Styling/SlateStyle.h"
 #include "Styling/SlateStyleRegistry.h"
@@ -42,7 +38,6 @@ public:
 		Style->SetContentRoot(IPluginManager::Get().FindPlugin(TEXT("LBA2Importer"))->GetBaseDir() / TEXT("Resources"));
 		Style->Set("LBA2.LevelSelector", new FSlateImageBrush(Style->RootToContentDir(TEXT("Icons/LevelSelector"), TEXT(".png")), FVector2D(20.f, 20.f)));
 		Style->Set("LBA2.Globe", new FSlateImageBrush(Style->RootToContentDir(TEXT("Icons/Globe"), TEXT(".png")), FVector2D(20.f, 20.f)));
-		Style->Set("LBA2.GlobePackaged", new FSlateImageBrush(Style->RootToContentDir(TEXT("Icons/GlobePackaged"), TEXT(".png")), FVector2D(20.f, 20.f)));
 		FSlateStyleRegistry::RegisterSlateStyle(*Style);
 
 		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(LBA2ImporterTabName, FOnSpawnTab::CreateLambda([](const FSpawnTabArgs&)
@@ -92,9 +87,6 @@ public:
 		PlayGlobeCommand = MakeUnique<FAutoConsoleCommand>(TEXT("lba.Globe.Play"),
 			TEXT("Plays the planet's level in the level editor's viewport (the toolbar's Globe button)."),
 			FConsoleCommandDelegate::CreateRaw(this, &FLBA2EditorModule::PlayGlobe));
-		PlayGlobePackagedCommand = MakeUnique<FAutoConsoleCommand>(TEXT("lba.Globe.PlayPackaged"),
-			TEXT("Starts the packaged game on the planet's level (the toolbar's Packaged button)."),
-			FConsoleCommandDelegate::CreateRaw(this, &FLBA2EditorModule::PlayGlobePackaged));
 
 		// The island menu and scene changes open levels nothing references: cook them all (and the scene assets doors
 		// look up by number), or packaged builds only have the startup map.
@@ -170,7 +162,6 @@ public:
 		OpenSelectorCommand.Reset();
 		SelectorGoCommand.Reset();
 		PlayGlobeCommand.Reset();
-		PlayGlobePackagedCommand.Reset();
 		UToolMenus::UnRegisterStartupCallback(this);
 		UToolMenus::UnregisterOwner(this);
 		if (FSlateApplication::IsInitialized())
@@ -191,7 +182,6 @@ private:
 	TUniquePtr<FAutoConsoleCommand> OpenSelectorCommand;
 	TUniquePtr<FAutoConsoleCommand> SelectorGoCommand;
 	TUniquePtr<FAutoConsoleCommand> PlayGlobeCommand;
-	TUniquePtr<FAutoConsoleCommand> PlayGlobePackagedCommand;
 	TSharedPtr<FSlateStyleSet> Style;
 	TWeakPtr<SDockTab> LevelSelectorTab;
 	TStrongObjectPtr<ULBALevelSelector> LevelSelector;
@@ -270,7 +260,7 @@ private:
 		Button.StyleNameOverride = "CalloutToolbar";
 		ToolbarSection.AddEntry(Button);
 
-		// Next to it: play the planet, here and in the packaged game.
+		// Next to it: play the planet.
 		const FUIAction PlayOnGlobe(FExecuteAction::CreateRaw(this, &FLBA2EditorModule::PlayGlobe),
 			FCanExecuteAction::CreateLambda([]() { return GEditor && !GEditor->IsPlaySessionInProgress(); }));
 		const FText GlobeTooltip = LOCTEXT("GlobeButtonTooltip",
@@ -281,17 +271,6 @@ private:
 			FSlateIcon(Style->GetStyleSetName(), "LBA2.Globe"));
 		GlobeButton.StyleNameOverride = "CalloutToolbar";
 		ToolbarSection.AddEntry(GlobeButton);
-
-		const FUIAction PlayPackaged(FExecuteAction::CreateRaw(this, &FLBA2EditorModule::PlayGlobePackaged));
-		const FText PackagedTooltip = LOCTEXT("PackagedButtonTooltip",
-			"Starts the packaged game on the planet's level: the last package made with Platforms > Package Project, from its "
-			"folder (Platforms > Packaging Settings > Staging Directory). Package again to see changes (console: lba.Globe.PlayPackaged).");
-		Section.AddMenuEntry("PlayLBA2GlobePackaged", LOCTEXT("PlayGlobePackaged", "Play on the Globe (Packaged Game)"), PackagedTooltip,
-			FSlateIcon(Style->GetStyleSetName(), "LBA2.GlobePackaged"), PlayPackaged);
-		FToolMenuEntry PackagedButton = FToolMenuEntry::InitToolBarButton("LBA2GlobePackaged", PlayPackaged, LOCTEXT("PackagedButton", "Packaged"),
-			PackagedTooltip, FSlateIcon(Style->GetStyleSetName(), "LBA2.GlobePackaged"));
-		PackagedButton.StyleNameOverride = "CalloutToolbar";
-		ToolbarSection.AddEntry(PackagedButton);
 	}
 
 	/** The first planet's level (ULBAPlanetAsset::Level), built by the importer with its islands; null if none yet. */
@@ -341,30 +320,6 @@ private:
 		}
 		GEditor->RequestPlaySession(Params);
 		UE_LOG(LogLBA2, Display, TEXT("Globe: playing %s"), *Level.ToString());
-	}
-
-	/** Starts the packaged game (Platforms > Package Project's output) on the planet's level. */
-	void PlayGlobePackaged()
-	{
-		const FString Folder = GetDefault<UPlatformsMenuSettings>()->StagingDirectory.Path;
-		const FString Game = FPaths::Combine(Folder, TEXT("Windows"), FString(FApp::GetProjectName()) + TEXT(".exe"));
-		if (Folder.IsEmpty() || !FPaths::FileExists(Game))
-		{
-			UE_LOG(LogLBA2, Warning, TEXT("Globe: no packaged game at %s (Platforms > Package Project)"), *Game);
-			Notify(FText::Format(LOCTEXT("NoPackagedGame", "No packaged game at {0}: package the project first (Platforms > Package Project)."),
-				FText::FromString(Game)));
-			return;
-		}
-		const FSoftObjectPath Level = FindPlanetLevel();
-		const FString Args = Level.IsNull() ? FString() : Level.GetLongPackageName();
-		FProcHandle Process = FPlatformProcess::CreateProc(*Game, *Args, true, false, false, nullptr, 0, *FPaths::GetPath(Game), nullptr);
-		if (!Process.IsValid())
-		{
-			UE_LOG(LogLBA2, Warning, TEXT("Globe: couldn't start %s"), *Game);
-			return;
-		}
-		FPlatformProcess::CloseProc(Process);
-		UE_LOG(LogLBA2, Display, TEXT("Globe: started %s %s"), *Game, *Args);
 	}
 
 	void OpenLevelSelector()
