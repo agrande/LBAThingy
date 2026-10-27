@@ -492,7 +492,7 @@ the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScene
 
 ### Globe mode (prototype)
 
-Islands placed on a planet can open on it: a tiny round planet (Twinsun: 400 m radius) whose sea curves away to a
+Islands placed on a planet can open on it: a tiny round planet (Twinsun: 287 m radius) whose sea curves away to a
 horizon, far islands sinking below it until they come close. The planet is a level of its own,
 `/Game/LBA2/Planets/L_TWINSUN`, the game's default map: an empty persistent level whose sub-levels are the placed
 islands' levels where they are on the planet's map, each with its scenes (Unreal never loads a sub-level's own
@@ -505,7 +505,7 @@ In the editor, the toolbar's **Globe** button (next to Levels; also Tools > Play
 plays the planet's level in the level viewport without opening it here; a packaged game starts on it. An island's own level opens on the planet too
 (the other islands streamed in around it): in game, `lba.Globe.Open CITABAU`, or any travel to it with `?Globe`,
 `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
-and the desert island are placed where the holomap has them, 283 m apart: open either one and the other is out there,
+and the desert island are placed where the holomap has them, 203 m apart (25 m of sea between their coasts): open either one and the other is out there,
 across the sea. The Dinofly and the ferry are the sea vehicles. All around, past the equator, the Hamalayi belt closes the islands' hemisphere.
 
 How it holds together (the world is flat and still; only the view is round):
@@ -514,7 +514,7 @@ How it holds together (the world is flat and still; only the view is round):
   is streamed in as a level instance where it is on the planet's flat map (`FLBAPlanetIsland::GetLevelToMap`): the
   hemisphere of Citadel and the desert laid flat around its pole, distances from the pole and longitudes kept
   (azimuthal equidistant; the code calls it north, the holomap's -Y pole turned on top, but in the story it is the
-  southern hemisphere), so distances between islands near the pole are kept too (Citadel to desert: 283 m on the
+  southern hemisphere), so distances between islands near the pole are kept too (Citadel to desert: 203 m on the
   planet and on the map; they stretch east-west by 11% at 45 degrees from the pole). Nothing moves: collision, navigation, gravity
   and every gameplay system see a flat world, static objects stay static. Streamed islands come without what the
   opened island's level brings for the whole planet (sun and lights, sky atmosphere, sky light, clouds, height fog,
@@ -530,7 +530,7 @@ How it holds together (the world is flat and still; only the view is round):
   Citadel is entirely below the horizon (at 2 km radius it stood on it).
 - **The sea** is the Water plugin's, as in the island levels: the opened island's sea level
   (`/Game/LBA2/Planets/L_<ISLAND>_GlobeSea`, streamed in) has one water zone over all the sea the bent view can show
-  from the islands (out a quarter way around the planet past the flat circle: 2.7 km across for Twinsun, 1.3 m per
+  from the islands (out a quarter way around the planet past the flat circle: 1.5 km across for Twinsun, 0.75 m per
   water info texel: 2048 texels across, as the islands' levels at most; 4096 overran an 8 GB card's video memory) and an ocean per island, each covering its island's cell of the zone (straight cuts between the
   islands' land) and keeping its island's coastline dry, so low land inside the coasts stays dry (the desert's beaches
   no longer leak). The oceans take the opened island's ocean material and waves. The water material (`M_LBA_Water`,
@@ -550,7 +550,7 @@ How it holds together (the world is flat and still; only the view is round):
   darker, and so are its reflections on the sea: Citadel's harbour is (1, 112, 158) sRGB against (43, 156, 199) in
   the level (the sea disc gave (7, 48, 79)); open water (138, 202, 245) against (155, 206, 239).
 - **The Hamalayi belt** (`LBAPlanetBelt`, `/Game/LBA2/Planets/L_TWINSUN_Belt`, streamed in on the map around the
-  opened island, `ULBAPlanetAsset::BeltLevel`): low icy mountains all around, 530 to 640 m from the pole, traced
+  opened island, `ULBAPlanetAsset::BeltLevel`): low icy mountains all around, 380 to 465 m from the pole, traced
   from the original's holomap (HOLOMAP.HQR: its texture gives the belt's shore, the foot of its snow and its far
   edge at each longitude, its altitudes where the crest is higher or lower), a third as wide as the holomap's band.
   Across it: a beach and flank up to 6 m (walkable, the Dinofly lands there), a cliff band up to 16 m at 68 degrees
@@ -567,14 +567,14 @@ How it holds together (the world is flat and still; only the view is round):
   exact). One sun lights the flat world: the opened island's. Output: `/Game/LBA2/Planets/DA_Planet_TWINSUN` (radius,
   flat radius, islands, each island's coastline, ocean material and waves, sea level), the sea levels, the sea disc
   and its material; every placed island's import rebuilds every sea level. The planets list (radius, flat radius, islands) is a table in
-  `LBAPlanetBuilder.cpp`; the builder logs each pair's distance on the planet and on the map, and warns when two
-  islands' reaches (land plus 20 m) overlap on the map. Each island's ocean is a rectangle of the zone keeping its
+  `LBAPlanetBuilder.cpp`; the builder logs each pair's distance on the planet, on the map and between their coasts, and warns when two
+  islands' coasts come within 20 m of each other on the map. Each island's ocean is a rectangle of the zone keeping its
   coastline dry, the rectangles split by straight cuts through the sea between the islands' land, turned all together
   when no cut along the world's axes fits (islands close together diagonally). Twinsun: Citadel at latitude 53.5,
   longitude -141.2, heading 2 (its painting's: 0.69 of overlap, mirrored 0.59; its sun's would be -14.9), about halfway
-  from the pole (255 m) to the belt's shore (554 m there); the desert island at 84.2, -9.6, 40 m from the pole, heading
+  from the pole (183 m) to the belt's shore (400 m there); the desert island at 84.2, -9.6, 29 m from the pole, heading
   -74.7 (its sun's: its painting, smeared over the pole, fits as well either way round). The painted islands are
-  bigger than the real ones on a 400 m planet (Citadel 1.2 times, the desert 1.6). `Tools/dump_planet.py` (in the
+  0.86 (Citadel) and 1.15 (the desert) times the real ones on a 287 m planet. `Tools/dump_planet.py` (in the
   editor) then `Tools/holomap_fit.py` lay the holomap's texture on the flat map with the placed coastlines and fit
   each island to its painting (`Saved/LookDev/holomap`).
 
@@ -953,7 +953,7 @@ color, shade row / light, surfaces without fog).
 - [x] Dinofly flight choices: pump A (climb rate), hold X (dive), Morse on B (brake, tires), stalls when not pumping, lift from speed in thick air, attitude from the flight's forces, procedural wings, pain (hit stars, flinch), death and retry
 - [x] Island menu (M / Start) to travel between islands; packaged builds start on it
 - [x] Travel menu by planet, island and scene (interiors included), after lba2remake's teleport menu
-- [ ] Globe mode: islands laid flat on a 400 m planet's map, the view bent round (prototype: Citadel, the
+- [ ] Globe mode: islands laid flat on a 287 m planet's map, the view bent round (prototype: Citadel, the
       desert, the Water plugin's sea, the Hamalayi belt, the Dinofly and the ferry at sea; next: LBA1's southern
       islands, fast travel onto the globe, space)
 - [x] Tests tab, feature test map (stations, gateways; default map), editor level selector on the toolbar

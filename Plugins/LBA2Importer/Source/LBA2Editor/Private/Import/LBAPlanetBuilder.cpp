@@ -59,12 +59,13 @@ namespace
 
 	const TArray<FPlanetPreset>& GetPresets()
 	{
-		// Twinsun at 400 m (2026-10-27, was 650 m, 750 m, before that 2 km): Citadel island (its sunny variant) and the
-		// desert island where the holomap has them, 283 m apart, Citadel about halfway from the desert at the pole to the
-		// Hamalayi belt. Flat 100 m around the camera: the island under it stays flat.
+		// Twinsun at 287 m (2026-10-27, was 400 m, 650 m, 750 m, before that 2 km): half the sea of 400 m inside the
+		// Hamalayi belt. Citadel island (its sunny variant) and the desert island where the holomap has them, 203 m
+		// apart (27 m of sea between their coasts), Citadel about halfway from the desert at the pole to the belt. Flat
+		// 100 m around the camera: the island under it stays flat.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 40000.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f } }, true },
+			{ TEXT("TWINSUN"), 28700.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f } }, true },
 		};
 		return Presets;
 	}
@@ -186,6 +187,32 @@ namespace
 		const double PlanetAzimuth = FMath::Atan2(FVector::DotProduct(Horizontal, North), FVector::DotProduct(Horizontal, East));
 		const double LevelAzimuth = FMath::Atan2(LevelSun.Y, LevelSun.X);
 		return FRotator::NormalizeAxis(FMath::RadiansToDegrees(PlanetAzimuth - LevelAzimuth));
+	}
+
+	/** The shortest distance (cm) between two islands' coastlines laid on the map (their points, a few meters apart). */
+	double CoastGap(const FLBAPlanetIsland& A, const FLBAPlanetIsland& B, double Radius)
+	{
+		auto OnMap = [Radius](const FLBAPlanetIsland& Island)
+		{
+			const FTransform LevelToMap = Island.GetLevelToMap(Radius);
+			TArray<FVector2D> Points;
+			for (const FVector2D& Point : Island.Coastline)
+			{
+				Points.Add(FVector2D(LevelToMap.TransformPosition(FVector(Point, 0.0))));
+			}
+			return Points;
+		};
+		const TArray<FVector2D> PointsA = OnMap(A);
+		const TArray<FVector2D> PointsB = OnMap(B);
+		double Nearest = TNumericLimits<double>::Max();
+		for (const FVector2D& PointA : PointsA)
+		{
+			for (const FVector2D& PointB : PointsB)
+			{
+				Nearest = FMath::Min(Nearest, FVector2D::DistSquared(PointA, PointB));
+			}
+		}
+		return FMath::Sqrt(Nearest);
 	}
 
 	/** The sea disc: flat rings around its center, which the sea material bends onto the planet. */
@@ -647,12 +674,13 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 		{
 			continue;
 		}
-		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s: %s to %s, %.0f m on the planet, %.0f m on the map"), Planet->Name, *Island.Name, *Other.Island.ToString(),
-			Apart / 100.0, OnMap / 100.0);
-		if (OnMap < Other.Reach + Entry.Reach)
+		const double Coasts = CoastGap(Entry, Other, Radius);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s: %s to %s, %.0f m on the planet, %.0f m on the map, %.0f m of sea between their coasts"), Planet->Name,
+			*Island.Name, *Other.Island.ToString(), Apart / 100.0, OnMap / 100.0, Coasts / 100.0);
+		if (Coasts < ReachMargin)
 		{
-			Context.Warn(FString::Printf(TEXT("Planet %s: %s and %s are %.0f m apart on the map, they overlap (%.0f and %.0f m)"),
-				Planet->Name, *Island.Name, *Other.Island.ToString(), OnMap / 100.0, Entry.Reach / 100.0, Other.Reach / 100.0));
+			Context.Warn(FString::Printf(TEXT("Planet %s: %s and %s are %.0f m apart on the map, their coasts only %.0f m (under %.0f m)"),
+				Planet->Name, *Island.Name, *Other.Island.ToString(), OnMap / 100.0, Coasts / 100.0, ReachMargin / 100.0));
 		}
 	}
 	// The island's coastline and sea changed: every opened island's sea level, which leaves it dry.
