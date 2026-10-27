@@ -573,7 +573,8 @@ How it holds together (the world is flat and still; only the view is round):
   when no cut along the world's axes fits (islands close together diagonally). Twinsun: Citadel at latitude 53.5,
   longitude -141.2, heading 2 (its painting's: 0.69 of overlap, mirrored 0.59; its sun's would be -14.9), about halfway
   from the pole (183 m) to the belt's shore (400 m there); the desert island at 84.2, -9.6, 29 m from the pole, heading
-  -74.7 (its sun's: its painting, smeared over the pole, fits as well either way round). The painted islands are
+  -20, its racetrack facing the tip of Citadel's lighthouse spit as on the holomap (also its painting's best fit, 0.76
+  of overlap; its sun's -74.7 fits at 0.63), 33 m of sea between their coasts. The painted islands are
   0.86 (Citadel) and 1.15 (the desert) times the real ones on a 287 m planet. `Tools/dump_planet.py` (in the
   editor) then `Tools/holomap_fit.py` lay the holomap's texture on the flat map with the placed coastlines and fit
   each island to its painting (`Saved/LookDev/holomap`).

@@ -38,8 +38,10 @@ namespace
 		float SkyLightGain = 1.f;
 		/**
 		 * Its heading on the planet, from its painting on the holomap's globe (Tools/holomap_fit.py fits its coastline
-		 * to it; Citadel: 2 degrees, 0.69 of overlap, mirrored worse). Unset: turned so its level's sun is the
-		 * planet's (the desert: its painting is smeared over the pole and fits as well either way round).
+		 * to it; Citadel: 2 degrees, 0.69 of overlap, mirrored worse). The desert's painting is smeared over the pole
+		 * and fits loosely, but on the holomap its racetrack faces the tip of Citadel's lighthouse spit: -20 degrees
+		 * aims the racetrack (scene 57's start) there and is also its best fit to the painting (0.76 at 1.75x, the
+		 * sun's -74.7 degrees 0.63). Unset: turned so its level's sun is the planet's.
 		 */
 		TOptional<double> Heading;
 	};
@@ -65,7 +67,7 @@ namespace
 		// 100 m around the camera: the island under it stays flat.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 28700.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f } }, true },
+			{ TEXT("TWINSUN"), 28700.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0 } }, true },
 		};
 		return Presets;
 	}
