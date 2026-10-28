@@ -189,6 +189,7 @@ FLBAEnvironmentPreset FLBAEnvironmentPreset::Interior()
 	FLBAEnvironmentPreset Preset;
 	Preset.SunIntensity = 2.4f;
 	Preset.SkyLightIntensity = 2.4f;
+	Preset.bUnderRoof = true;
 	// Lamps are lit: a warm pool around each, furniture casting shadows in it.
 	Preset.RemakeLamps.Light = 0.1f;
 	Preset.RemakeLamps.Radius = 600.f;
@@ -629,7 +630,7 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 	UExponentialHeightFogComponent* FogComponent = nullptr;
 	if (Preset.FogVisibility > 0.f)
 	{
-		if (AExponentialHeightFog* Fog = Context.SpawnGeneratedActor<AExponentialHeightFog>(World, FTransform::Identity, TEXT("HeightFog"), Folder))
+		if (AExponentialHeightFog* Fog = Context.SpawnGeneratedActor<AExponentialHeightFog>(World, FTransform(FVector(0.0, 0.0, Preset.HeightFogZ)), TEXT("HeightFog"), Folder))
 		{
 			FogComponent = Fog->GetComponent();
 			// Transmittance at sea level is exp2(-Density * ln 2 * Distance), Density being FogDensity / 1000 per cm.
@@ -638,9 +639,9 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 			FogComponent->SetStartDistance(Preset.HeightFogStart);
 			FogComponent->SetFogInscatteringColor(Preset.HeightFogColor.Get(Preset.FogColor));
 			FogComponent->SkyAtmosphereAmbientContributionColorScale = FLinearColor::Black;
-			// No sun glow in an overcast sky's fog.
-			FogComponent->SetDirectionalInscatteringColor(Preset.bOvercast ? FLinearColor::Black : Preset.SunColor);
-			FogComponent->SetVolumetricFog(true);
+			// No sun glow in an overcast sky's fog, nor under a roof.
+			FogComponent->SetDirectionalInscatteringColor(Preset.bOvercast || Preset.bUnderRoof ? FLinearColor::Black : Preset.SunColor);
+			FogComponent->SetVolumetricFog(!Preset.bUnderRoof);
 			FogComponent->SetVolumetricFogStartDistance(Preset.HeightFogStart);
 			FogComponent->SetVolumetricFogDistance(Preset.HeightFogStart + FMath::Min(VolumetricFogDistance, 2.f * Preset.FogVisibility));
 			FogComponent->SetVolumetricFogScatteringDistribution(0.6f);

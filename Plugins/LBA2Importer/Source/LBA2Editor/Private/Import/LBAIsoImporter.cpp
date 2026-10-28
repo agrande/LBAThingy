@@ -429,8 +429,16 @@ namespace
 		int32 Count = 0;
 		TArray<bool> Done;
 		Done.Init(false, FinishTileBricks * FinishTileBricks);
-		// Each row's usable bricks along its layout: an opaque wall face at least half as bright as the row's brightest
-		// (the shadowed sides a rock layout draws read as black stripes once repeated).
+		auto ArtPixel = [&Atlas](const FFaceArt& Art, int32 U, int32 V)
+		{
+			const FVector2f UV = ArtUV(Atlas, Art, (U + 0.5f) / FaceW, 1.f - (V + 0.5f) / FaceH, 0.f);
+			const int32 SX = FMath::Clamp(FMath::FloorToInt(UV.X * Atlas.Width), 0, Atlas.Width - 1);
+			const int32 SY = FMath::Clamp(FMath::FloorToInt(UV.Y * Atlas.Height), 0, Atlas.Height - 1);
+			return Atlas.Pixels.IsValidIndex(SY * Atlas.Width + SX) ? Atlas.Pixels[SY * Atlas.Width + SX] : FColor::Black;
+		};
+		// Each row's usable bricks along its layout: an opaque wall face whose art is at least half as bright as the row's
+		// brightest (the shadowed sides a rock layout draws read as black stripes once repeated; their face colors can
+		// still be bright).
 		TMap<FIntPoint, TArray<FFaceArt>> Usable;
 		for (const FIntPoint& Row : Finish.Rows)
 		{
@@ -441,10 +449,16 @@ namespace
 			{
 				const int32 Brick = LayoutBrickAt(Library, ForbiddenBrick, Row, FIntPoint(K, K));
 				const FFaceArt Art = WallFaceArt(Atlas, Brick, 0);
-				const TStaticArray<FColor, 3>* Colors = Atlas.FaceColors.Find(Brick);
-				if (Art.Cell && Colors)
+				if (Art.Cell)
 				{
-					const float Luminance = FLinearColor((*Colors)[ColorSlotOf(FrontFaceOf(Art.Face))]).GetLuminance();
+					float Luminance = 0.f;
+					for (int32 V = 0; V < FaceH; ++V)
+					{
+						for (int32 U = 0; U < FaceW; ++U)
+						{
+							Luminance += FLinearColor(ArtPixel(Art, U, V)).GetLuminance() / (FaceW * FaceH);
+						}
+					}
 					Bricks.Add(TPair<FFaceArt, float>(Art, Luminance));
 					Brightest = FMath::Max(Brightest, Luminance);
 				}
@@ -458,30 +472,32 @@ namespace
 				}
 			}
 		}
+		// Each row's bricks in their order, shifted along by a random amount, never by its previous row's: the same sequence
+		// in every row lined identical bricks up into vertical stripes, and a steady shift would line them up diagonally.
+		FRandomStream Stream(FinishTileBricks);
+		int32 Shift = 0;
 		for (int32 J = 0; J < FinishTileBricks; ++J)
 		{
+			// The row at this height, else any row with usable bricks.
+			const TArray<FFaceArt>* Bricks = Usable.Find(Finish.RowAt(J));
+			for (const TPair<FIntPoint, TArray<FFaceArt>>& Pair : Usable)
+			{
+				Bricks = Bricks && Bricks->Num() > 0 ? Bricks : &Pair.Value;
+			}
+			if (!Bricks || Bricks->Num() == 0)
+			{
+				continue;
+			}
+			Shift += Bricks->Num() > 1 ? 1 + Stream.RandHelper(Bricks->Num() - 1) : 0;
 			for (int32 I = 0; I < FinishTileBricks; ++I)
 			{
-				// The row at this height, else any row with usable bricks.
-				const TArray<FFaceArt>* Bricks = Usable.Find(Finish.RowAt(J));
-				for (const TPair<FIntPoint, TArray<FFaceArt>>& Pair : Usable)
-				{
-					Bricks = Bricks && Bricks->Num() > 0 ? Bricks : &Pair.Value;
-				}
-				if (!Bricks || Bricks->Num() == 0)
-				{
-					continue;
-				}
-				const FFaceArt Art = (*Bricks)[I % Bricks->Num()];
+				const FFaceArt Art = (*Bricks)[(I + Shift) % Bricks->Num()];
 				Done[J * FinishTileBricks + I] = true;
 				for (int32 V = 0; V < FaceH; ++V)
 				{
 					for (int32 U = 0; U < FaceW; ++U)
 					{
-						const FVector2f UV = ArtUV(Atlas, Art, (U + 0.5f) / FaceW, 1.f - (V + 0.5f) / FaceH, 0.f);
-						const int32 SX = FMath::Clamp(FMath::FloorToInt(UV.X * Atlas.Width), 0, Atlas.Width - 1);
-						const int32 SY = FMath::Clamp(FMath::FloorToInt(UV.Y * Atlas.Height), 0, Atlas.Height - 1);
-						FColor Color = Atlas.Pixels.IsValidIndex(SY * Atlas.Width + SX) ? Atlas.Pixels[SY * Atlas.Width + SX] : FColor::Black;
+						FColor Color = ArtPixel(Art, U, V);
 						Color = FColor(FMath::Lerp(Color.R, Toward.R, Amount), FMath::Lerp(Color.G, Toward.G, Amount), FMath::Lerp(Color.B, Toward.B, Amount), 255);
 						Pixels[(J * FaceH + V) * OutWidth + I * FaceW + U] = Color;
 						Sum += FLinearColor(Color);
@@ -2028,6 +2044,10 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		FLinearColor Floor = FLinearColor::Black;
 	};
 	TArray<FRoomBox> RoomBoxes;
+	// A hollow's canyons fill with mist up to its lowest ledge's ground (cells; none without a canyon), in the hue of its
+	// rock (its finish's mean color).
+	TOptional<int32> MistTop;
+	FLinearColor MistHue = FLinearColor::White;
 	// The frames of the cut walls that the enclosure replaces: off the grid's mesh, in a mesh of their own.
 	TSet<FIntVector> RemovedFrames;
 	// The grid's faces the enclosure covers (cell, face index): off its mesh, with the frames for the Original look.
@@ -2138,6 +2158,14 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				}
 				FFileHelper::SaveArrayToFile(Image, *(FPaths::ProjectSavedDir() / TEXT("LookDev/enclosure/tiles") / (Name + TEXT(".ppm"))));
 			}
+			if (!bRoof)
+			{
+				MistHue = FLinearColor::Black;
+				for (const FColor& Pixel : Pixels)
+				{
+					MistHue += FLinearColor::FromSRGBColor(Pixel) / float(Pixels.Num());
+				}
+			}
 			UTexture2D* Texture = Context.CreateTexture(EnclosureFolder, Name, Width, Height, Pixels, true);
 			UMaterialInterface* Result = Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Texture, EnclosureFolder);
 			// Shaded by the vertex alpha: a canyon falls into darkness (EmitHollowWalls, its floor).
@@ -2227,6 +2255,10 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 					}
 				}
 				Box.Floor /= float(FMath::Max(FloorCount, 1));
+				for (const FLBAHollow::FLedge& Ledge : Hollow.GetLedges())
+				{
+					MistTop = FMath::Min(MistTop.Get(Ledge.Ground), Ledge.Ground);
+				}
 				// Over the canyons too: their roof and the top of their far side catch the light, their depths stay dark.
 				for (int32 Z = -FLBAHollow::Margin; Z < FLBARoomPlan::SizeXZ + FLBAHollow::Margin; ++Z)
 				{
@@ -2648,7 +2680,21 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 			Actor->Tags.Add(TEXT("LBAEnclosureFrames"));
 		}
 	}
-	const FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::Interior();
+	FLBAEnvironmentPreset Preset = FLBAEnvironmentPreset::Interior();
+	if (MistTop.IsSet())
+	{
+		// Mist in the canyons: thin at the ledges (a haze across the hall), thickening with the depth (halving every
+		// MistHalving cells up), lighter than the rock, so that the far side pales with its distance and the depths fade
+		// into the mist instead of into black. As dark as the rock, it hid the far side like a curtain. The enhanced look's
+		// contrast curve darkens it (0.06 shows as about 0.012).
+		constexpr float MistVisibility = 30000.f;
+		constexpr float MistHalving = 12.f;
+		constexpr float MistLuminance = 0.1f;
+		Preset.HeightFogZ = CornerPos(0.f, float(*MistTop), 0.f, Scale).Z;
+		Preset.FogVisibility = MistVisibility;
+		Preset.FogHeightFalloff = 1000.f / (MistHalving * LBA::BrickSizeY * Scale);
+		Preset.FogColor = MistHue * (MistLuminance / FMath::Max(MistHue.GetLuminance(), 1e-3f));
+	}
 	for (const FLBARemakeAssets::FPlacement& Placement : Remade.Placements)
 	{
 		// Models of the frames the enclosure removed (the remake's wooden rims of the cut walls) go with the frames.

@@ -111,6 +111,13 @@ struct FLBAEnvironmentPreset
 	float FogVisibility = 0.f;
 	float FogHeightFalloff = 0.5f;
 	TOptional<FLinearColor> HeightFogColor;
+	/** Height (cm) of the height fog's "sea level": FogVisibility holds there, the fog thickens below it. */
+	float HeightFogZ = 0.f;
+	/**
+	 * Under a roof (interiors): the sun only stands for the light from overhead, through the roofs. The height fog gets
+	 * no glow towards it, and no volumetric fog (the sun would light it through the roofs).
+	 */
+	bool bUnderRoof = false;
 
 	/**
 	 * Rain (both looks), 0 for none: NS_LBA_Rain keeps Rain * 18000 drops in view, with the original's wind slant (70% of
