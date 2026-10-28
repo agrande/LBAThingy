@@ -61,13 +61,13 @@ namespace
 
 	const TArray<FPlanetPreset>& GetPresets()
 	{
-		// Twinsun at 287 m (2026-10-27, was 400 m, 650 m, 750 m, before that 2 km): half the sea of 400 m inside the
-		// Hamalayi belt. Citadel island (its sunny variant) and the desert island where the holomap has them, 203 m
-		// apart (27 m of sea between their coasts), Citadel about halfway from the desert at the pole to the belt. Flat
-		// 100 m around the camera: the island under it stays flat.
+		// Twinsun at 320 m (2026-10-28, was 287 m, 400 m, 650 m, 750 m, before that 2 km): the holomap's size, where
+		// Citadel island is as big as painted on its globe (the same land area; holomap_fit.py). Citadel island (its
+		// sunny variant) and the desert island where the holomap has them, 226 m apart, Citadel about halfway from the
+		// desert at the pole to the belt. Flat 100 m around the camera: the island under it stays flat.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 28700.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0 } }, true },
+			{ TEXT("TWINSUN"), 32000.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0 } }, true },
 		};
 		return Presets;
 	}

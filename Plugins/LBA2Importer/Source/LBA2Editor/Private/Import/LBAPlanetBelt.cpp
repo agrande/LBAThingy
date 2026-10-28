@@ -25,13 +25,17 @@ namespace
 	constexpr int32 TextureSize = 256;
 
 	/**
-	 * The cross-section (cm on the planet), from the shore facing the islands: a skirt under the sea, the flank up to
+	 * The cross-section (cm on the planet), from the shore facing the islands: a skirt under the sea, a pale shelf in
+	 * shallow water before the shore (the holomap's light cyan band between the belt and the deep sea), the flank up to
 	 * FlankTop (walkable, a landing place), the cliff band up to CliffTop (68 degrees: steeper than Twinsen walks), snow
 	 * slopes up to the crest, and the far side down into the other hemisphere's sea. Low mountains (2026-10-27, user:
 	 * 25 to 30 m, no more): the Dinofly flies over them; only walking, sailing and swimming stop there.
 	 */
 	constexpr double SkirtWidth = 1000.0;
 	constexpr double SkirtDepth = 800.0;
+	/** The shelf: this wide on average (its edge wanders), shallow most of the way out, this deep at its edge. */
+	constexpr double ShelfWidth = 2400.0;
+	constexpr double ShelfDepth = 250.0;
 	constexpr double FlankTop = 600.0;
 	constexpr double CliffTop = 1600.0;
 	constexpr double CliffRun = 400.0;
@@ -56,7 +60,7 @@ namespace
 	constexpr int32 BeltColumns = 2048;
 	constexpr int32 Sectors = 32;
 
-	enum class EPart : uint8 { Skirt, Flank, Cliff, Upslope, FarSide };
+	enum class EPart : uint8 { Skirt, Shelf, Flank, Cliff, Upslope, FarSide };
 
 	struct FRow
 	{
@@ -67,7 +71,7 @@ namespace
 	/** Rows across the belt: each part's share, the same at every column so cliffs keep their rows. */
 	TArray<FRow> MakeRows()
 	{
-		const TPair<EPart, int32> Parts[] = { { EPart::Skirt, 3 }, { EPart::Flank, 10 }, { EPart::Cliff, 8 }, { EPart::Upslope, 14 }, { EPart::FarSide, 14 } };
+		const TPair<EPart, int32> Parts[] = { { EPart::Skirt, 3 }, { EPart::Shelf, 6 }, { EPart::Flank, 10 }, { EPart::Cliff, 8 }, { EPart::Upslope, 14 }, { EPart::FarSide, 14 } };
 		TArray<FRow> Rows;
 		for (const TPair<EPart, int32>& Part : Parts)
 		{
@@ -85,6 +89,8 @@ namespace
 	{
 		/** The shore facing the islands, from the pole. */
 		double Shore = 0.0;
+		/** The shelf out from the shore. */
+		double Shelf = 0.0;
 		/** Shore to the cliff's foot, the cliff's top to the crest, the crest to the far shore. */
 		double Flank = 0.0;
 		double Upslope = 0.0;
@@ -282,6 +288,7 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 		Profile.Shore = SampleAround(Shores, TexturePosition);
 		const double Along = Profile.Shore * FMath::DegreesToRadians(Longitude);
 		Profile.Shore += 600.0 * Noise1D(Along / 4000.0) + 250.0 * Noise1D(Along / 1300.0 + 17.3);
+		Profile.Shelf = ShelfWidth * (1.0 + 0.45 * Noise1D(Along / 3000.0 + 41.7) + 0.2 * Noise1D(Along / 700.0 + 3.9));
 		Profile.Flank = SampleAround(Flanks, TexturePosition);
 		Profile.Upslope = SampleAround(Upslopes, TexturePosition);
 		Profile.FarSide = SampleAround(FarSides, TexturePosition);
@@ -308,7 +315,8 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 			double S = 0.0;
 			switch (Rows[Row].Part)
 			{
-			case EPart::Skirt: S = -SkirtWidth * (1.0 - T); break;
+			case EPart::Skirt: S = -Profile.Shelf - SkirtWidth * (1.0 - T); break;
+			case EPart::Shelf: S = -Profile.Shelf * (1.0 - T); break;
 			case EPart::Flank: S = CliffFoot * T; break;
 			case EPart::Cliff: S = CliffFoot + CliffRun * T; break;
 			case EPart::Upslope: S = CliffFoot + CliffRun + Profile.Upslope * T; break;
@@ -326,7 +334,10 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 			switch (Rows[Row].Part)
 			{
 			case EPart::Skirt:
-				Height = -SkirtDepth * (1.0 - T);
+				Height = -FMath::Lerp(ShelfDepth, SkirtDepth, 1.0 - T);
+				break;
+			case EPart::Shelf:
+				Height = -30.0 - (ShelfDepth - 30.0) * FMath::Square(1.0 - T) + 20.0 * Noise2D(Map / 900.0 + FVector2D(1.3, 6.6)) * FMath::Sin(T * UE_DOUBLE_PI);
 				break;
 			case EPart::Flank:
 				Height = FlankTop * FMath::Pow(T, 1.6) + 60.0 * Noise2D(Map / 2500.0) * FMath::Sin(T * UE_DOUBLE_PI);
@@ -359,13 +370,15 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 		}
 	}
 
-	// Colors: ice and rock on the flank (sand at the water), rock on the cliffs and anything steep (brown on the far
-	// side, like the holomap's), snow where it is high and not too steep.
-	const FLinearColor ShoreColor = Srgb(126, 118, 102);
-	const FLinearColor FlankColor = Srgb(138, 160, 168);
-	const FLinearColor RockColor = Srgb(96, 92, 90);
+	// Colors, the holomap's (HOLOMAP.HQR texture in RESS palette 0): the side facing the islands is all ice, blue-white,
+	// no bare rock; pale ice under the shallow water, light blue ice on the flank, deeper blue ice on the cliffs and
+	// anything steep, white and blue-white snow where it is high and not too steep; brown rock on the far side.
+	const FLinearColor ShelfColor = Srgb(176, 222, 204);
+	const FLinearColor FlankColor = Srgb(170, 190, 200);
+	const FLinearColor RockColor = Srgb(86, 122, 146);
 	const FLinearColor FarRockColor = Srgb(131, 103, 55);
 	const FLinearColor SnowColor = Srgb(232, 238, 246);
+	const FLinearColor SnowShadeColor = Srgb(196, 216, 230);
 	auto VertexAt = [&](const FVector& Pivot, int32 Column, int32 Row)
 	{
 		const FVector& Point = Points[PointIndex(Column, Row)];
@@ -374,10 +387,11 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 		const double Slope = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Normal.Z, -1.0, 1.0)));
 		const double Steep = FMath::SmoothStep(38.0, 55.0, Slope);
 		const double Snow = FMath::SmoothStep(CliffTop - 800.0, CliffTop + 400.0, Point.Z) * (1.0 - Steep);
-		const bool bLow = Part == EPart::Skirt || Part == EPart::Flank;
+		const bool bLow = Part == EPart::Skirt || Part == EPart::Shelf || Part == EPart::Flank;
 		FLinearColor Color = bLow ? FMath::Lerp(FlankColor, RockColor, float(Steep)) : Part == EPart::FarSide ? FarRockColor : RockColor;
-		Color = FMath::Lerp(ShoreColor, Color, float(FMath::Clamp(Point.Z / 200.0, 0.0, 1.0)));
-		Color = FMath::Lerp(Color, SnowColor, float(Snow));
+		Color = FMath::Lerp(ShelfColor, Color, float(FMath::Clamp(Point.Z / 100.0 + 1.0, 0.0, 1.0)));
+		const FLinearColor Snowfield = FMath::Lerp(SnowShadeColor, SnowColor, float(FMath::SmoothStep(-0.2, 0.3, Noise2D(FVector2D(Point) / 2600.0 + FVector2D(8.2, 1.4)))));
+		Color = FMath::Lerp(Color, Snowfield, float(Snow));
 		Color *= float(0.92 + 0.08 * Noise2D(FVector2D(Point) / 1800.0 + FVector2D(3.7, 9.1)));
 		FLBAVertex Vertex;
 		Vertex.Position = FVector3f(Point - Pivot);

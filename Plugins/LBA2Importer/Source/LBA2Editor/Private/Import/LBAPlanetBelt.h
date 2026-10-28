@@ -15,8 +15,8 @@ class UWorld;
  * longitude along U, latitude -90 to 90 along V) gives, at each longitude, the belt's shore facing the islands (where
  * the dark sea starts), the foot of its snow (the cliff band) and its far edge; its altitudes (HQR_TWINSUN_HMT, 17
  * latitudes x 32 longitudes) say where the crest is higher or lower (the latitudes 0 and -11.25, the higher), from 20 m
- * at its lowest to 30 m at its highest; a third as wide as the holomap's band. Twinsun at 287 m: the shore 380 to
- * 465 m from the pole.
+ * at its lowest to 30 m at its highest; a third as wide as the holomap's band. Twinsun at 320 m: the shore 424 to
+ * 513 m from the pole.
  *
  * Output under the planet's folder: SM_LBA_Belt_<PLANET>_NN (a sector per 11.25 degrees of longitude, vertex colored
  * with M_LBA_Color, collision from its triangles) and L_<PLANET>_Belt, their actors laid on the map (pole at the
