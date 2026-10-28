@@ -358,6 +358,34 @@ FLBAHollow::FLBAHollow(const FLBAGridCells& Cells, const FSettings& InSettings, 
 		}
 		return bAny;
 	};
+	// A pillar layout with a railing near it (or under it: a curb), rising over the railing by one post at most: a fence's post
+	// (the Temple of Bu's urns on the corners of its walkways, on pedestals or not, its dark posts where a fence turns). A
+	// column going on up to the roof with spikes at its foot is a pillar.
+	auto IsFencePost = [&](const FIntPoint& Column)
+	{
+		const int32 Top = DrawnTops[ToColumnIndex(Column)];
+		if (Top == INDEX_NONE || !Settings.PillarLayouts.Contains(Cells.Layout(Column.X, Top, Column.Y)))
+		{
+			return false;
+		}
+		int32 RailingTop = INDEX_NONE;
+		for (int32 DX = -FencePostReach; DX <= FencePostReach; ++DX)
+		{
+			for (int32 DZ = -FencePostReach; DZ <= FencePostReach; ++DZ)
+			{
+				const FIntPoint Near = Column + FIntPoint(DX, DZ);
+				for (int32 Y = DrawnBottoms[ToColumnIndex(Column)]; Y <= Top && IsInGrid(Near); ++Y)
+				{
+					const int32 Brick = Cells.Brick(Near.X, Y, Near.Y);
+					if (Brick != 0 && Cells.HasArt(Brick) && Settings.RailingLayouts.Contains(Cells.Layout(Near.X, Y, Near.Y)))
+					{
+						RailingTop = FMath::Max(RailingTop, Y);
+					}
+				}
+			}
+		}
+		return RailingTop != INDEX_NONE && Top <= RailingTop + FencePostRise;
+	};
 	for (int32 Index = 0; Index < NumColumns; ++Index)
 	{
 		const FIntPoint Column(Index % SizeXZ, Index / SizeXZ);
@@ -469,8 +497,8 @@ FLBAHollow::FLBAHollow(const FLBAGridCells& Cells, const FSettings& InSettings, 
 			}
 		}
 		GridSprings[Index] = (Count > 0 ? Sum / Count : 0.f) + Settings.Clear;
-		// Railings hold nothing: the roof springs over them (and over its bumps).
-		if (InHollow[Index] && DrawnTops[Index] != INDEX_NONE && IsRailing(Column, FMath::RoundToInt(Highest[Index])))
+		// Railings and their posts hold nothing: the roof springs over them (and over its bumps).
+		if (InHollow[Index] && DrawnTops[Index] != INDEX_NONE && (IsRailing(Column, FMath::RoundToInt(Highest[Index])) || IsFencePost(Column)))
 		{
 			GridSprings[Index] = FMath::Max(GridSprings[Index], DrawnTops[Index] + 1.f + Settings.Shape.Noise);
 		}
@@ -494,7 +522,8 @@ FLBAHollow::FLBAHollow(const FLBAGridCells& Cells, const FSettings& InSettings, 
 			const int32 Index = ToColumnIndex(Column);
 			const int32 Top = DrawnTops[Index];
 			return InHollow[Index] && Floors[Index] == INDEX_NONE && Top != INDEX_NONE && Highest[Index] >= 0.f
-				&& Settings.PillarLayouts.Contains(Cells.Layout(Column.X, Top, Column.Y)) && Top - Highest[Index] >= PillarMin;
+				&& Settings.PillarLayouts.Contains(Cells.Layout(Column.X, Top, Column.Y)) && Top - Highest[Index] >= PillarMin
+				&& !IsFencePost(Column);
 		};
 		TBitArray<> Visited(false, NumColumns);
 		for (int32 Index = 0; Index < NumColumns; ++Index)
@@ -556,7 +585,7 @@ FLBAHollow::FLBAHollow(const FLBAGridCells& Cells, const FSettings& InSettings, 
 	{
 		const FIntPoint Column(Index % SizeXZ, Index / SizeXZ);
 		if (!InHollow[Index] || FloorColumns[Index] || DrawnTops[Index] == INDEX_NONE || PillarColumns[Index]
-			|| IsRailing(Column, FMath::RoundToInt(Highest[Index])))
+			|| IsRailing(Column, FMath::RoundToInt(Highest[Index])) || IsFencePost(Column))
 		{
 			continue;
 		}

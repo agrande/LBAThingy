@@ -1,6 +1,6 @@
 Grid 128 L_Grid_128_ProtectionSpellCaveMonsterRoom, library 3: hollow, not enclosed, room height 6, door height 7
 hollow 689 columns (613 with floor), 9 supports, 680 under the roof; spring 6.0-20.6, roof up to 28.2
-0 ledge edges, canyon 0 columns; 2 pillars, 1 arches
+0 ledge edges, canyon 0 columns; 0 pillars, 0 arches
 Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
@@ -21,7 +21,7 @@ z27           S5555555555555_00000
 z28          SS__55555555555_00000
 z29         eSS__55555555555_00000
 z30        _e__5555555555555_000000
-z31       eeeee____55555P555P0000_
+z31       eeeee____55555_555_0000_
 z32       eeeeeedcb55555_22220000_
 z33       eeeeeedcb55555_22220000_
 z34      Seeeeeedcb55555_222200000
@@ -57,18 +57,18 @@ z21            efhhiijjiiiiihfeeca
 z22            efhhhijjiiiiiigfeda
 z23            fhiihhiiijjjihgffda
 z24            fhiiiiiiijjjihgffda
-z25            fgijjjjjiiiiijgffdb9
-z26            ghjjkjjjihiihlgffdb9
-z27           Shikkjjjiiihhhkgfeda
-z28          SSiklljjjiihhhhjgfeda
-z29         lSSjmmmkkjihhhhgifedb9
-z30        mmlklnmmlkjhgffgfgeedba9
-z31       nnpoooonmlkjhfdfgedeeec9
-z32       npqqqqponmljiggfgfeeeec9
-z33       npqrrrqpnmljihiggffffec9
-z34      Snpqrrrqpomljihjgggffeec9
-z35     nnopqqqqponlkihgggggfeddc9
-z36 nnnnnqqqrqpponmljihgfffffedca9
+z25            fgijjjjjiijjijgffdb9
+z26            ghjjkkkjihiiimgffdb9
+z27           Shikkjjkkiihhilgfeda
+z28          SSiklljjkkjihhilgfeda
+z29         lSSjmmmkkjjkjihimgedb9
+z30        mmlklnmmlkjjkjiiimgedba9
+z31       nnpoooonmllkjjmjihmgfec9
+z32       npqqqqponmlkjjljihggfec9
+z33       npqrrrqponmkjikiiihgfec9
+z34      Snpqrrrqponmjihkhhhhfeec9
+z35     nnopqqqqponmlihgggggfeddc9
+z36 nnnnnqqqrqpponmlkihgfffffedca9
 z37 noopprrqqqppnlkjiihgfeeeddcc9
 z38 nopqqrsrrqponkjihhhgfedddcba9
 z39 nopqrrrrrqonlkihggggfdddcb99

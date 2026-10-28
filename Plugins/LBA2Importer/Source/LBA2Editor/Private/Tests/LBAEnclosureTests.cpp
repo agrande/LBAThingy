@@ -252,19 +252,34 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLBAEnclosurePillarTest, "LBA2.Enclosure.Hollow
 bool FLBAEnclosurePillarTest::RunTest(const FString& Parameters)
 {
 	// Two pillars 8 cells high, 8 columns apart, in a wide cave: the roof comes down onto their tops, and an arch between
-	// them is lower than the crown beside it. A rock post as high is no pillar (not a pillar layout).
+	// them is lower than the crown beside it. A rock post as high is no pillar (not a pillar layout), nor is a pillar layout
+	// a railing runs into (a fence's post), even a high one on a pedestal: it holds nothing, the roof springs over it.
 	FTestGrid Grid;
 	Grid.Cave(FIntPoint(10, 10), FIntPoint(39, 39), 3);
 	Grid.Fill(FIntVector(20, 1, 25), FIntVector(20, 8, 25), Pillar);
 	Grid.Fill(FIntVector(28, 1, 25), FIntVector(28, 8, 25), Pillar);
 	Grid.Fill(FIntVector(24, 1, 16), FIntVector(24, 8, 16), Rock);
+	Grid.Fill(FIntVector(33, 1, 33), FIntVector(33, 8, 33), Pillar);
+	Grid.Fill(FIntVector(34, 1, 33), FIntVector(36, 3, 33), Railing);
+	Grid.Fill(FIntVector(14, 1, 33), FIntVector(14, 4, 33), Rock);
+	Grid.Fill(FIntVector(14, 5, 33), FIntVector(14, 11, 33), Pillar);
+	Grid.Fill(FIntVector(15, 1, 33), FIntVector(17, 3, 33), Railing);
+	// A column going on far over the spikes at its foot is a pillar.
+	Grid.Fill(FIntVector(14, 1, 14), FIntVector(14, 20, 14), Pillar);
+	Grid.Fill(FIntVector(15, 1, 14), FIntVector(15, 1, 14), Railing);
 	FLBAHollow::FSettings Settings = CaveSettings();
 	Settings.PillarLayouts = { Pillar };
+	Settings.RailingLayouts = { Railing };
 	const FLBAHollow Hollow(Grid.Cells(), Settings);
-	TestEqual(TEXT("pillars"), Hollow.GetPillars().Num(), 2);
+	TestEqual(TEXT("pillars"), Hollow.GetPillars().Num(), 3);
+	TestTrue(TEXT("the column over the spikes"), Hollow.IsPillar(FIntPoint(14, 14)));
 	TestEqual(TEXT("arches"), Hollow.GetArches().Num(), 1);
 	TestTrue(TEXT("a pillar"), Hollow.IsPillar(FIntPoint(20, 25)));
 	TestFalse(TEXT("the rock post is no pillar"), Hollow.IsPillar(FIntPoint(24, 16)));
+	TestFalse(TEXT("the fence's post is no pillar"), Hollow.IsPillar(FIntPoint(33, 33)));
+	TestTrue(TEXT("the roof does not come down on the fence's post"), Hollow.GetRoof(33.5f, 33.5f) > 9.f + 2.f);
+	TestTrue(TEXT("the post on a pedestal holds nothing"), Hollow.IsUnderRoof(FIntPoint(14, 33)) && !Hollow.IsPillar(FIntPoint(14, 33)));
+	TestTrue(TEXT("the roof springs over it"), Hollow.GetRoof(14.5f, 33.5f) > 12.f);
 	TestEqual(TEXT("the roof on the pillar's top"), Hollow.GetRoof(20.5f, 25.5f), 9.f, 0.01f);
 	const float Arch = Hollow.GetRoof(24.5f, 25.5f);
 	TestTrue(TEXT("the arch rises between the pillars"), Arch > 9.5f);

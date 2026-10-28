@@ -1,6 +1,6 @@
 Grid 127 L_Grid_127_ProtectionSpellCave, library 3: hollow, not enclosed, room height 6, door height 7
 hollow 1710 columns (1482 with floor), 15 supports, 1695 under the roof; spring 6.0-27.4, roof up to 34.9
-0 ledge edges, canyon 0 columns; 3 pillars, 0 arches
+0 ledge edges, canyon 0 columns; 2 pillars, 0 arches
 Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
@@ -50,7 +50,7 @@ z40   222222222222222222_111100000000_333
 z41    S2222222222222222_000000000000_3_
 z42    S2222222222222222_000000000000_3_
 z43   222222222222222222_000000000000_3_
-z44    SS_______________P000000000000_333
+z44    SS________________000000000000_333
 z45   0000000000000000000000000000000_333
 z46   0000000000000000000000000000000_333
 z47   0000S00000000000000000000000000_3_
@@ -111,18 +111,18 @@ z34   fhhhhhhhgfeggggggggffeeheeeeeffdccb
 z35   fhhiihhhhfeeeefggggggfeheffggfffedc
 z36   eghiihhhhffeeeegggghgfeheffggffffdc
 z37   eghhhhhhhggffffffggggeeieeeffffeddc
-z38   dfggghhhhhgffffffffffeeieeeefffeddc
-z39   deeghhhhhgggghffffffefeeedddefffedc
-z40   ccdfghhhhggghfffffffeffeeeeeefffecc
-z41    Scdeggffggggffffefeeeeefeeffffedc
-z42    Sbcdffffffffffeedfdeeeeeeefggfedc
-z43   bbbbcfgeeffeeffedcdcdeeeeddfffffeb
-z44    SSbfhihhgihhihffdabdddedddeffffecc
-z45   cccdefffeeeffeeedcbcdddddddeefffedc
-z46   dffdddfffeefeeeedddddddddddeeeeeecc
-z47   effeSdeeeeeffeeedddddddeedddeeeecc
-z48   eggeSefffeeffeeeeddddeeeedeeeeeeb
-z49   gghgffghgfefffeeeddddeeeeeeffedcb
+z38   dfggghhhhhgffffffggffeeieeeefffeddc
+z39   deeghhhhhgggghhggggfefeeedddefffedc
+z40   ccdfghhhhggghhhggggfefffeeeeefffecc
+z41    Scdeggffggggggggffggfeffeeffffedc
+z42    Sbcdffffffffggggehffeeffeefggfedc
+z43   bbbbcfgeeffeefffffieeeeeeddfffffeb
+z44    SSbfhihhgihhiigijjedddedddeffffecc
+z45   cccdefffeeeffffffeeddddddddeefffedc
+z46   dffdddfffeeffffffeeddddddddeeeeeecc
+z47   effeSdeeeeeffeeeeeeddeeeedddeeeecc
+z48   eggeSefffeeffeeeeeeddeeeedeeeeeeb
+z49   gghgffghgfefffffeddddffeeeeffedcb
 z50    hijiiihgfeffeeeedddeffffeeggedcb
 z51    ijkjkjhgfeeeddddeeeeffffffggfeeb
 z52  ijkjkllkhgfeedddddeeeeffffffgggfec

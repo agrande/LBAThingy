@@ -1,6 +1,6 @@
 Grid 10 L_Grid_010_TempleOfBu, library 3: hollow, enclosed, room height 6, door height 7
-hollow 3425 columns (2752 with floor), 6 supports, 8759 under the roof; spring 7.0-24.5, roof up to 30.8
-126 ledge edges, canyon 5340 columns; 17 pillars, 13 arches
+hollow 3425 columns (2752 with floor), 5 supports, 8760 under the roof; spring 7.0-24.5, roof up to 31.9
+126 ledge edges, canyon 5340 columns; 0 pillars, 0 arches
 Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
@@ -10,46 +10,46 @@ z00                               _          ~~~~~~~~~
 z01   ffffffffffffffffffffffffffffffedcba987654321~~~   8888888
 z02  effffffffffffffffffffffffffffffedcba987654321~~~~  99999999999
 z03  effffffffffffffffffffffffffffffedcba987654321~~~__899999999999_
-z04  efffeeeeeeP__________________P_ ~~__________~~~~~_899999999999_
+z04  efffeeeeee_____________________ ~~__________~~~~~_899999999999_
 z05  efffeeeeee_888888888aa_88___8_  ~~~________~~~~~~_899988888999_
-z06   fffP_eeee_888888888aa_88___8   ~~~~_______~~~~~~_899988888999_
+z06   fff__eeee_888888888aa_88___8   ~~~~_______~~~~~~_899988888999_
 z07   fffg_eeee_8888888__998889998_~~~~~~_______~~~~~~_899988_88999_
-z08  ceeecP____P8888888__998889998_~~~~~~________~~~~~_899988888999_
+z08  ceeec______8888888__998889998_~~~~~~________~~~~~_899988888999_
 z09  cdddc__8888888888888888889998_~~~  SS________ ____899988999999_
 z10  cdddc__8888888888888888889998__~~ 4444444444448888899988999999_
 z11  cdddc_8888888888____888889998____S4555555567899999999988999999_
 z12  cdddc_8888__8888______8889998____S455555556789999999998_999188_
 z13  cdddc_8888__8888__88__8aa9998_____455555556789999999998_999188_
 z14  cdddc_8888888888__88888aa9998_____455544444444888889998_999188_
-z15   dddc_8888888888__89999999998______555P____________9998P999111
+z15   dddc_8888888888__89999999998______555_____________9998_999111
 z16   dddc_8888888888__89999999998______55555555555554_49994_9991110
 z17   dddc_8888888888__89999999998______55555555555554_48884_8881110
 z18  cdddc_88_________8_9998888888______55555555555554_47774_7771110
 z19  cdddc_88012345678999998_88888______55544444445554_46664_6661110
-z20  cdddc_88012345678999998888888______5554P___P45554445554_5551110
+z20  cdddc_88012345678999998888888______5554_____45554445554_5551110
 z21  cdddc_88012345678999998888888_____455544444445555555554_4441110
 z22   dddc_88___________9998888888_____455555555555555555554_3331110
 z23   dddc_88888888888__9998888888_____455555555555555555554_2221110
 z24   dddc_88888888888__9998888__8_____4555555555544444_5554_1111110
 z25   dddc_88888888888__9998888__8_____444444445554444445554_1111110
-z26   dddc_88888888888__9998888888____P______44555454P445554_1111110
+z26   dddc_88888888888__9998888888___________44555454_445554_1111110
 z27  cdddc_88888888888__9998888888_____8___8_44555444_445554_1111110
 z28  cdddc_88888888888__9998888888_____8___8___555444_445554_1111110
-z29  cdddc__        ____999P______P____89998___555444_445554_1111110
+z29  cdddc__        ____999____________89998___555444_445554_1111110
 z30   dddc_         ~~S89998__88888888889998___555444_445554_1111110
 z31   dddc  ~~~~~~~~~~ 89998____889999999998___555444_445554_1110000
 z32  cdddc  ~~~~~~~~~~ 8999888__889999999998___555444_445554_1110000
 z33  cdddc  ~~~~~~~~~~ 899988888889999999998___555444_445554_1110000
 z34  cdddc  ~~~~~~~~~~  99988888889998888888_44555444_445554_1110000
-z35  cdddc  ~~~~~~~~~~  999888888899988______44555444P445554_1110000
+z35  cdddc  ~~~~~~~~~~  999888888899988______44555444_445554_1110000
 z36   dddc  ~~~~~~~~~~  9998888888999_844444_445554444445554_2220000
 z37   dddc_~~~~~~~~~~~__999888888899999987655555555555555554_3330000
-z38   dddc___         S8999888888899999987655555555555555554_4440000
+z38   dddc___         _8999888888899999987655555555555555554_4440000
 z39   dddccc_88888   888999_88888899999987655555555555555554_5550000
 z40   ddddddddcba999999999999998889998844444_444444444444444_6660000
 z41   ddddddddcba9999999999999988899988______444444444444444_7770000
 z42  cddddddddcba999999999999998889998888888_444444444444444_8880000
-z43  ccccccc_8888888888888889998889998888888P_______________P9990000
+z43  ccccccc_8888888888888889998889998888888_________________9990000
 z44    _____  _____________89998889998888888__888888888888888999_
 z45   ~~~~~~~~~~~~~~~~~~~~_89998889998888888__899999999999999999888_
 z46 ~~~~~~~~~~~~~~~~~~~~~~_89999999998888888_8899999999999999999888_
@@ -57,7 +57,7 @@ z47 ~~~~~~~~~~~~~~~~~~~~~~_89999999998888888_8899999999999999999888_
 z48 ~~~~~~~~~~~~~~~~~~~~~~_89999999998888888_8899988888888888999888_
 z49 ~~~~~~~~~~~~~~~~~~~~~~_88888888888888888_8899988888888888999888_
 z50 ~~~~~~~~~~~~~~~~~~~~~~ 88888888888888888_8899988888888888999888_
-z51                         ________________P88999888_888_888999888_
+z51                         _________________88999888_888_888999888_
 z52    88__8888__88         _____________99999999988889_98888999888_
 z53  88888888888888  ~~~~~~~_____________99999999988889_98888999888_
 z54    _88888888888_ ~~~~~~______________99999999988889998888999888_
@@ -76,61 +76,61 @@ Hollow roof
 z00                               r          kmnoonmlk
 z01   ooonoooonoooooooooooooooonnnonnnmlkjihgggghipnk   hiiiiii
 z02  ooppppqqppppqqpoooppqqpppooooopqqpnmlkkjhghhipnlk  hkkllljiiii
-z03  orqqrrsrqpooqqqppqqqqqrqppqponnmmonmmlkjhhhhhonngkhiklmmlkjjkji
-z04  orqrrrrrqomprsttuutttuuutttrpnl kmnnmllkiihhooonmmkkklmnllkklkl
-z05  oprpppqqpopoppqqqqppqrqqpopoml  jmnmmljjkkioppppoollllnnmmmmmlk
-z06   orpnpqqqprppppppqooqqqpononk   jmnnkkjjkkhnooppppmmllnnmmnnmml
-z07   oqppooppopnoooooonnopoonnnmkjjjjlllihjjkjhmmmmnppmmmmmmmmnnnmm
-z08  oopqompqqpmnnnnnnnmnoonnnnnmlllljijjffhjjjhgkklmppmmmmmllmnnnnm
-z09  npqqoooponnnnnmmmmmmnnooonmmmmlkh  SSeghiihlk knoqmmnmlllmnonnn
-z10  noqqpqpponnmmmmllmmmmnnoonmmmmkkh ffeefhijihggikmmmmmmmllmmmnmn
-z11  nqqqpsponnmmmmllmmnnmnoooommmmjhfSegffghjkiijjklmnmmmmmmmmmmmnm
-z12  npqqpronnmmlllmmmmnnmnoooommmmigfSefgghijjjjklklnnmlmmlllmmmmml
-z13  mnpqosonmllkklmmllmmnnmmmmnnlkihgffghhhhijkllmllnmmmmllllllmkjj
-z14  lmoposnnmllkklmmllmmnnmmmmnnlljihhgghffghijkllllmmmmlljjjkklihh
-z15   mpqpronnmllmmllllmmmmmmmnnnnnlkiihhgfdgijkllmkkllmmlkjhjklojh
-z16   mpqquonnmllmmllllmmmmmmmmnnnnlkijhhhffghijjjkkkkllllkjjjkkjihg
-z17   mpqqtnnnmmmnnnmlllmmnnnmmnnmmlljkjihhghhiiiijkkkkllllkkkkkjihh
-z18  mnppptonnmmnnnnnlllmmnnnmmnnmmllkljiihhghhhhhijkkkllklklkkkjiih
-z19  mopppuponmmlllllmnmmmnnmmlmmmnlkjkjihhfffhffghijkkkkllllkkkkjji
-z20  mooppuponmmlkkllnnmmnnmmllmmnnlkjjjihgfdgigdfhijjkkkkkkmkkjjjjh
-z21  mmnopspoonmmklmnnnnnnnnnmmmmmmlkkjjiihfffhfffhiijjjkkkkmkjjjiih
-z22   lnoptpoonnmllmnnnnnnnnnmmmmlmlkkjjiihhhhhhhgghiiijjjjjjkjjihhh
-z23   mnoptonnnllmmmmmnnnmmmmmmmmlmkkjjjiiiiiiiiihgghiiiiiijjjjhhhhh
-z24   mnoptnnnmlklmmmmmmmmmmmmmmmlmkkkjjiijjjjjiiihgghhhiihiijihgggh
-z25   mnnnrnmmmllkkmmmmmmmmllllmllmkkjkijjkkjjjiiihhfffhhhhiiihhgggg
-z26   mnnormlmllkjjlllmlmmllllmlllllkjijkkkkkkjiiihgfdfghhhhihhgggff
-z27  lmnopqlllkkjjjijklkkllllllllkkkkjjjkkkkkjjiiihhfffhhhhijhggfeef
-z28  lnoporkjiihhhhhhkjjjlkjklllkjjkkkkkllllmjjiiiihgfghihhijhggfeef
-z29  mnoonpj        hihmjljikllllkijlllllmmllkkkjiiihghiiiiiiihgfgfe
-z30   moolo         hhShjlkjkllllkjklllmmmmlllkkjiiihghiiiiiiihgfgfe
-z31   mool  oohhhhhhih ikllllllllllllmmmmmmmmkkkjiiihghiiiihiihfffee
-z32  mmool  orrkkjjjjh ikkllllmmllllmmmmmmlmmkkkjiihhghhiiiiiihffeef
-z33  mopol  orpollllkh iijkmmmmmmmmmmmmmmmmlmkkjjiihgfghiiiiihhggeef
-z34  mopol  orpoomponk  ijkmmmmmmmmmmmmmmmmlmkjjiihgfffghiiiiihhgffg
-z35  mmpol  omnnnnnonk  hklmmlmmmmlmmmmnmmmmlkjjjihgfdfghiiiiiiggggg
-z36   moom  lmmmmmmnnk  hklmmmmnnmmmmmmnnmllmkjjjihhfffhhiiiiiiggggg
-z37   moomoolllllkkkkkkiikklmnnmmmmmmnnnnlkkkkkjiiihhggghiiikjiihhhg
-z38   mopprnl         Silklllnnmmmnmmnnnmlkkkkkjiiiiiiihhijjmjjiiiih
-z39   loqqqoqkkkjj   iiiklmllmmnnmmnnmmmmlllkkjjjiijjjiihijjlkjjjiii
-z40   loqrqponmnmkjjiijjkmmlllmnnmmnnmmmmllklkkjjijjjjjjjiijlkjjjiij
-z41   mnpqponnnonlkkjklllllmmmmonmmnnmmmmllkjjkkkjjkkkkjjjijkkjiiiii
-z42  mmnoponmmmoomllklmlllmmmmmnnmmnnmmmllkjjjjkkkkllkkkkkjijjjihhhh
-z43  llmoonmpklmnonmmllllmmnnnnmmnnmmllmllkihkmnoppppppoonmkhjjjhggg
-z44    lnonl  kmnnonmllllmmnnnnmmnnmmllmllkjkjkllllmmlllllkjjjkjh
-z45   lmoonmljklmnonmllmnmmnnmnmmnnnmllmlllklklllmmnnnmmmllkkkjjhhhh
-z46 llmoppooollmnnnmmllmmmmmmmmmmnnnnllmmllllllllmmnnnmmmmmlllkkjjii
-z47 oooppppppmmmmmlllllmlllkkklmmnnnnmlmmmllmllmmmmmmnnmmmmllmmmmmlk
-z48 qqqppppppmmmmllkkllkkjjjkkklmnnnnmlmmllllllmmmmmmnnnmmmmmmmmmnml
-z49 oopponmnnmmlklkjjjjiihhikjkmnnnnnllmmllklklmmmmnmmmoonmmmmmnnnnn
-z50 lmmmlllllkkjjihhhhhhhh hijkmnmmmmllmmlkjkjklmmmnnmmnonnnnnnnnmnn
-z51                         kmopqoooooooonmkhjklmmmnnnnmmnnnnnmnmmmm
-z52    jiihhhhhhhgg         hjlmmllllllmmlkjjjllmmmnnnnmmnnnnmmnmmlm
-z53  jjjkjjjjiijjjh  hhhhhhhhjklmmmmmmmmmlllkllmmmmnnonmmnnnnllmmmmm
-z54    jklkkkkkkkkih hjjjjiiijklmmmmmmmmmmmlllmllmmmnnnnnnnnmmlmmmmm
-z55  kkkmmmlklllljihhhjkkjkllllmmmmnnnnmmmmmmmmllmmmmmmnnmmmmmmnmmmn
+z03  orqqrssrqqqqrrqppqqqqqrqppqponnmmonmmlkjhhhhhonngkhiklmmlkjjkji
+z04  orqrsttsrqutuuutuutttuuutttsqrl kmnnmllkiihhooonmmkkklmnllkklkl
+z05  oprsstttsrtqqrrrqqppqrqqpopoml  jmnmmljjkkioppppoollllnnmmmmmlk
+z06   orrvsttsrtpqqqqqqooqqqpononk   jmnnkkjjkkhnooppppmmllnnmmnnmml
+z07   oqrrsrrqqtoppppoonnopoonnnmkjjjjlllihjjkjhmmmmnppmmmmmmmmnnnmm
+z08  oopqrvttttuoppoonnmnoonnnnnmlllljijjffhjjjhgkklmppmmmmmllmnnnnm
+z09  npqqqrrrpoonoommmmmmnnooonmmmmlkh  SSeghiihlk knoqmmnmlllmnonnn
+z10  noqqqtrqonnnnnmllmmmmnnoonmmmmkkh ffeefhijihggikmmmmnmmllmnonmn
+z11  nqqqpsponnmmmmllmmnnmnoooommmmjhfSegffghjkiijjklmnmmmmmmmmnnnnm
+z12  npqqpronnmmlllmmmmnnmnoooommmmigfSefgghikkjjklklnnmlmmnnmmmmmml
+z13  mnpqosonmllkklmmllmmnnmmmmnnlkihgffghiijkkllmmllnnmmmnnpnmlmkjj
+z14  lmoposnnmllkklmmllmmnnmmmmnnlljihhggijjjkkllmmllmnmmmnnpnmklihh
+z15   mpqpronnmllmmllllmmmmmmmnnnnnlkiihhijmlllmmmmkkllnnnnmqnmlojh
+z16   mpqquonnmllmmllllmmmmmmmmnnnnlkijhhijjjkkklklkkklmnnnmmnmkjihg
+z17   mpqqtnnnmmmnnnmlllmmnnnmmnnmmlljkjjiiiijkkkkkllkkmmllmnllkjihh
+z18  mnppptonnmmnnnnnlllmmnnnmmnnmmllkljjiiiijjkkjkllkkllklmnlkkjiih
+z19  mopppuponmmlllllmnmmmnnmmlmmmnlljkjjhhiiiikkjjkkkkkklllmllkkjji
+z20  mooppuponmmlkkllnnmmnnmmllmmnnlkjjjjhhilkkmnjjkkkkkkllkmlkkkjjh
+z21  mmnopspoonmmklmnnnnnnnnnmmmmmnlkkkjjiihijjjjiikkkkkkkkkmkkjjiih
+z22   lnoptpoonnmllmnnnnnnnnnmmmmmnlkkkkjjiiijjjjiikkjkkkjjjjkjjihhh
+z23   mnoptonnnllmmmmmnnnnnmmnmmmmnkkjjkkjjjjjiiijjjjiijjiijjjjhhhhh
+z24   mnoptnnnmlklmmmmmnnnnmmmmmmmmlkkkllkkkjjjiijkjjiiiiihiijihgggh
+z25   mnnnrnmmmllkkmmmmmmmmllllmmlmllmqlllllllkiikkkjihiihhiiihhgggg
+z26   mnnormlmllkjjlllmlmmmllmmmmlmmmmsmlmmmllkiijkkjlhiihhhihhgggff
+z27  lmnopqlllkkjjjijklkkmnnnnnnnmnnmlllllklljjiiiijjihiihhijhggfeef
+z28  lnoporkjiihhhhhhkjjjmnnnnnnnmmnnlllmlllmjjiiiijjiiiihhijhggfeef
+z29  mnoonpj        hihmjmnropoooormmllmmmmllkkkkiijjjjjjiiiiihgfgfe
+z30   moolo         hhShjmnmmmmmmmmmmllmmnmlllklkiijjjjjjjiiiihgfgfe
+z31   mool  oohhhhhhih iklmmmmmnnnnmmmmmmmmmmkkkkjjkkjjiijjhiihfffee
+z32  mmool  orrkkjjjjh ikklmmmmnnnnmmmmmmmlmmkkkjjjkkkjiijjiiihffeef
+z33  mopol  orpollllkh iijkmmmmnnnmmmmmmmmmlmkkjjiijjjjiijjiihhggeef
+z34  mopol  orpoomponk  ijkmmmmnnmmmmmmmmmmlmkjjiiijjjjiijjiiihhgffg
+z35  mmpol  omnnnnnonk  hklmmlmnnmlmmmmnmmmmlkjjjiijjmihijjjjjiggggg
+z36   moom  lmmmmmmnnk  hklmmmmnnmmmmmmnnmllmkjjjiijjiihijjkkjiggggg
+z37   moomoolllllkkkkkkiikklmnnmmmmmmnnnnlkkkkkjiiijjiiiikkkljiihhhg
+z38   mopprnl         pklklllnnmmmnmmnnnnlkkkkkjiiijjjjijkkkmjjiiiih
+z39   loqqqoqkkkjj   iiklmmllmmnnmmnnmmmmmmllkjjjiijjjjjjllkmlkjjiii
+z40   loqrqponmnmkjjiikklmmlllmnnmmnnmmmmmmmmkkjjijjjkkjjllkmlljjiij
+z41   mnpqponnnonlkkjkllllmmmmmonmmnnmmmmllmlllkkjjkklljjjklmkjiiiii
+z42  mmnoponmmmoomllklmlllmmmmmnnmmnnmmmmlllmlllkkkllllkkkklmkjihhhh
+z43  llmoonmpklmnonmmllllmmnnnnmmnnmmllmmmmmqqpppppppppooooopkjjhggg
+z44    lnonl  kmnnonmllllmmnnnnmmnnmmllmmmmmpmmllmmmmmmllllllkkjh
+z45   lmoonmljklmnonmllmnmmnnmnmmnnnmllmmmnnqmmllmmnnnnmmnnmlkjjhhhh
+z46 llmoppooollmnnnmmllmmmmmmmmmmnnnnllmmmmnqmmllmmnnnnnnnnmllkkjjii
+z47 oooppppppmmmmmlllllmlllkkklmmnnnnmlmmmmmpllmmnnmmnnnnnnllmmmmmlk
+z48 qqqppppppmmmmllkkllkkjjjkkklmnnnnmlmmmmmpllmmnnmmnnnonnmmnnnnnml
+z49 oopponmnnmmlklkjjjjiihhikjkmnnnnnllmmmmnqnnnnnnnmmmoonnnnnnnnnnn
+z50 lmmmlllllkkjjihhhhhhhh hijkmnmmmmllmmmmnqnnnnnnnnmmnonnnnnnnnmnn
+z51                         kmopqooooooopqqppmmnnnnnnnnmmnnnnnmnmmmm
+z52    jiihhhhhhhgg         hjlmmllllllmmnnmmmmnnnnnnnnmmnnnnmmnmmlm
+z53  jjjkjjjjiijjjh  hhhhhhhhjklmmmmmmmnnnnnnnnmmmmnnonmmnnnnllmmmmm
+z54    jklkkkkkkkkih hjjjjiiijklmmmmmmmnnnnoonnllmmmnnnnnnnnmmlmmmmm
+z55  kkkmmmlklllljihhhjkkjkllllmmmmnnnnmmmmnnmmllmmmmmmnnmmmmmmnmmmn
 z56 mlmmmmmmllmmlkjiiijkkkkmmllllmmnnnnmmmmmmmmllmmllmmnnmmmmnnnnmmn
-z57 nmmnmmmmmmmllkkiiklllmmmmllklmnmmmmllmmmmmmmlmmllmmnnmllmnnnnllm
+z57 nmmnmmmmmmmllkkiiklllmmmmllklmnmmmmllmmnnnnmlmmllmmnnmllmnnnnllm
 z58 mlmnnmmmmlllkkjhhiklmnnnnllllnnnmmlllmmnnnnmlmmmmmmnnmlmmnnnnllm
 z59  lnnnnmkjjjkkihh hijkmnnnllnnmmnnmmllllnnnnmmlmmmmmnnmmnnnnnmmmm
 z60 mllmmmljiiijjih  hijkmnnnllnnmmnnmlkkklnnnmmmmmnnmmnnmmnnnnmmmll
