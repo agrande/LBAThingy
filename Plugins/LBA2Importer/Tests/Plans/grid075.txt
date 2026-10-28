@@ -1,3 +1,4 @@
 Grid 75 L_Grid_075_TempleOfBuWell, library 3: hollow, enclosed, room height 6, door height 7
 hollow 0 columns (0 with floor), 0 supports, 0 under the roof; spring 0.0-0.0, roof up to 0.0
-Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+0 ledge edges, canyon 0 columns; 0 pillars, 0 arches
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down

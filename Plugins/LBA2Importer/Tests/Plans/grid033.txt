@@ -1,6 +1,7 @@
 Grid 33 L_Grid_033_SchoolOfMagicBlowgunTest, library 1: hollow, not enclosed, room height 6, door height 6
 hollow 241 columns (236 with floor), 5 supports, 236 under the roof; spring 7.0-10.3, roof up to 17.9
-Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+0 ledge edges, canyon 0 columns; 0 pillars, 0 arches
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
     0         1

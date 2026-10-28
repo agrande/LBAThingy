@@ -126,6 +126,21 @@ struct FLBALibraryEnclosure
 	UPROPERTY(EditAnywhere, Category = "Enclosure")
 	TArray<int32> CutFrames;
 
+	/**
+	 * Layouts that are pillars (a post, a column): standing free in a hollow, they hold its roof, which comes down onto
+	 * their tops and arches from one to the next (FLBAHollow). On a ledge they stay posts.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	TArray<int32> Pillars;
+
+	/**
+	 * Layouts that are railings (fences, rope barriers, curbs, spikes along an edge): on the edge of a hollow's floor over
+	 * nothing, they make it a ledge, past which the cave goes on in a canyon (FLBAHollow). Rock rims are not railings: the
+	 * original cut its camera-side walls down to them.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enclosure")
+	TArray<int32> Railings;
+
 	/** Color of the ceilings (and of the risers where they step). */
 	UPROPERTY(EditAnywhere, Category = "Enclosure")
 	FColor CeilingColor = FColor(150, 140, 125);

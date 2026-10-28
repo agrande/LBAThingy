@@ -156,6 +156,8 @@ public:
 			for (const FLBAGridPlanHollowColumn& Column : Plan->Hollow.Columns)
 			{
 				const FLinearColor Color = Column.bSupport ? FLinearColor(0.9f, 0.2f, 0.15f)
+					: Column.bPillar ? FLinearColor(0.95f, 0.55f, 0.1f)
+					: Column.bCanyon ? FLinearColor(0.25f, 0.08f, 0.3f)
 					: Column.Floor == INDEX_NONE ? FLinearColor(0.1f, 0.15f, 0.3f)
 					: FLinearColor::LerpUsingHSV(FLinearColor(0.2f, 0.5f, 0.9f), FLinearColor(0.95f, 0.85f, 0.3f), Column.Floor / float(FLBAGridPlan::SizeY));
 				Box(Column.Column.X + Gap, Column.Column.Y + Gap, 1 - Gap * 2, 1 - Gap * 2, Color, Layer + 1);
@@ -357,6 +359,8 @@ private:
 		{
 			const FLBAGridPlanHollowColumn* Column = Plan->Hollow.Columns.FindByPredicate([this](const FLBAGridPlanHollowColumn& At) { return At.Column == Hovered; });
 			Lines.Add(!Column ? TEXT("rock") : Column->bSupport ? FString::Printf(TEXT("support (the roof comes down on it), roof %.1f"), Column->Roof)
+				: Column->bPillar ? FString::Printf(TEXT("pillar (the roof comes down onto its top and arches to the next), roof %.1f"), Column->Roof)
+				: Column->bCanyon ? FString::Printf(TEXT("canyon past a ledge, roof %.1f"), Column->Roof)
 				: FString::Printf(TEXT("floor %d, roof springs at %.1f, roof %.1f"), Column->Floor, Column->Spring, Column->Roof));
 			return FText::FromString(FString::Join(Lines, TEXT("\n")));
 		}

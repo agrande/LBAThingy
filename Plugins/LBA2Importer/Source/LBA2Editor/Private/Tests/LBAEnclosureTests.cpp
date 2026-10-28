@@ -13,6 +13,9 @@ namespace LBAEnclosureTests
 {
 	constexpr int32 Floor = 1;
 	constexpr int32 Rock = 2;
+	/** Bricks of their own layouts (the others are all layout 0). */
+	constexpr int32 Railing = 3;
+	constexpr int32 Pillar = 4;
 
 	/** A grid of cells, all empty at first: collision shapes and bricks. */
 	struct FTestGrid
@@ -50,7 +53,11 @@ namespace LBAEnclosureTests
 			FLBAGridCells Cells;
 			Cells.Shape = [this](int32 X, int32 Y, int32 Z) { return Inside(X, Y, Z) ? int32(Shapes[Index(X, Y, Z)]) : 0; };
 			Cells.Brick = [this](int32 X, int32 Y, int32 Z) { return Inside(X, Y, Z) ? Bricks[Index(X, Y, Z)] : 0; };
-			Cells.Layout = [this](int32 X, int32 Y, int32 Z) { return Inside(X, Y, Z) && Bricks[Index(X, Y, Z)] != 0 ? 0 : INDEX_NONE; };
+			Cells.Layout = [this](int32 X, int32 Y, int32 Z)
+			{
+				const int32 Brick = Inside(X, Y, Z) ? Bricks[Index(X, Y, Z)] : 0;
+				return Brick >= Railing ? Brick : Brick != 0 ? 0 : INDEX_NONE;
+			};
 			Cells.LayoutBase = [](int32 X, int32 Y, int32 Z) { return Y; };
 			Cells.HasArt = [](int32 Brick) { return Brick != 0; };
 			Cells.IsFrame = [](int32 X, int32 Y, int32 Z) { return false; };
@@ -201,6 +208,67 @@ bool FLBAEnclosureSupportTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the roof comes down on the pillar"), Hollow.GetRoof(21.f, 20.5f) < Hollow.GetRoof(24.f, 20.5f));
 	TestTrue(TEXT("lamp post under the roof"), Hollow.IsUnderRoof(FIntPoint(30, 30)));
 	TestTrue(TEXT("invisible wall under the roof"), Hollow.IsUnderRoof(FIntPoint(25, 15)));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLBAEnclosureLedgeTest, "LBA2.Enclosure.Hollow.LedgeOverCanyon",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLBAEnclosureLedgeTest::RunTest(const FString& Parameters)
+{
+	// A floor on a slab 3 cells thick, high rock on three sides, a railing on the fourth over nothing: a ledge. The railing
+	// holds nothing (the roof goes on over it); past it a canyon, its floor deep under the slab's foot.
+	FTestGrid Grid;
+	Grid.Fill(FIntVector(10, 0, 10), FIntVector(30, 2, 21), Floor);
+	Grid.Fill(FIntVector(9, 0, 9), FIntVector(30, 12, 9), Rock);
+	Grid.Fill(FIntVector(9, 0, 22), FIntVector(30, 12, 22), Rock);
+	Grid.Fill(FIntVector(9, 0, 10), FIntVector(9, 12, 21), Rock);
+	Grid.Fill(FIntVector(30, 3, 10), FIntVector(30, 5, 21), Railing);
+	FLBAHollow::FSettings Settings = CaveSettings();
+	TestFalse(TEXT("no railing layouts: the rail is a rim, no canyon"), FLBAHollow(Grid.Cells(), Settings).IsInCanyon(FIntPoint(35, 15)));
+	Settings.RailingLayouts = { Railing };
+	const FLBAHollow Hollow(Grid.Cells(), Settings);
+	TestTrue(TEXT("ledges"), Hollow.GetLedges().Num() > 0);
+	TestTrue(TEXT("the railing is under the roof"), Hollow.IsUnderRoof(FIntPoint(30, 15)));
+	TestTrue(TEXT("canyon past the ledge"), Hollow.IsInCanyon(FIntPoint(31, 15)) && Hollow.IsInCanyon(FIntPoint(38, 15)));
+	TestFalse(TEXT("no canyon behind the rock"), Hollow.IsInCanyon(FIntPoint(20, 5)));
+	TestTrue(TEXT("the roof does not come down on the railing"), Hollow.GetRoof(30.5f, 15.5f) > Hollow.GetSpring(30.5f, 15.5f) + 6.f);
+	const float Middle = 31.f + FLBAHollow::CanyonWidth * 0.5f, Far = 31.f + FLBAHollow::CanyonWidth - 0.1f;
+	TestEqual(TEXT("the canyon's floor under the ledge's foot"), Hollow.GetCanyonFloor(Middle, 15.5f), float(-FLBAHollow::CanyonDepth), 0.5f);
+	TestEqual(TEXT("its near wall up to the foot"), Hollow.GetCanyonFloor(31.f, 15.5f), 0.f, 0.01f);
+	TestTrue(TEXT("its far side climbs to the roof's spring"), Hollow.GetCanyonFloor(Far, 15.5f) > Hollow.GetCanyonFloor(Middle, 15.5f) + 8.f);
+	TestTrue(TEXT("dark at the bottom"), Hollow.GetCanyonLight(Middle, -float(FLBAHollow::CanyonDepth), 15.5f) < 0.2f);
+	TestEqual(TEXT("lit at the ledge"), Hollow.GetCanyonLight(31.5f, 2.f, 15.5f), FLBAHollow::CanyonLit, 0.01f);
+
+	// A fence on top of a wall is a wall: no ledge, no canyon.
+	FTestGrid Walled = Grid;
+	Walled.Fill(FIntVector(30, 3, 10), FIntVector(30, 8, 21), Rock);
+	Walled.Fill(FIntVector(30, 9, 10), FIntVector(30, 10, 21), Railing);
+	TestFalse(TEXT("a fence on a wall: no canyon"), FLBAHollow(Walled.Cells(), Settings).IsInCanyon(FIntPoint(35, 15)));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLBAEnclosurePillarTest, "LBA2.Enclosure.Hollow.PillarsAndArches",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FLBAEnclosurePillarTest::RunTest(const FString& Parameters)
+{
+	// Two pillars 8 cells high, 8 columns apart, in a wide cave: the roof comes down onto their tops, and an arch between
+	// them is lower than the crown beside it. A rock post as high is no pillar (not a pillar layout).
+	FTestGrid Grid;
+	Grid.Cave(FIntPoint(10, 10), FIntPoint(39, 39), 3);
+	Grid.Fill(FIntVector(20, 1, 25), FIntVector(20, 8, 25), Pillar);
+	Grid.Fill(FIntVector(28, 1, 25), FIntVector(28, 8, 25), Pillar);
+	Grid.Fill(FIntVector(24, 1, 16), FIntVector(24, 8, 16), Rock);
+	FLBAHollow::FSettings Settings = CaveSettings();
+	Settings.PillarLayouts = { Pillar };
+	const FLBAHollow Hollow(Grid.Cells(), Settings);
+	TestEqual(TEXT("pillars"), Hollow.GetPillars().Num(), 2);
+	TestEqual(TEXT("arches"), Hollow.GetArches().Num(), 1);
+	TestTrue(TEXT("a pillar"), Hollow.IsPillar(FIntPoint(20, 25)));
+	TestFalse(TEXT("the rock post is no pillar"), Hollow.IsPillar(FIntPoint(24, 16)));
+	TestEqual(TEXT("the roof on the pillar's top"), Hollow.GetRoof(20.5f, 25.5f), 9.f, 0.01f);
+	const float Arch = Hollow.GetRoof(24.5f, 25.5f);
+	TestTrue(TEXT("the arch rises between the pillars"), Arch > 9.5f);
+	TestTrue(TEXT("the arch is lower than the crown beside it"), Arch < Hollow.GetRoof(24.5f, 33.5f) - 1.f);
 	return true;
 }
 

@@ -1,6 +1,7 @@
 Grid 17 L_Grid_017_Sewers, library 1: hollow, enclosed, room height 6, door height 6
 hollow 1978 columns (1938 with floor), 0 supports, 1978 under the roof; spring 20.0-20.0, roof up to 28.0
-Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+0 ledge edges, canyon 0 columns; 0 pillars, 0 arches
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
     0      1         2         3         4         5

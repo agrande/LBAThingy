@@ -1,6 +1,7 @@
 Grid 127 L_Grid_127_ProtectionSpellCave, library 3: hollow, not enclosed, room height 6, door height 7
-hollow 1710 columns (1482 with floor), 16 supports, 1694 under the roof; spring 6.0-27.4, roof up to 34.9
-Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+hollow 1710 columns (1482 with floor), 15 supports, 1695 under the roof; spring 6.0-27.4, roof up to 34.9
+0 ledge edges, canyon 0 columns; 3 pillars, 0 arches
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
     0         1         2         3
@@ -28,11 +29,11 @@ z19              __kjeee000001100000___
 z20             ___kj___1110000000000_3
 z21            ____klm__1110000000000_3
 z22 mmlllllllllllllllm22111000_000000_3
-z23 mmllllllllllllllln__S____S_000000_3
+z23 mmllllllllllllllln__P____S_000000_3
 z24 ll6666____aaaaaaaa2222222__000000_3
 z25 ll6666____aaaaaaaa2222222_0000000_3
 z26 ll6666____aaaaaaaa2222222_0000000_3
-z27  m6666____aaaaaaa_2222222_0000000_3_
+z27  m6666P___aaaaaaa_2222222_0000000_3_
 z28    S__2222222222222222222_0000000_333
 z29   22222222222222222222222_0000000_333
 z30   22222222222222222222222_0000000_333
@@ -49,7 +50,7 @@ z40   222222222222222222_111100000000_333
 z41    S2222222222222222_000000000000_3_
 z42    S2222222222222222_000000000000_3_
 z43   222222222222222222_000000000000_3_
-z44    SS________________000000000000_333
+z44    SS_______________P000000000000_333
 z45   0000000000000000000000000000000_333
 z46   0000000000000000000000000000000_333
 z47   0000S00000000000000000000000000_3_
@@ -91,37 +92,37 @@ z15              tuvvvtsqnljigffffffedcc
 z16             tuvwwvtsqnlkigfffffeedcc
 z17              tvxxwusqnlkigffffffeddc
 z18              tvxxwusqnljhfeffeefedcc
-z19              uwyxvtspmkhfeddeeeffdb
-z20             uuwyxvsrpljgedccddeffdb
-z21            uvxyyxurpnljgddccceffeeb
-z22 uuutttttsssuwxxxwtpmkiifbaabceffedb
-z23 uvvuuutuuuuuvvvvusplShgebS9ceeefedb
-z24 uuvvutttttuuuuuusroligfebaacedefedb
-z25 ttuuutsrrstttvvtrpnkigfecbcdddeeedb
-z26 rqrrrqqpprrrsttrpomkihgedddeeeeeedb
-z27  oonnppooqqqqqqpomlkjhgfefffffffedcb
-z28    Slnnmmooooonnmlkjihgfefffffffeedcc
-z29   kjjkkkkmmmmmllkjijihgfeffeefffffeec
-z30   iihhhhijkkkkjjihhihhgffffeeffffeecc
-z31    SSfghhijiijjjihggggggggfeeffeeddc
-z32   ggfffghiihhiiihggffffffgfeeffeedcc
-z33   ghggghhhgffhhhggghgfffeeeeeeeffdcb
-z34   fhhhhhhhgfeggggggggffeeeeeeeeffdccb
-z35   fhhiihhhhfeeeefggggggfeeeffggfffedc
-z36   eghiihhhhffeeeegggghgfeeeffggffffdc
-z37   eghhhhhhhggffffffggggeeeeeeffffeddc
-z38   dfggghhhhhgffffffggffeeeeeeefffeddc
-z39   deeghhhhhgggghhggggfefeeedddefffedc
-z40   ccdfghhhhggghhhggggfefffeeeeefffecc
-z41    Scdeggffggggggggffggfeffeeffffedc
-z42    Sbcdffffffffggggeeffeeffeefggfedc
-z43   bbbbcfgeeffeeffffffeeeeeeddfffffeb
-z44    SSbdggeeffeeefffffedddedddeffffecc
-z45   cccdefffeeeffffffeeddddddddeefffedc
-z46   dffdddfffeeffffffeeddddddddeeeeeecc
-z47   effeSdeeeeeffeeeeeeddeeeedddeeeecc
-z48   eggeSefffeeffeeeeeeddeeeedeeeeeeb
-z49   gghgffghgfefffffeddddffeeeeffedcb
+z19              uwyxvtsqnkhfeddeeeffdb
+z20             uuwyxvtrpmjgedccddeffdb
+z21            uvxyyxvsqpnkgddccceffeeb
+z22 uuutttttsssuwxxxvtrpomjfbaabceffedb
+z23 uvvuuutuuuuuvvvvusqookhebS9ceeefedb
+z24 uuvvutusstuuuuuutrqonjgebdacedefedb
+z25 ttutsqppqrsttvutrqpnligecfcdddeeedb
+z26 rqrrpmlmnpqrsttrppnlkigedgdeeeeeedb
+z27  oonnlhkmnoppqqpomlkjigfegffffffedcb
+z28    Slkkklmmnnonnmlkjjhgfeiffffffeedcc
+z29   kjjkkkkklllmllkjijihgfeifeefffffeec
+z30   iihhhhijjjkkjjihhihhgffifeeffffeecc
+z31    SSfghhiiiijjjihgggggggjfeeffeeddc
+z32   ggfffghiihhiiihggffffffjfeeffeedcc
+z33   ghggghhhgffhhhggghgfffegeeeeeffdcb
+z34   fhhhhhhhgfeggggggggffeeheeeeeffdccb
+z35   fhhiihhhhfeeeefggggggfeheffggfffedc
+z36   eghiihhhhffeeeegggghgfeheffggffffdc
+z37   eghhhhhhhggffffffggggeeieeeffffeddc
+z38   dfggghhhhhgffffffffffeeieeeefffeddc
+z39   deeghhhhhgggghffffffefeeedddefffedc
+z40   ccdfghhhhggghfffffffeffeeeeeefffecc
+z41    Scdeggffggggffffefeeeeefeeffffedc
+z42    Sbcdffffffffffeedfdeeeeeeefggfedc
+z43   bbbbcfgeeffeeffedcdcdeeeeddfffffeb
+z44    SSbfhihhgihhihffdabdddedddeffffecc
+z45   cccdefffeeeffeeedcbcdddddddeefffedc
+z46   dffdddfffeefeeeedddddddddddeeeeeecc
+z47   effeSdeeeeeffeeedddddddeedddeeeecc
+z48   eggeSefffeeffeeeeddddeeeedeeeeeeb
+z49   gghgffghgfefffeeeddddeeeeeeffedcb
 z50    hijiiihgfeffeeeedddeffffeeggedcb
 z51    ijkjkjhgfeeeddddeeeeffffffggfeeb
 z52  ijkjkllkhgfeedddddeeeeffffffgggfec

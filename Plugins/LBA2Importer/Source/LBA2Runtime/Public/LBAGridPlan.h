@@ -328,6 +328,14 @@ struct LBA2RUNTIME_API FLBAGridPlanHollowColumn
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Plan")
 	bool bSupport = false;
 
+	/** A pillar standing free under the roof: the roof comes down onto its top and arches to the next pillars. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Plan")
+	bool bPillar = false;
+
+	/** Past a ledge: the canyon under the roof, its floor deep below the ledge (Floor -1, Spring and Roof as over the hollow). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Plan")
+	bool bCanyon = false;
+
 	/** Height of the roof's spring over its center (cells). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Plan")
 	float Spring = 0.f;
@@ -343,7 +351,7 @@ struct LBA2RUNTIME_API FLBAGridPlanHollow
 {
 	GENERATED_BODY()
 
-	/** Its footprint, supports included. */
+	/** Its footprint, supports included, and its canyons' columns in the grid. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Plan")
 	TArray<FLBAGridPlanHollowColumn> Columns;
 

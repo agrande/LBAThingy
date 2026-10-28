@@ -1,6 +1,7 @@
 Grid 42 L_Grid_042_SpiderCave, library 1: hollow, not enclosed, room height 6, door height 6
 hollow 436 columns (398 with floor), 6 supports, 430 under the roof; spring 10.0-16.4, roof up to 23.4
-Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+0 ledge edges, canyon 0 columns; 0 pillars, 0 arches
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
     0        1

@@ -285,7 +285,8 @@ namespace LBAGridPlanTextPrivate
 		Result += DrawMap(TEXT("Hollow floor"), Min, Max, [&At](const FIntPoint& Column)
 		{
 			const FLBAGridPlanHollowColumn* const* Found = At.Find(Column);
-			return !Found ? TEXT(' ') : (*Found)->bSupport ? TEXT('S') : (*Found)->Floor == INDEX_NONE ? TEXT('_') : GetDigit((*Found)->Floor);
+			return !Found ? TEXT(' ') : (*Found)->bSupport ? TEXT('S') : (*Found)->bPillar ? TEXT('P') : (*Found)->bCanyon ? TEXT('~')
+				: (*Found)->Floor == INDEX_NONE ? TEXT('_') : GetDigit((*Found)->Floor);
 		});
 		Result += DrawMap(TEXT("Hollow roof"), Min, Max, [&At](const FIntPoint& Column)
 		{
@@ -304,7 +305,7 @@ FString LBAGridPlanText::Write(const FLBAGridPlan& Plan)
 	if (bHollow)
 	{
 		Result += Plan.Hollow.Summary + TEXT("\n");
-		Result += TEXT("Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down\n");
+		Result += TEXT("Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down\n");
 		WriteHollowMaps(Plan, Result);
 		return Result;
 	}

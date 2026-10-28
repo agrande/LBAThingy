@@ -334,7 +334,8 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	// v4: vertex colors decoded from sRGB. v5: duller sea. v6: cloud clearance.
 	// v7: no specular on palette surfaces (the original has none, and it would read as light in the palette shading).
 	// v8: unshaded sea, like the original's. v9: textured glow (lit windows). v10: bent in globe mode.
-	constexpr int32 Version = 10;
+	// v11: bricks shaded by the vertex alpha when BakedShading is on (a hollow's canyons).
+	constexpr int32 Version = 11;
 
 	FLBARenderingAssets& Rendering = Context.GetRendering();
 	UMaterialParameterCollection* Planet = Rendering.GetPlanetParameters();
@@ -441,12 +442,15 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	}
 	case ELBAMaterial::Brick:
 	{
-		// Brick sprites already contain hand-painted lighting; a little emissive keeps them readable.
+		// Brick sprites already contain hand-painted lighting; a little emissive keeps them readable. BakedShading 1 darkens
+		// them by the vertex alpha (0.5: as drawn), for surfaces that fall into darkness (a hollow's canyons).
 		Material->BlendMode = BLEND_Masked;
 		UMaterialExpressionTextureSampleParameter2D* Tex = G.Texture(0);
+		UMaterialExpressionVertexColor* VC = G.Add<UMaterialExpressionVertexColor>(400);
 		G.Column = -300;
-		G.Out(Tex, TEXT("RGB"), MP_BaseColor);
-		G.Out(G.Multiply(Tex, TEXT("RGB"), G.Scalar(TEXT("SpriteEmissive"), 0.2f, 300), TEXT(""), 260), TEXT(""), MP_EmissiveColor);
+		UMaterialExpression* Shaded = G.Multiply(Tex, TEXT("RGB"), G.BakedShade(VC, 400), TEXT(""), 200);
+		G.Out(Shaded, TEXT(""), MP_BaseColor);
+		G.Out(G.Multiply(Shaded, TEXT(""), G.Scalar(TEXT("SpriteEmissive"), 0.2f, 300), TEXT(""), 260), TEXT(""), MP_EmissiveColor);
 		G.Out(Tex, TEXT("A"), MP_OpacityMask);
 		G.Surface(1.f, 0.f);
 		break;

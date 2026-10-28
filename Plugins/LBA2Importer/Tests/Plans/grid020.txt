@@ -1,6 +1,7 @@
 Grid 20 L_Grid_020_TralüsCaveMeetJoeTheElf, library 1: hollow, enclosed, room height 6, door height 6
 hollow 1099 columns (1021 with floor), 1 supports, 1098 under the roof; spring 11.0-26.0, roof up to 31.5
-Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+0 ledge edges, canyon 0 columns; 0 pillars, 0 arches
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
     4      5         6

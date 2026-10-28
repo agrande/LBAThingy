@@ -23,6 +23,8 @@
 #include "Import/LBARemakeAssets.h"
 #include "Import/LBAWallSurvey.h"
 #include "LBA2ImporterSettings.h"
+#include "MaterialEditingLibrary.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "LBA2Runtime.h"
 #include "LBAGridPlanActor.h"
 #include "LBATypes.h"
@@ -518,17 +520,20 @@ namespace
 	}
 
 	/**
-	 * A vault's roof (FLBAVault) as a mesh looking down into the air under it: a height field over its footprint, Height(X, Z)
-	 * in cells, sampled RoofSteps times per column, textured with a finish's tile by position (FinishUV: from below where it
-	 * is shallow, from the side where it is steep). Normals follow the curve.
+	 * A height field as a mesh: Height(X, Z) in cells over a footprint of columns (the grid and Margin columns round it),
+	 * sampled RoofSteps times per column, looking down (a roof, into the air under it) or up (a canyon's floor), textured
+	 * with a finish's tile by position (FinishUV: from below or above where it is shallow, from the side where it is
+	 * steep). Normals follow the curve.
 	 */
 	constexpr int32 RoofSteps = 2;
-	void EmitRoof(const FLBAVault& Vault, TFunctionRef<float(float, float)> Height, FLBAMeshBuilder& Builder, int32 Section, const FVector4f& Color, float Scale)
+	void EmitHeightField(TFunctionRef<bool(const FIntPoint&)> Contains, int32 Margin, TFunctionRef<float(float, float)> Height, bool bUp,
+		FLBAMeshBuilder& Builder, int32 Section, const FVector4f& Color, float Scale, TFunction<float(const FVector3f&)> Light = nullptr)
 	{
-		constexpr int32 Size = FLBARoomPlan::SizeXZ;
-		constexpr int32 N = Size * RoofSteps + 1;
+		const int32 Size = FLBARoomPlan::SizeXZ + 2 * Margin;
+		const int32 N = Size * RoofSteps + 1;
 		TArray<float> Heights;
 		Heights.Init(TNumericLimits<float>::Lowest(), N * N);
+		auto ToCells = [Margin](int32 I) { return float(I) / RoofSteps - Margin; };
 		auto HeightAt = [&](int32 I, int32 J)
 		{
 			I = FMath::Clamp(I, 0, N - 1);
@@ -536,23 +541,23 @@ namespace
 			float& Value = Heights[J * N + I];
 			if (Value == TNumericLimits<float>::Lowest())
 			{
-				Value = Height(float(I) / RoofSteps, float(J) / RoofSteps);
+				Value = Height(ToCells(I), ToCells(J));
 			}
 			return Value;
 		};
-		auto Cells = [&](int32 I, int32 J) { return FVector3f(float(I) / RoofSteps, HeightAt(I, J), float(J) / RoofSteps); };
+		auto Cells = [&](int32 I, int32 J) { return FVector3f(ToCells(I), HeightAt(I, J), ToCells(J)); };
 		auto Position = [&](int32 I, int32 J) { const FVector3f C = Cells(I, J); return CornerPos(C.X, C.Y, C.Z, Scale); };
-		const FVector3f Down = FVector3f(LBA::DirToUnreal(0, -1, 0));
+		const FVector3f Facing = FVector3f(LBA::DirToUnreal(0, bUp ? 1 : -1, 0));
 		auto NormalAt = [&](int32 I, int32 J)
 		{
 			FVector3f Normal = ((Position(I + 1, J) - Position(I - 1, J)) ^ (Position(I, J + 1) - Position(I, J - 1))).GetSafeNormal();
-			return (Normal | Down) < 0.f ? -Normal : Normal;
+			return (Normal | Facing) < 0.f ? -Normal : Normal;
 		};
-		for (int32 Z = 0; Z < Size; ++Z)
+		for (int32 Z = -Margin; Z < FLBARoomPlan::SizeXZ + Margin; ++Z)
 		{
-			for (int32 X = 0; X < Size; ++X)
+			for (int32 X = -Margin; X < FLBARoomPlan::SizeXZ + Margin; ++X)
 			{
-				if (!Vault.Contains(FIntPoint(X, Z)))
+				if (!Contains(FIntPoint(X, Z)))
 				{
 					continue;
 				}
@@ -561,7 +566,7 @@ namespace
 					for (int32 SJ = 0; SJ < RoofSteps; ++SJ)
 					{
 						static const FIntPoint Corners[4] = { FIntPoint(0, 0), FIntPoint(1, 0), FIntPoint(1, 1), FIntPoint(0, 1) };
-						const int32 I0 = X * RoofSteps + SI, J0 = Z * RoofSteps + SJ;
+						const int32 I0 = (X + Margin) * RoofSteps + SI, J0 = (Z + Margin) * RoofSteps + SJ;
 						// The quad's slope in LBA axes (cells; a column is two cells wide), for its projection.
 						const FVector3f C00 = Cells(I0, J0), C11 = Cells(I0 + 1, J0 + 1), C10 = Cells(I0 + 1, J0), C01 = Cells(I0, J0 + 1);
 						const FVector3f Slope = FVector3f(-(C10.Y + C11.Y - C00.Y - C01.Y) * 0.5f, 2.f / RoofSteps, -(C01.Y + C11.Y - C00.Y - C10.Y) * 0.5f).GetSafeNormal();
@@ -572,26 +577,36 @@ namespace
 							V[K].Position = Position(I, J);
 							V[K].Normal = NormalAt(I, J);
 							V[K].Color = Color;
+							V[K].Color.W *= Light ? Light(Cells(I, J)) : 1.f;
 							V[K].UV = FinishUV(Cells(I, J), Slope);
 						}
-						Builder.AddTriangleFacing(Section, V[0], V[1], V[2], Down);
-						Builder.AddTriangleFacing(Section, V[0], V[2], V[3], Down);
+						Builder.AddTriangleFacing(Section, V[0], V[1], V[2], Facing);
+						Builder.AddTriangleFacing(Section, V[0], V[2], V[3], Facing);
 					}
 				}
 			}
 		}
 	}
 
+	/** A vault's roof (FLBAVault) looking down into the air under it. */
+	void EmitRoof(const FLBAVault& Vault, TFunctionRef<float(float, float)> Height, FLBAMeshBuilder& Builder, int32 Section, const FVector4f& Color, float Scale)
+	{
+		EmitHeightField([&Vault](const FIntPoint& Column) { return Vault.Contains(Column); }, Vault.GetMargin(), Height, false, Builder, Section, Color, Scale);
+	}
+
 	/**
-	 * The walls of a hollow (FLBAHollow): on each side of a column under its roof that is not under it too, the rock (or
-	 * masonry) rises from what the original drew there (a rim, a rampart, a pillar; nothing: from the bottom of the grid,
-	 * closing the void past a floor's edge) up to the roof's edge, looking into the hollow, textured with the finish's
-	 * tile. Past an exit (beside a scene-change zone) the walls are dark, as the original shows it.
+	 * The walls of a hollow (FLBAHollow), looking into the air under its roof, textured with the finish's tile:
+	 * - on each side of a column of the hollow that is not under the roof, the rock (or masonry) rises from what the
+	 *   original drew there (a rim, a rampart, a pillar; nothing: from the bottom of the grid, closing the void past a
+	 *   floor's edge) up to the roof's edge; past an exit (beside a scene-change zone) they are dark, as the original shows it;
+	 * - round a canyon, the rock rises from its floor to the roof (around what the original drew there), and under a
+	 *   ledge from its floor up to the foot of the ledge.
 	 */
 	void EmitHollowWalls(const FLBAHollow& Hollow, TFunctionRef<float(float, float)> Height, TConstArrayView<FLBACellBox> Exits,
 		FLBAMeshBuilder& Builder, int32 Section, int32 DarkSection, const FVector4f& Color, float Scale)
 	{
 		constexpr int32 Size = FLBARoomPlan::SizeXZ;
+		constexpr int32 Margin = FLBAHollow::Margin;
 		auto NearExit = [&Exits](const FIntPoint& Column)
 		{
 			return Exits.ContainsByPredicate([&Column](const FLBACellBox& Box)
@@ -600,55 +615,85 @@ namespace
 			});
 		};
 		const FVector4f Dark = LBABodyConverter::ToVertexColor(FColor(6, 6, 8), 0.5f);
-		for (int32 Z = 0; Z < Size; ++Z)
+		auto Floor = [&Hollow](float X, float Z) { return Hollow.GetCanyonFloor(X, Z); };
+		for (int32 Z = -Margin; Z < Size + Margin; ++Z)
 		{
-			for (int32 X = 0; X < Size; ++X)
+			for (int32 X = -Margin; X < Size + Margin; ++X)
 			{
 				const FIntPoint Column(X, Z);
 				if (!Hollow.IsUnderRoof(Column))
 				{
 					continue;
 				}
-				const bool bExit = NearExit(Column);
+				const bool bCanyon = Hollow.IsInCanyon(Column);
+				const bool bExit = !bCanyon && NearExit(Column);
 				for (int32 Side = 0; Side < 4; ++Side)
 				{
 					const FIntPoint Next = Column + FLBARoomPlan::Sides[Side];
-					if (Hollow.IsUnderRoof(Next))
-					{
-						continue;
-					}
-					// From what is drawn next to it (and over this column's own floor: its side shows below).
-					const int32 Drawn = Hollow.GetDrawnTop(Next);
-					const int32 Bottom = FMath::Max(Drawn != INDEX_NONE ? Drawn + 1 : 0, Hollow.GetFloor(Column) + 1);
 					// The edge between the two columns, from its start along +Z (sides -X, +X) or +X (sides -Z, +Z).
 					const bool bAlongZ = Side < 2;
 					const float EdgeX = X + (Side == 1 ? 1.f : 0.f), EdgeZ = Z + (Side == 3 ? 1.f : 0.f);
 					const FVector3f Normal(-FLBARoomPlan::Sides[Side].X, 0.f, -FLBARoomPlan::Sides[Side].Y);
 					const FVector3f Inward = FVector3f(LBA::DirToUnreal(Normal.X, 0, Normal.Z));
-					for (int32 Step = 0; Step < RoofSteps; ++Step)
+					// A strip of wall along the edge between two heights.
+					auto Strip = [&](TFunctionRef<float(float, float)> Bottom, TFunctionRef<float(float, float)> Top)
 					{
-						const float A0 = float(Step) / RoofSteps, A1 = float(Step + 1) / RoofSteps;
-						const FVector2f P0 = bAlongZ ? FVector2f(EdgeX, EdgeZ + A0) : FVector2f(EdgeX + A0, EdgeZ);
-						const FVector2f P1 = bAlongZ ? FVector2f(EdgeX, EdgeZ + A1) : FVector2f(EdgeX + A1, EdgeZ);
-						const float Top0 = Height(P0.X, P0.Y), Top1 = Height(P1.X, P1.Y);
-						if (Top0 <= Bottom && Top1 <= Bottom)
+						for (int32 Step = 0; Step < RoofSteps; ++Step)
 						{
-							continue;
+							const float A0 = float(Step) / RoofSteps, A1 = float(Step + 1) / RoofSteps;
+							const FVector2f P0 = bAlongZ ? FVector2f(EdgeX, EdgeZ + A0) : FVector2f(EdgeX + A0, EdgeZ);
+							const FVector2f P1 = bAlongZ ? FVector2f(EdgeX, EdgeZ + A1) : FVector2f(EdgeX + A1, EdgeZ);
+							const float Bottom0 = Bottom(P0.X, P0.Y), Bottom1 = Bottom(P1.X, P1.Y);
+							const float Top0 = Top(P0.X, P0.Y), Top1 = Top(P1.X, P1.Y);
+							if (Top0 <= Bottom0 && Top1 <= Bottom1)
+							{
+								continue;
+							}
+							const FVector3f Corners[4] = { FVector3f(P0.X, FMath::Max(Top0, Bottom0), P0.Y), FVector3f(P1.X, FMath::Max(Top1, Bottom1), P1.Y),
+								FVector3f(P1.X, Bottom1, P1.Y), FVector3f(P0.X, Bottom0, P0.Y) };
+							FLBAVertex V[4];
+							for (int32 K = 0; K < 4; ++K)
+							{
+								V[K].Position = CornerPos(Corners[K].X, Corners[K].Y, Corners[K].Z, Scale);
+								V[K].Normal = Inward;
+								V[K].Color = bExit ? Dark : Color;
+								V[K].Color.W *= bCanyon ? Hollow.GetCanyonLight(Corners[K].X, Corners[K].Y, Corners[K].Z) : 1.f;
+								V[K].UV = FinishUV(Corners[K], Normal);
+							}
+							const int32 Into = bExit ? DarkSection : Section;
+							Builder.AddTriangleFacing(Into, V[0], V[1], V[2], Inward);
+							Builder.AddTriangleFacing(Into, V[0], V[2], V[3], Inward);
 						}
-						const FVector3f Corners[4] = { FVector3f(P0.X, FMath::Max(Top0, float(Bottom)), P0.Y), FVector3f(P1.X, FMath::Max(Top1, float(Bottom)), P1.Y),
-							FVector3f(P1.X, Bottom, P1.Y), FVector3f(P0.X, Bottom, P0.Y) };
-						FLBAVertex V[4];
-						for (int32 K = 0; K < 4; ++K)
+					};
+					auto Level = [](float Value) { return [Value](float, float) { return Value; }; };
+					if (Hollow.IsUnderRoof(Next))
+					{
+						// Under a ledge: from the canyon's floor up to what the original drew under its edge.
+						const int32 Foot = Hollow.GetDrawnBottom(Next);
+						if (bCanyon && !Hollow.IsInCanyon(Next) && Foot != INDEX_NONE)
 						{
-							V[K].Position = CornerPos(Corners[K].X, Corners[K].Y, Corners[K].Z, Scale);
-							V[K].Normal = Inward;
-							V[K].Color = bExit ? Dark : Color;
-							V[K].UV = FinishUV(Corners[K], Normal);
+							Strip(Floor, Level(Foot));
 						}
-						const int32 Into = bExit ? DarkSection : Section;
-						Builder.AddTriangleFacing(Into, V[0], V[1], V[2], Inward);
-						Builder.AddTriangleFacing(Into, V[0], V[2], V[3], Inward);
+						continue;
 					}
+					const int32 Drawn = Hollow.GetDrawnTop(Next);
+					if (bCanyon)
+					{
+						// Round the canyon: from its floor to the roof, around what the original drew there.
+						if (Drawn == INDEX_NONE)
+						{
+							Strip(Floor, Height);
+						}
+						else
+						{
+							Strip(Floor, Level(Hollow.GetDrawnBottom(Next)));
+							Strip(Level(Drawn + 1), Height);
+						}
+						continue;
+					}
+					// From what is drawn next to it (and over this column's own floor: its side shows below).
+					const int32 Bottom = FMath::Max(Drawn != INDEX_NONE ? Drawn + 1 : 0, Hollow.GetFloor(Column) + 1);
+					Strip(Level(Bottom), Height);
 				}
 			}
 		}
@@ -1863,6 +1908,11 @@ bool FLBAIsoImporter::BuildGridPlan(int32 GridIndex, const FLBAGrid& Grid, FGrid
 		HollowSettings.SpringReach = Settings.SpringReach;
 		HollowSettings.Shape = FLBAVaultShape{ Settings.VaultRadius, Settings.VaultRise, Settings.VaultNoise };
 		HollowSettings.Seed = GridIndex;
+		if (const FLBALibraryEnclosure* LibraryEnclosure = Context.GetProjectSettings().FindLibraryEnclosure(Grid.LibraryIndex))
+		{
+			HollowSettings.PillarLayouts.Append(LibraryEnclosure->Pillars);
+			HollowSettings.RailingLayouts.Append(LibraryEnclosure->Railings);
+		}
 		Parts.Hollow = MakeUnique<FLBAHollow>(Cells, HollowSettings, DoorZones.FindRef(GridIndex));
 		Parts.Hollow->ToGridPlan(Out.Hollow);
 		return true;
@@ -2089,7 +2139,14 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				FFileHelper::SaveArrayToFile(Image, *(FPaths::ProjectSavedDir() / TEXT("LookDev/enclosure/tiles") / (Name + TEXT(".ppm"))));
 			}
 			UTexture2D* Texture = Context.CreateTexture(EnclosureFolder, Name, Width, Height, Pixels, true);
-			return Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Texture, EnclosureFolder);
+			UMaterialInterface* Result = Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Texture, EnclosureFolder);
+			// Shaded by the vertex alpha: a canyon falls into darkness (EmitHollowWalls, its floor).
+			if (UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Result))
+			{
+				UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(Instance, TEXT("BakedShading"), 1.f);
+				UMaterialEditingLibrary::UpdateMaterialInstance(Instance);
+			}
+			return Result;
 		};
 		if (Settings.bEnclose && Parts.Hollow)
 		{
@@ -2138,6 +2195,10 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 				EmitRoof(Hollow.GetVault(), Height, CeilingBuilder, CeilingBuilder.GetSection(TEXT("Roof"), RoofMaterial), RoofColor, Scale);
 				EmitHollowWalls(Hollow, Height, DoorZones.FindRef(GridIndex), EnclosureBuilder, EnclosureBuilder.GetSection(TEXT("Finish"), Material),
 					EnclosureBuilder.GetSection(TEXT("BrickFill"), Atlas->FillMaterial), WallColor, Scale);
+				// The canyons' floors, deep under the ledges.
+				EmitHeightField([&Hollow](const FIntPoint& Column) { return Hollow.IsInCanyon(Column); }, FLBAHollow::Margin,
+					[&Hollow](float X, float Z) { return Hollow.GetCanyonFloor(X, Z); }, true, EnclosureBuilder, EnclosureBuilder.GetSection(TEXT("Finish"), Material), WallColor, Scale,
+					[&Hollow](const FVector3f& At) { return Hollow.GetCanyonLight(At.X, At.Y, At.Z); });
 				CreateEnclosureMeshes(EnclosureBuilder, CeilingBuilder);
 				UE_LOG(LogLBA2, Display, TEXT("Grid %d enclosure: hollow, %d triangles"), GridIndex, EnclosureBuilder.NumTriangles() + CeilingBuilder.NumTriangles());
 
@@ -2166,6 +2227,20 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 					}
 				}
 				Box.Floor /= float(FMath::Max(FloorCount, 1));
+				// Over the canyons too: their roof and the top of their far side catch the light, their depths stay dark.
+				for (int32 Z = -FLBAHollow::Margin; Z < FLBARoomPlan::SizeXZ + FLBAHollow::Margin; ++Z)
+				{
+					for (int32 X = -FLBAHollow::Margin; X < FLBARoomPlan::SizeXZ + FLBAHollow::Margin; ++X)
+					{
+						if (Hollow.IsInCanyon(FIntPoint(X, Z)) && Box.Min.X <= Box.Max.X)
+						{
+							Box.Min.X = FMath::Min(Box.Min.X, X);
+							Box.Min.Z = FMath::Min(Box.Min.Z, Z);
+							Box.Max.X = FMath::Max(Box.Max.X, X);
+							Box.Max.Z = FMath::Max(Box.Max.Z, Z);
+						}
+					}
+				}
 				FFileHelper::SaveStringToFile(Dump, *(FPaths::ProjectSavedDir() / FString::Printf(TEXT("LookDev/enclosure/cells/grid%03d.txt"), GridIndex)));
 			}
 		}

@@ -1,6 +1,7 @@
 Grid 62 L_Grid_062_PearlOfIncandescenceCave, library 3: hollow, not enclosed, room height 6, door height 7
 hollow 407 columns (364 with floor), 0 supports, 407 under the roof; spring 8.9-24.0, roof up to 32.1
-Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support; roof = its height, rounded down
+0 ledge edges, canyon 0 columns; 0 pillars, 0 arches
+Maps (X across, Z down): floor = its height (0-9 a-o), _ none (spanned), S support, P pillar, ~ canyon; roof = its height, rounded down
 
 Hollow floor
     0      1

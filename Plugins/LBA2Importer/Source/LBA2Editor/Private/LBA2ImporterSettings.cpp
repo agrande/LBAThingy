@@ -194,6 +194,13 @@ ULBA2ImporterProjectSettings::ULBA2ImporterProjectSettings()
 		Overrides.VaultNoise = Noise;
 		Overrides.SpringReach = Reach;
 	};
+	// The Temple of Bu's pillars: its dark square posts and its urn-shaped columns (statues, levers and lamps stand free too,
+	// but hold nothing). Its railings: rope barriers and their posts, iron and web fences, spikes, curbs.
+	if (FLBALibraryEnclosure* Entry = LibraryEnclosures.FindByPredicate([](const FLBALibraryEnclosure& E) { return E.Library == 3; }))
+	{
+		Entry->Pillars = { 6, 45 };
+		Entry->Railings = { 0, 1, 2, 3, 4, 5, 17, 18, 82, 83, 85, 86, 91, 92 };
+	}
 	constexpr ELBAEnclosureStructure Hollow = ELBAEnclosureStructure::Hollow, Rooms = ELBAEnclosureStructure::Rooms;
 	// Buildings of those libraries keep their rooms and flat ceilings.
 	Structure(21, TEXT("Wizard's tent"), Rooms, 0.f, 0.f, 0.f);
