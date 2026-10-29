@@ -7,6 +7,7 @@
 #include "LBAPlanetSubsystem.generated.h"
 
 class ALBAPlanetActor;
+class FLBAPlanetViewExtension;
 class APawn;
 class ULevel;
 class ULevelStreaming;
@@ -41,6 +42,7 @@ class USkyAtmosphereComponent;
  *   lba.Globe.Debug 1         prints where the camera is on screen
  *   lba.Globe.Sea 0           the sea disc alone for the next level opened (to compare)
  *   lba.Globe.Belt 0          no belt for the next level opened
+ *   lba.Globe.BentCulling 0   the renderer's own culling, by the flat world (LBAPlanetCulling.h)
  */
 UCLASS()
 class LBA2RUNTIME_API ULBAPlanetSubsystem : public UTickableWorldSubsystem
@@ -113,6 +115,9 @@ private:
 	TWeakObjectPtr<ULevelStreaming> SeaStream;
 	/** The planet's belt (ULBAPlanetAsset::BeltLevel), on its map. */
 	TWeakObjectPtr<ULevelStreaming> BeltStream;
+
+	/** Culls by what the bent view shows (LBAPlanetCulling.h). */
+	TSharedPtr<FLBAPlanetViewExtension, ESPMode::ThreadSafe> ViewExtension;
 
 	/** The view this frame and the last, for motion vectors of the bent world. */
 	FVector View = FVector::ZeroVector;

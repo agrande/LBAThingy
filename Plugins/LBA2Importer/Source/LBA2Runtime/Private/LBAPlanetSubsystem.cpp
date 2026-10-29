@@ -19,6 +19,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
+#include "LBAPlanetCulling.h"
 #include "LBAStorm.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
@@ -204,6 +205,7 @@ bool ULBAPlanetSubsystem::IsGlobeRequested(const UWorld* World)
 void ULBAPlanetSubsystem::Deinitialize()
 {
 	FWorldDelegates::LevelAddedToWorld.Remove(LevelAddedHandle);
+	ViewExtension.Reset();
 	Super::Deinitialize();
 }
 
@@ -269,6 +271,7 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 		return;
 	}
 	Planet = Spawned;
+	ViewExtension = FSceneViewExtensions::NewExtension<FLBAPlanetViewExtension>(World);
 	bWaterSea = CVarGlobeSea.GetValueOnGameThread() != 0 && !Asset->Islands[Home].SeaLevel.IsNull();
 	Spawned->GetSea()->SetStaticMesh(Asset->SeaMesh.LoadSynchronous());
 	Spawned->GetSea()->SetMaterial(0, Asset->SeaMaterial.LoadSynchronous());
@@ -580,12 +583,16 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 
 	UMaterialParameterCollection* Collection = Asset->MaterialParameters.Get();
 	UMaterialParameterCollectionInstance* Instance = Collection ? GetWorld()->GetParameterCollectionInstance(Collection) : nullptr;
+	const float FlatOverride = CVarGlobeFlatRadius.GetValueOnGameThread();
+	const float FlatRadius = FlatOverride >= 0.f ? FlatOverride * 100.f : Asset->FlatRadius;
+	const bool bBend = CVarGlobeBend.GetValueOnGameThread() != 0;
+	if (ViewExtension)
+	{
+		ViewExtension->SetBend(View, Radius, FlatRadius, SeaLevel, bBend && Instance);
+	}
 	if (Instance)
 	{
-		const float FlatRadius = CVarGlobeFlatRadius.GetValueOnGameThread();
-		const bool bBend = CVarGlobeBend.GetValueOnGameThread() != 0;
-		Instance->SetVectorParameterValue(TEXT("PlanetBend"), FLinearColor(float(Radius),
-			FlatRadius >= 0.f ? FlatRadius * 100.f : Asset->FlatRadius, float(SeaLevel), bBend ? 1.f : 0.f));
+		Instance->SetVectorParameterValue(TEXT("PlanetBend"), FLinearColor(float(Radius), FlatRadius, float(SeaLevel), bBend ? 1.f : 0.f));
 		Instance->SetVectorParameterValue(TEXT("PlanetView"), ToParameter(View, 0.0));
 		Instance->SetVectorParameterValue(TEXT("PlanetViewPrevious"), ToParameter(PreviousView, 0.0));
 		// The disc's move since last frame: its vertices aren't the same points of the sea from frame to frame.
