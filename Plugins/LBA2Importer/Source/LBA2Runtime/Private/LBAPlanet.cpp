@@ -1,5 +1,6 @@
 #include "LBAPlanet.h"
 
+#include "Components/PostProcessComponent.h"
 #include "Components/StaticMeshComponent.h"
 
 FVector FLBAPlanetIsland::GetUp() const
@@ -72,4 +73,16 @@ ALBAPlanetActor::ALBAPlanetActor()
 	Sea->bAffectDistanceFieldLighting = false;
 	Sea->bAffectDynamicIndirectLighting = false;
 	Sea->SetCanEverAffectNavigation(false);
+
+	// Lumen traces distance fields of the flat world, which the bend doesn't move: a bent surface is meters below the
+	// flat one there (d^2 / 2R at d from the camera), buried in it, and loses its sky light the further it is. Over
+	// the island's own post process, the planet's GI is the sky light alone, reflections screen space.
+	Lighting = CreateDefaultSubobject<UPostProcessComponent>(TEXT("Lighting"));
+	Lighting->SetupAttachment(RootComponent);
+	Lighting->bUnbound = true;
+	Lighting->Priority = 1000.f;
+	Lighting->Settings.bOverride_DynamicGlobalIlluminationMethod = true;
+	Lighting->Settings.DynamicGlobalIlluminationMethod = EDynamicGlobalIlluminationMethod::None;
+	Lighting->Settings.bOverride_ReflectionMethod = true;
+	Lighting->Settings.ReflectionMethod = EReflectionMethod::ScreenSpace;
 }

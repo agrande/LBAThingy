@@ -13,6 +13,7 @@ class ULevel;
 class ULevelStreaming;
 class ULevelStreamingDynamic;
 class USkyAtmosphereComponent;
+class USkyLightComponent;
 
 /**
  * Globe mode (prototype): an island level opened on its planet (ULBAPlanetAsset). The world is flat and still: the
@@ -110,6 +111,14 @@ private:
 	/** The other islands' streamed levels, by island. */
 	TArray<TWeakObjectPtr<ULevelStreamingDynamic>> IslandStreams;
 	TWeakObjectPtr<USkyAtmosphereComponent> Atmosphere;
+	/**
+	 * The opened island's sky light, and whether it casts shadows in its level: without Lumen (lba.Globe.Lumen) they
+	 * would be distance field AO, which like Lumen sees the flat world and darkens the bent one.
+	 */
+	TWeakObjectPtr<USkyLightComponent> SkyLight;
+	bool bSkyLightShadows = true;
+	/** Its intensity on the planet (its level's times FLBAPlanetIsland::SkyLightGain), as with Lumen. */
+	float SkyLightIntensity = 1.f;
 	/** The opened island's sea level (Water plugin oceans) is the sea (lba.Globe.Sea); the sea disc lies under it. */
 	bool bWaterSea = false;
 	TWeakObjectPtr<ULevelStreaming> SeaStream;

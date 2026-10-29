@@ -3,6 +3,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
+#include "Components/PostProcessComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -49,6 +50,12 @@ namespace
 		TEXT("0: the planet's other islands aren't streamed in (debug, for the next level opened)."));
 	TAutoConsoleVariable<int32> CVarGlobeSea(TEXT("lba.Globe.Sea"), 1,
 		TEXT("The sea for the next level opened: 1 the opened island's sea level (Water plugin oceans), the planet's sea disc beyond; 0 the sea disc alone."));
+	TAutoConsoleVariable<int32> CVarGlobeLumen(TEXT("lba.Globe.Lumen"), 0,
+		TEXT("1: Lumen lights the planet like the island levels (to compare: it sees the flat world, so far surfaces, sunk by the bend, darken)."));
+	// Measured on Citabau unbent (lba.Globe.Bend 0) against Lumen: open pier, meadow, town and flower beds match at
+	// 0.8-0.94 (walls under eaves 0.94, plants 0.8).
+	TAutoConsoleVariable<float> CVarGlobeUnoccludedSkyLight(TEXT("lba.Globe.UnoccludedSkyLight"), 0.85f,
+		TEXT("Without Lumen, the sky light's intensity relative to the planet's: nothing shadows it but screen space AO, so it is turned down to give the light Lumen gave."));
 	TAutoConsoleVariable<int32> CVarGlobeBelt(TEXT("lba.Globe.Belt"), 1,
 		TEXT("0: the planet's belt (Twinsun's Hamalayi mountains) isn't streamed in (for the next level opened)."));
 
@@ -362,10 +369,13 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 					Clouds->SetLayerHeight(Asset->CloudHeight);
 				}
 			}
-			else if (USkyLightComponent* SkyLight = Cast<USkyLightComponent>(Component))
+			else if (USkyLightComponent* Sky = Cast<USkyLightComponent>(Component))
 			{
 				const float Override = CVarGlobeSkyLightGain.GetValueOnGameThread();
-				SkyLight->SetIntensity(SkyLight->Intensity * (Override >= 0.f ? Override : Island.SkyLightGain));
+				Sky->SetIntensity(Sky->Intensity * (Override >= 0.f ? Override : Island.SkyLightGain));
+				SkyLight = Sky;
+				bSkyLightShadows = Sky->CastShadows;
+				SkyLightIntensity = Sky->Intensity;
 			}
 		}
 	}
@@ -572,6 +582,19 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 	PreviousView = View;
 	View = ViewLocation;
 	bHasView = true;
+
+	const bool bLumen = CVarGlobeLumen.GetValueOnGameThread() != 0;
+	Planet->GetLighting()->bEnabled = !bLumen;
+	USkyLightComponent* Sky = SkyLight.Get();
+	if (Sky && Sky->CastShadows != (bLumen && bSkyLightShadows))
+	{
+		Sky->SetCastShadows(bLumen && bSkyLightShadows);
+	}
+	const float SkyIntensity = SkyLightIntensity * (bLumen ? 1.f : CVarGlobeUnoccludedSkyLight.GetValueOnGameThread());
+	if (Sky && Sky->Intensity != SkyIntensity)
+	{
+		Sky->SetIntensity(SkyIntensity);
+	}
 
 	// The sea disc and the atmosphere's planet under the camera.
 	const FVector Sea(View.X, View.Y, SeaLevel);

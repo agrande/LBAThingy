@@ -7,6 +7,7 @@
 
 class UMaterialInterface;
 class UMaterialParameterCollection;
+class UPostProcessComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UWaterWavesAsset;
@@ -179,8 +180,13 @@ public:
 	ALBAPlanetActor();
 
 	UStaticMeshComponent* GetSea() const { return Sea; }
+	/** The planet's lighting over the island's (no Lumen: it sees the flat world, not the bent one). */
+	UPostProcessComponent* GetLighting() const { return Lighting; }
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	TObjectPtr<UStaticMeshComponent> Sea;
+
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	TObjectPtr<UPostProcessComponent> Lighting;
 };

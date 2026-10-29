@@ -549,6 +549,15 @@ How it holds together (the world is flat and still; only the view is round):
   750 m the island's ground is as light as in its level (park 0.99 to 1.07); the sky near the horizon is about 20%
   darker, and so are its reflections on the sea: Citadel's harbour is (1, 112, 158) sRGB against (43, 156, 199) in
   the level (the sea disc gave (7, 48, 79)); open water (138, 202, 245) against (155, 206, 239).
+- **Lighting:** no Lumen on the planet. Lumen (and distance field AO) trace the distance fields of the flat world,
+  which the bend doesn't move: a bent surface lies d^2 / 2R below the flat one at d from the camera (22 m at 120 m on
+  Twinsun), buried in the flat world there, so it lost its sky light the further it was: an island 90 m away was dark
+  navy, light grey from 15 m, and things lit up as the camera came close. The planet actor's post process
+  (`ALBAPlanetActor::GetLighting`, unbound, over the island's) turns global illumination off and reflections to screen
+  space; the sky light casts no shadows (they would be distance field AO) and is turned down to 0.85
+  (`lba.Globe.UnoccludedSkyLight`), measured unbent against Lumen on Citabau: open pier 120 against 126, meadow 81
+  against 80, town 105 against 103 (walls under eaves about 8% darker, plants 5% lighter: no bounce light). The far
+  sea reflects a deeper blue with paler streaks than with Lumen's reflections. `lba.Globe.Lumen 1` brings Lumen back.
 - **The Hamalayi belt** (`LBAPlanetBelt`, `/Game/LBA2/Planets/L_TWINSUN_Belt`, streamed in on the map around the
   opened island, `ULBAPlanetAsset::BeltLevel`): low icy mountains all around, 424 to 513 m from the pole, traced
   from the original's holomap (HOLOMAP.HQR: its texture gives the belt's shore, the foot of its snow and its far
@@ -596,7 +605,8 @@ Console: `lba.Globe.Bend 0` (the flat world unbent, to compare), `lba.Globe.Flat
 `lba.Globe.Radius 1000` (m, for the next level opened: places and bend; the sea disc is built for the asset's radius),
 `lba.Globe.Debug 1` (camera height, nearest island and how far it sinks, horizon distance), `lba.Globe.Islands 0`
 (the next island opened comes alone), `lba.Globe.Sea 0` (the sea disc alone, for the next island opened), `lba.Globe.Belt 0` (no belt, next island opened),
-`lba.Globe.SeaDiscDrop 60` (cm under the sea level's water), `lba.Globe.SkyLightGain 1.4`, `lba.Globe.Clouds 5 10`
+`lba.Globe.SeaDiscDrop 60` (cm under the sea level's water), `lba.Globe.SkyLightGain 1.4`, `lba.Globe.Lumen 1`
+(Lumen as in the island levels, to compare), `lba.Globe.UnoccludedSkyLight 0.85`, `lba.Globe.Clouds 5 10`
 (km), `lba.Globe.SeaErrors` (the sea disc material's compile errors).
 
 Next: the other southern islands from LBA1, first approximations

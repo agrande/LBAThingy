@@ -165,6 +165,8 @@ private:
 	int32 NextPose = 0;
 	double Elapsed = 0.0;
 	double PoseStart = 0.0;
+	/** -LBA2ShotSettle: seconds each pose after the first is held before its shot (short ones make a moving camera). */
+	double PoseSettle = 2.5;
 	bool bPosesReady = false;
 	/** -LBA2HeroAt: where the player pawn stands during the camera poses (x, y, yaw), and the height it is looked for below. */
 	TOptional<FVector> HeroAt;

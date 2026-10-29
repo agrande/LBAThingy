@@ -181,6 +181,7 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		}
 		bPosesReady = true;
 	}
+	FParse::Value(FCommandLine::Get(), TEXT("LBA2ShotSettle="), PoseSettle);
 
 	FString HeroSpec;
 	if (FParse::Value(FCommandLine::Get(), TEXT("LBA2HeroAt="), HeroSpec, false))
@@ -2272,7 +2273,7 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 		PoseStart = Elapsed;
 		SendPress(Poses[NextPose].Press);
 	}
-	else if (Elapsed - PoseStart > 2.5)
+	else if (Elapsed - PoseStart > (NextPose == 0 ? 2.5 : PoseSettle))
 	{
 		const FString File = ShotDirectory / FString::Printf(TEXT("%s_%02d.png"), *World->GetMapName(), NextPose);
 		FScreenshotRequest::RequestScreenshot(File, false, false);
