@@ -64,6 +64,10 @@ namespace
 		TEXT("Modern mode: lean, foot placement and head turn over the animations."));
 	TAutoConsoleVariable<bool> CVarIndoorCamera(TEXT("lba.Modern.IndoorCamera"), true,
 		TEXT("Modern mode: the camera comes in close indoors (0 = the outdoor camera everywhere)."));
+	TAutoConsoleVariable<bool> CVarIndoorCameraFollow(TEXT("lba.Modern.IndoorCameraFollow"), true,
+		TEXT("Modern mode: indoors, moving eases the camera back behind Twinsen."));
+	TAutoConsoleVariable<bool> CVarIndoorCameraWalls(TEXT("lba.Modern.IndoorCameraWalls"), true,
+		TEXT("Modern mode: indoors, the camera is pushed away from walls and furniture."));
 
 	/** Natural speed (cm/s) of an animation's root motion. */
 	float RootMotionSpeed(const UAnimSequence* Sequence)
@@ -279,6 +283,7 @@ void ALBACharacter::SetControlMode(ELBAControlMode NewMode)
 		FollowCamera->SetFieldOfView(OutdoorFieldOfView);
 		IndoorBlend = -1.f;
 	}
+	CameraWallPush = FVector::ZeroVector;
 	if (bAuthentic)
 	{
 		CameraBoom->TargetArmLength = 650.f;
@@ -619,21 +624,84 @@ void ALBACharacter::UpdateModernCamera(float DeltaSeconds)
 	CameraBoom->TargetOffset = FVector(0.f, 0.f, FMath::Lerp(ModernCameraHeight, IndoorCameraHeight, Blend));
 	FollowCamera->SetFieldOfView(FMath::Lerp(OutdoorFieldOfView, IndoorFieldOfView, Blend));
 
+	if (Blend > 0.f && Controller && CVarIndoorCameraFollow.GetValueOnGameThread())
+	{
+		UpdateIndoorCameraFollow(DeltaSeconds, Blend);
+	}
+
 	// Indoors the camera stays in the room: walls and ceilings (static, ignoring the camera channel so that the far
 	// outdoor camera sees into rooms) stop it, like the spring arm's own probe does for the rest.
+	FVector WallPush = FVector::ZeroVector;
 	if (Blend > 0.f && Controller)
 	{
 		const FVector Pivot = CameraBoom->GetComponentLocation() + CameraBoom->TargetOffset;
-		const FVector End = Pivot - Controller->GetControlRotation().Vector() * Distance;
+		const FRotator View = Controller->GetControlRotation();
+		const FVector End = Pivot - View.Vector() * Distance;
+		const FCollisionObjectQueryParams Objects(ECC_WorldStatic);
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(LBAIndoorCamera), false, this);
+		const FCollisionShape Probe = FCollisionShape::MakeSphere(CameraBoom->ProbeSize);
 		FHitResult Hit;
-		if (GetWorld()->SweepSingleByObjectType(Hit, Pivot, End, FQuat::Identity, FCollisionObjectQueryParams(ECC_WorldStatic),
-			FCollisionShape::MakeSphere(CameraBoom->ProbeSize), Params) && !Hit.bStartPenetrating)
+		if (GetWorld()->SweepSingleByObjectType(Hit, Pivot, End, FQuat::Identity, Objects, Probe, Params) && !Hit.bStartPenetrating)
 		{
 			Distance = FMath::Lerp(Distance, Hit.Distance, Blend);
 		}
+
+		// Then it keeps clear of the walls and furniture beside, behind and above it, pushed away from each, so that it
+		// never looks through one it grazes.
+		if (CVarIndoorCameraWalls.GetValueOnGameThread())
+		{
+			const FVector Camera = Pivot - View.Vector() * Distance;
+			for (int32 Index = 0; Index <= 8; ++Index)
+			{
+				const FVector Direction = Index < 8 ? FRotator(0.f, View.Yaw + Index * 45.f, 0.f).Vector() : FVector::UpVector;
+				if (!GetWorld()->LineTraceSingleByObjectType(Hit, Camera, Camera + Direction * IndoorCameraWallClearance, Objects, Params)
+					|| Hit.bStartPenetrating || (Hit.ImpactNormal | Direction) >= 0.f)
+				{
+					continue;
+				}
+				// Each surface hit is a plane to stay this far in front of; planes seen by several probes count once.
+				const double Needed = IndoorCameraWallClearance - ((Camera - Hit.ImpactPoint) | Hit.ImpactNormal);
+				const double Have = WallPush | Hit.ImpactNormal;
+				if (Needed > Have)
+				{
+					WallPush += Hit.ImpactNormal * (Needed - Have);
+				}
+			}
+			// Not into another wall.
+			if (!WallPush.IsNearlyZero() && GetWorld()->SweepSingleByObjectType(Hit, Camera, Camera + WallPush, FQuat::Identity, Objects,
+				Probe, Params) && !Hit.bStartPenetrating)
+			{
+				WallPush *= Hit.Time;
+			}
+		}
 	}
 	CameraBoom->TargetArmLength = Distance;
+	CameraWallPush = FMath::VInterpTo(CameraWallPush, WallPush * Blend, DeltaSeconds, 10.f);
+	CameraBoom->SocketOffset = Controller ? Controller->GetControlRotation().UnrotateVector(CameraWallPush) : FVector::ZeroVector;
+}
+
+void ALBACharacter::UpdateIndoorCameraFollow(float DeltaSeconds, float Blend)
+{
+	// Moving eases the camera back behind Twinsen, a while after the player last turned it, and level again at the indoor
+	// pitch. It turns little for a run at it, and not at all for one straight at it: the camera never swings round.
+	const FVector Velocity = GetVelocity();
+	const float Speed = Velocity.Size2D();
+	const float SinceLook = float(GetWorld()->GetTimeSeconds() - LastLookTime) - IndoorCameraFollowDelay;
+	if (Speed < 10.f || SinceLook <= 0.f || IsClimbing())
+	{
+		return;
+	}
+	FRotator View = Controller->GetControlRotation();
+	View.Pitch = FRotator::NormalizeAxis(View.Pitch);
+	const float Weight = Blend * FMath::Min(SinceLook / 0.5f, 1.f) * FMath::Min(Speed / FMath::Max(GetCharacterMovement()->MaxWalkSpeed, 1.f), 1.f);
+	const float Ease = 1.f - FMath::Exp(-IndoorCameraFollowSpeed * DeltaSeconds);
+	const float MaxStep = IndoorCameraFollowMaxRate * DeltaSeconds;
+
+	const float YawError = FMath::FindDeltaAngleDegrees(View.Yaw, FMath::RadiansToDegrees(FMath::Atan2(Velocity.Y, Velocity.X)));
+	const float YawWeight = Weight * FMath::GetMappedRangeValueClamped(FVector2f(110.f, 160.f), FVector2f(1.f, 0.f), FMath::Abs(YawError));
+	View.Yaw += FMath::Clamp(YawError * Ease, -MaxStep, MaxStep) * YawWeight;
+	View.Pitch += FMath::Clamp((IndoorCameraPitch - View.Pitch) * Ease, -MaxStep * 0.5f, MaxStep * 0.5f) * Weight;
+	Controller->SetControlRotation(View);
 }
 
 void ALBACharacter::UpdateModernLocomotion(float DeltaSeconds)
@@ -1160,6 +1228,10 @@ void ALBACharacter::ApplyLook(const FVector2D& Look)
 {
 	if (ControlMode == ELBAControlMode::Modern)
 	{
+		if (!Look.IsNearlyZero())
+		{
+			LastLookTime = GetWorld()->GetTimeSeconds();
+		}
 		AddControllerYawInput(Look.X);
 		AddControllerPitchInput(-Look.Y);
 	}

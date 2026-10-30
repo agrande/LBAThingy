@@ -486,6 +486,9 @@ bool ULBA2SnapshotSubsystem::TickCamera(UWorld* World, float DeltaTime)
 		/** From the pitch the game gives the camera (the first shot is what the player sees on arrival). */
 		float Pitch;
 		float Yaw;
+		/** Runs: the stick (camera-relative, X right, Y forward) held this long (s), the camera left to follow. */
+		FVector2D Input = FVector2D::ZeroVector;
+		float Duration = 0.f;
 	};
 	static const FStep Steps[] =
 	{
@@ -495,6 +498,8 @@ bool ULBA2SnapshotSubsystem::TickCamera(UWorld* World, float DeltaTime)
 		{ TEXT("left"), 0.f, 270.f },
 		{ TEXT("up"), 40.f, 0.f },
 		{ TEXT("down"), -35.f, 0.f },
+		{ TEXT("run_right"), 20.f, 0.f, { 1, 0 }, 3.f },
+		{ TEXT("run_back"), 0.f, 0.f, { 0, -1 }, 1.5f },
 	};
 	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
 
@@ -533,7 +538,39 @@ bool ULBA2SnapshotSubsystem::TickCamera(UWorld* World, float DeltaTime)
 
 	// Let the camera settle, shoot, then turn on a later frame (the shot is the next rendered frame).
 	const FStep& Step = Steps[HeroStep];
-	if (!bCameraShotTaken && Elapsed - HeroStepStart >= 1.5)
+	if (Step.Duration > 0.f && !bCameraShotTaken)
+	{
+		// A run: where the camera turns to, and how close it comes to walls.
+		Hero->SetMoveInput(Step.Input);
+		if (Elapsed >= NextReport)
+		{
+			const FVector View = PC->PlayerCameraManager->GetCameraLocation();
+			double Clearance = 1000.0;
+			for (int32 Index = 0; Index <= 8; ++Index)
+			{
+				const FVector Direction = Index < 8 ? FRotator(0.f, Index * 45.f, 0.f).Vector() : FVector::UpVector;
+				FHitResult Hit;
+				if (World->LineTraceSingleByObjectType(Hit, View, View + Direction * 1000.0, FCollisionObjectQueryParams(ECC_WorldStatic),
+					FCollisionQueryParams(SCENE_QUERY_STAT(LBA2ShotsClearance), false, Hero)))
+				{
+					Clearance = FMath::Min(Clearance, Hit.Distance);
+				}
+			}
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots camera %s t=%.2f: view yaw %.0f (heading %.0f, hero yaw %.0f) pitch %.0f arm %.0f, nearest wall %.0f cm, hero at %s"),
+				Step.Name, Elapsed - HeroStepStart, FRotator::NormalizeAxis(PC->GetControlRotation().Yaw - ModernBaseYaw),
+				FRotator::NormalizeAxis(Hero->GetVelocity().Rotation().Yaw - ModernBaseYaw), FRotator::NormalizeAxis(Hero->GetActorRotation().Yaw - ModernBaseYaw),
+				FRotator::NormalizeAxis(PC->GetControlRotation().Pitch), Hero->GetCameraBoom()->TargetArmLength, Clearance, *Hero->GetActorLocation().ToCompactString());
+			NextReport = Elapsed + 0.25;
+		}
+		if (Elapsed - HeroStepStart >= Step.Duration)
+		{
+			Hero->SetMoveInput(FVector2D::ZeroVector);
+			FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Camera_%02d_%s.png"), HeroStep, Step.Name), false, false);
+			bCameraShotTaken = true;
+			HeroStepStart = Elapsed - 1.5;
+		}
+	}
+	else if (!bCameraShotTaken && Elapsed - HeroStepStart >= 1.5)
 	{
 		if (HeroStep == 0)
 		{

@@ -152,6 +152,24 @@ public:
 	float IndoorCameraPitch = -20.f;
 
 	/**
+	 * Indoors, moving eases the free camera back behind Twinsen and down to IndoorCameraPitch, so that it needs turning by
+	 * hand less: this share of the way per second at full speed, at most this fast (degrees/s, half that up and down),
+	 * from this long (s) after the player last turned it. A run at the camera barely turns it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorCameraFollowSpeed = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorCameraFollowMaxRate = 60.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorCameraFollowDelay = 1.f;
+
+	/** Indoors the free camera keeps this far (cm) from walls, ceilings and furniture, pushed away from them. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorCameraWallClearance = 35.f;
+
+	/**
 	 * Mouse camera turn speed, as shares of the raw input, outdoors and indoors. The close indoor camera turns slower,
 	 * the room swinging past less, like adventure games in buildings.
 	 */
@@ -374,6 +392,7 @@ private:
 	void UpdateModern(float DeltaSeconds);
 	void UpdateModernLocomotion(float DeltaSeconds);
 	void UpdateModernCamera(float DeltaSeconds);
+	void UpdateIndoorCameraFollow(float DeltaSeconds, float Blend);
 	void UpdateProceduralPose(float DeltaSeconds);
 	void ModernLanded();
 	void PlaySlot(int32 AnimType, bool bLoop, float BlendTime = 0.15f, float PlayRate = 1.f);
@@ -491,6 +510,10 @@ private:
 	/** 0 outdoor camera, 1 indoor camera; -1 until the scene is known (no blend then). */
 	float IndoorBlend = -1.f;
 	float OutdoorFieldOfView = 90.f;
+	/** When the player last turned the camera by hand (the indoor camera follows Twinsen a while after). */
+	double LastLookTime = -1.0e9;
+	/** Where walls push the indoor camera (world space, smoothed). */
+	FVector CameraWallPush = FVector::ZeroVector;
 
 	// Modern locomotion
 	enum class EModernState : uint8
