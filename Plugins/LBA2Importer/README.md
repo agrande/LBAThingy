@@ -805,6 +805,12 @@ one levels start with; `lba.Look.Mode 0|1` switches live (values in between blen
   base color luminance) picks a shade row linearly, like the original's Gouraud intensity, and the
   light's color is kept as a tint. It runs before TSR, in linear HDR, which the volume makes equal
   to the displayed colors: manual exposure 1 and no tone curve.
+  Interior bricks are drawn already shaded and the original never shades them: their colors sit
+  anywhere on their ramps, and neighbours on two ramps part in the highlights (a terracotta floor
+  tile split into brown and cream patches). The importer marks the grid, enclosure, ceiling and
+  frames with a custom stencil (`LBA::PredrawnArtStencil`), and those pixels take the palette's
+  typical brightness of each row (median over its colors, an extra row of the shade texture)
+  instead of their own shade paths, all their colors alike.
 - **World-space dither** between shade rows, in two patterns (`DotPattern`, or `lba.Look.Pattern 0|1`):
   - *Fractal dots*: Rune Skovbo Johansen's Surface-Stable Fractal Dithering.
     `Shaders/Private/LBADither3D.ush` and `Source/LBA2Editor/Private/Import/LBADither3DTextures.*`

@@ -233,18 +233,42 @@ UMaterialInterface* FLBARenderingAssets::GetPaletteShading(const FLBAXpl& Xpl, E
 
 UTexture2D* FLBARenderingAssets::CreateShadesTexture(const FLBAXpl& Xpl, const FString& Name)
 {
-	// 256 x 17: the 16 shade rows of fog level 0, then the palette itself. sRGB bytes in a linear texture so the
+	// 256 x 18: the 16 shade rows of fog level 0, then the palette itself. sRGB bytes in a linear texture so the
 	// shader reads exact palette values.
-	constexpr int32 Height = FLBAXpl::NumShadeRows + 1;
+	constexpr int32 PaletteRow = FLBAXpl::NumShadeRows;
+	constexpr int32 BrightnessRow = PaletteRow + 1;
+	constexpr int32 Height = BrightnessRow + 1;
 	TArray<FColor> Pixels;
-	Pixels.SetNumUninitialized(256 * Height);
-	for (int32 Row = 0; Row < Height; ++Row)
+	Pixels.Init(FColor::Black, 256 * Height);
+	for (int32 Row = 0; Row < BrightnessRow; ++Row)
 	{
 		for (int32 Index = 0; Index < 256; ++Index)
 		{
 			const int32 Shaded = Row < FLBAXpl::NumShadeRows ? Xpl.GetShade(Index, Row) : Index;
 			Pixels[Row * 256 + Index] = Xpl.Palette[Shaded];
 		}
+	}
+	// Last row, first 16 texels: the palette's typical brightness in each shade row relative to the unshaded color
+	// (median over its colors, linear luminance / BrightnessScale, stored sRGB), for pre-drawn art (LBAPaletteShading.ush).
+	constexpr float BrightnessScale = 4.f;
+	auto Luma = [&Xpl](int32 Index)
+	{
+		const FLinearColor C = FLinearColor::FromSRGBColor(Xpl.Palette[Index]);
+		return 0.2126f * C.R + 0.7152f * C.G + 0.0722f * C.B;
+	};
+	for (int32 Row = 0; Row < FLBAXpl::NumShadeRows; ++Row)
+	{
+		TArray<float> Ratios;
+		for (int32 Index = 0; Index < 256; ++Index)
+		{
+			if (Luma(Index) > 0.01f)
+			{
+				Ratios.Add(Luma(Xpl.GetShade(Index, Row)) / Luma(Index));
+			}
+		}
+		Ratios.Sort();
+		const float Median = Ratios.IsEmpty() ? float(Row) / float(Xpl.ShadeNormalLevel) : Ratios[Ratios.Num() / 2];
+		Pixels[BrightnessRow * 256 + Row] = FLinearColor(FMath::Clamp(Median / BrightnessScale, 0.f, 1.f), 0.f, 0.f).ToFColor(true);
 	}
 
 	UTexture2D* Texture = PrepareTexture<UTexture2D>(Context, GetFolder(), Name);
@@ -387,8 +411,8 @@ UMaterial* FLBARenderingAssets::GetMaster()
 UMaterial* FLBARenderingAssets::CreateMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
-	// v31: globe mode's bend (MPC_LBA_Planet's PlanetBend and PlanetView).
-	constexpr int32 Version = 31;
+	// v31: globe mode's bend (MPC_LBA_Planet's PlanetBend and PlanetView). v32: pre-drawn art (ArtStencil, CustomDepth).
+	constexpr int32 Version = 32;
 
 	CreateDitherTextures();
 	UMaterialParameterCollection* PlanetCollection = GetPlanetParameters();
@@ -474,6 +498,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("BaseColor"), SceneTexture(PPI_BaseColor, 120) },
 		{ TEXT("Depth"), SceneTexture(PPI_SceneDepth, 240) },
 		{ TEXT("Stencil"), SceneTexture(PPI_CustomStencil, 360) },
+		{ TEXT("CustomDepth"), SceneTexture(PPI_CustomDepth, 400) },
 		{ TEXT("ShadingModel"), SceneTexture(PPI_ShadingModelID, 420) },
 		{ TEXT("WorldNormal"), SceneTexture(PPI_WorldNormal, 440) },
 		{ TEXT("Lut"), TextureObject(TEXT("PaletteLut"), DitherTexture, 480) },
@@ -509,6 +534,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("DotSizeVariability"), Scalar(TEXT("DotSizeVariability"), 0.f, TEXT("Dither")) },
 		{ TEXT("StretchSmoothness"), Scalar(TEXT("StretchSmoothness"), 1.f, TEXT("Dither")) },
 		{ TEXT("ExcludedStencil"), Scalar(TEXT("ExcludedStencil"), float(LBA::MovingObjectStencil), TEXT("Dither")) },
+		{ TEXT("ArtStencil"), Scalar(TEXT("ArtStencil"), float(LBA::PredrawnArtStencil), TEXT("Palette")) },
 		// The sea's color and neutral light are set per level (LBAEnvironment).
 		{ TEXT("WaterColor"), Vector(TEXT("WaterColor"), FLinearColor::Black, TEXT("Water")) },
 		{ TEXT("WaterNeutralLight"), Scalar(TEXT("WaterNeutralLight"), 1.f, TEXT("Water")) },
@@ -576,6 +602,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Contrast = max(Contrast, 0.05);\n"
 		"S.Saturation = Saturation;\n"
 		"S.ExcludedStencil = ExcludedStencil;\n"
+		"S.ArtStencil = ArtStencil;\n"
 		"S.WaterColor = WaterColor.rgb;\n"
 		"S.WaterNeutralLight = max(WaterNeutralLight, 0.01);\n"
 		"S.WaterLightTint = WaterLightTint;\n"
@@ -619,7 +646,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Halftone.Contrast = DotContrast;\n"
 		"S.Planet.Bend = PlanetBend;\n"
 		"S.Planet.View = PlanetView.xyz;\n"
-		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture,\n"
+		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, CustomDepth.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture,\n"
 		"    Dither, DitherSampler, DitherRamp, DitherRampSampler, HalftoneRamp, HalftoneRampSampler, S);"), DitherDotsPerSide);
 
 	UMaterialEditingLibrary::ConnectMaterialProperty(Custom, TEXT(""), MP_EmissiveColor);

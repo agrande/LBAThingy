@@ -1492,6 +1492,13 @@ namespace
 		Query.Shape = [L, Index](int32 X, int32 Y, int32 Z) { return int32(L->Blocks[Index(X, Y, Z)].Shape); };
 		return Query;
 	}
+
+	/** Brick art is drawn already shaded: the palette shading brightens its colors alike (LBA::PredrawnArtStencil). */
+	void MarkPredrawnArt(UStaticMeshComponent* Component)
+	{
+		Component->SetRenderCustomDepth(true);
+		Component->SetCustomDepthStencilValue(LBA::PredrawnArtStencil);
+	}
 }
 
 FLBAIsoImporter::FLBAIsoImporter(FLBAImportContext& InContext)
@@ -2635,6 +2642,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform::Identity, TEXT("Grid"), TEXT("Grid")))
 	{
 		Actor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
+		MarkPredrawnArt(Actor->GetStaticMeshComponent());
 	}
 	// The plan, drawn over the grid in the editor (Show > Developer > LBA2 Grid Plan).
 	if (ALBAGridPlanActor* Actor = PlanAsset ? Context.SpawnGeneratedActor<ALBAGridPlanActor>(World, FTransform::Identity, TEXT("GridPlan"), TEXT("Grid")) : nullptr)
@@ -2647,6 +2655,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		{
 			UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
 			Component->SetStaticMesh(EnclosureMesh);
+			MarkPredrawnArt(Component);
 			// Its faces look into the rooms: a camera outside sees in, yet the walls and ceilings still shade the rooms.
 			Component->bCastShadowAsTwoSided = true;
 			// Twinsen bumps into the raised walls; the camera never does.
@@ -2660,6 +2669,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		{
 			UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
 			Component->SetStaticMesh(CeilingMesh);
+			MarkPredrawnArt(Component);
 			// The interior's light comes from overhead (the original's): through the ceilings it lights the rooms, which
 			// bounce it onto their walls and ceilings, as a lit room would look.
 			Component->SetCastShadow(false);
@@ -2673,6 +2683,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 		{
 			UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
 			Component->SetStaticMesh(FramesMesh);
+			MarkPredrawnArt(Component);
 			// Shown instead of the enclosure, with the Original look (not switched yet: the enclosure shows in both).
 			Component->SetVisibility(false);
 			// The grid's collision already covers them.

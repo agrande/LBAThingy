@@ -26,6 +26,12 @@ namespace LBA
 	 */
 	inline constexpr int32 MovingObjectStencil = 200;
 
+	/**
+	 * Custom depth stencil value of pre-drawn art (interior bricks). The original never shades it, so the palette
+	 * shading post-process brightens or darkens its colors alike instead of walking each one's shade path.
+	 */
+	inline constexpr int32 PredrawnArtStencil = 201;
+
 	/** Converts an LBA position (in LBA units) into Unreal centimeters. */
 	inline FVector ToUnreal(double X, double Y, double Z, double Scale)
 	{
