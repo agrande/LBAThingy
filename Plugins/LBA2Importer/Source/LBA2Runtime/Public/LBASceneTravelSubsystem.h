@@ -69,9 +69,12 @@ public:
 
 	/**
 	 * Goes to a scene, the player's feet at a position of that scene (LBA units, scene-local), facing an LBA angle.
-	 * bSnapToGround puts the feet on the floor below, like the original's ReajustPos.
+	 * bSnapToGround puts the feet on the floor below, like the original's ReajustPos. An exterior scene whose island
+	 * level is laid on a planet (ULBAPlanetAsset::Level) is reached there when the player is on that planet, or with
+	 * bToPlanet (building exits).
 	 */
-	bool TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround, const FString& PreferredLevel = FString());
+	bool TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround, const FString& PreferredLevel = FString(),
+		bool bToPlanet = false);
 
 	/** A player pawn entered a cube change zone. */
 	void OnCubeChangeZone(ALBACubeChangeVolume* Zone, APawn* Pawn);
@@ -92,8 +95,8 @@ private:
 	};
 
 	/**
-	 * Picks the level to open for a scene: the preferred one if the scene is in it, else the current one if it is,
-	 * else the island variant last visited.
+	 * Picks the level to open for a scene: the preferred one if the scene is in it, else the current one if it is (on a
+	 * planet's level, its island level there), else the island variant last visited.
 	 */
 	FString ChooseSceneryLevel(const ULBASceneAsset* Scene, const UWorld* World, const FString& PreferredLevel) const;
 	static FVector SnapFeet(UWorld* World, const FVector& Feet, const AActor* Ignore);

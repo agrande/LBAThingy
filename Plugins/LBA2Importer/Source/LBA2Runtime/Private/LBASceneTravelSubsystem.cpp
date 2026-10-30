@@ -12,7 +12,9 @@
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
 #include "LBAIslandTravelSubsystem.h"
+#include "LBAPlanet.h"
 #include "LBASceneAsset.h"
+#include "LevelUtils.h"
 #include "LBATypes.h"
 #include "LBAZoneVolume.h"
 
@@ -74,6 +76,56 @@ namespace
 			}
 		}
 		return INDEX_NONE;
+	}
+
+	/** An island level laid in a planet's level (globe mode): that level, and the island level's space to its. */
+	struct FPlanetPlacement
+	{
+		FString PlanetLevel;
+		FTransform IslandToPlanet;
+	};
+
+	TOptional<FPlanetPlacement> FindPlanetPlacement(const FString& IslandLevel)
+	{
+		for (const TSoftObjectPtr<ULBAPlanetAsset>& Soft : GetDefault<ULBA2Settings>()->Planets)
+		{
+			const ULBAPlanetAsset* Planet = Soft.LoadSynchronous();
+			const int32 Index = Planet && !Planet->Level.IsNull() ? Planet->Islands.IndexOfByPredicate([&IslandLevel](const FLBAPlanetIsland& Island)
+			{
+				return Island.Level.ToSoftObjectPath().GetLongPackageName() == IslandLevel;
+			}) : INDEX_NONE;
+			if (Index != INDEX_NONE)
+			{
+				// The planet's level has its islands where they are at its own radius.
+				return FPlanetPlacement{ Planet->Level.ToSoftObjectPath().GetLongPackageName(), Planet->GetIslandToHome(Index, Planet->Radius) };
+			}
+		}
+		return {};
+	}
+
+	/** The island levels laid in a planet's level, none for other levels. */
+	TArray<FString> GetPlanetIslandLevels(const FString& PlanetLevel)
+	{
+		TArray<FString> Levels;
+		for (const TSoftObjectPtr<ULBAPlanetAsset>& Soft : GetDefault<ULBA2Settings>()->Planets)
+		{
+			const ULBAPlanetAsset* Planet = Soft.LoadSynchronous();
+			if (Planet && Planet->Level.ToSoftObjectPath().GetLongPackageName() == PlanetLevel)
+			{
+				for (const FLBAPlanetIsland& Island : Planet->Islands)
+				{
+					Levels.Add(Island.Level.ToSoftObjectPath().GetLongPackageName());
+				}
+			}
+		}
+		return Levels;
+	}
+
+	/** Where a level of World is streamed in (a scene of an island laid on a planet is moved with its island). */
+	FTransform GetLevelToWorld(const ULevel* Level)
+	{
+		const ULevelStreaming* Streaming = Level ? FLevelUtils::FindStreamingLevel(Level) : nullptr;
+		return Streaming ? Streaming->LevelTransform : FTransform::Identity;
 	}
 }
 
@@ -149,7 +201,8 @@ int32 ULBASceneTravelSubsystem::FindSceneAt(const UWorld* World, const FVector* 
 	{
 		return INDEX_NONE;
 	}
-	TSet<FString> VisibleLevels;
+	// Visible levels, where they are (a planet's level moves its islands' scenes with them).
+	TMap<FString, FTransform> VisibleLevels;
 	for (const ULevelStreaming* Streaming : World->GetStreamingLevels())
 	{
 		bool bVisible = Streaming && Streaming->IsLevelVisible();
@@ -159,7 +212,7 @@ int32 ULBASceneTravelSubsystem::FindSceneAt(const UWorld* World, const FVector* 
 #endif
 		if (bVisible)
 		{
-			VisibleLevels.Add(UWorld::RemovePIEPrefix(Streaming->GetWorldAssetPackageName()));
+			VisibleLevels.Add(UWorld::RemovePIEPrefix(Streaming->GetWorldAssetPackageName()), Streaming->LevelTransform);
 		}
 	}
 
@@ -170,16 +223,16 @@ int32 ULBASceneTravelSubsystem::FindSceneAt(const UWorld* World, const FVector* 
 	{
 		FString Level;
 		int32 SceneIndex = INDEX_NONE;
-		if (!Asset.GetTagValue(GET_MEMBER_NAME_CHECKED(ULBASceneAsset, Level), Level)
-			|| !VisibleLevels.Contains(FSoftObjectPath(Level).GetLongPackageName())
-			|| !GetIntTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, SceneIndex), SceneIndex))
+		const FTransform* LevelToWorld = Asset.GetTagValue(GET_MEMBER_NAME_CHECKED(ULBASceneAsset, Level), Level)
+			? VisibleLevels.Find(FSoftObjectPath(Level).GetLongPackageName()) : nullptr;
+		if (!LevelToWorld || !GetIntTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, SceneIndex), SceneIndex))
 		{
 			continue;
 		}
 		if (GetBoolTag(Asset, GET_MEMBER_NAME_CHECKED(ULBASceneAsset, bExterior)))
 		{
 			const ULBASceneAsset* Scene = Location ? Cast<ULBASceneAsset>(Asset.GetAsset()) : nullptr;
-			const FIntVector Local = Scene ? Scene->ToScene(*Location) : FIntVector(-1);
+			const FIntVector Local = Scene ? Scene->ToScene(LevelToWorld->InverseTransformPosition(*Location)) : FIntVector(-1);
 			if (Local.X >= 0 && Local.X < LBA::IslandCubeSize && Local.Z >= 0 && Local.Z < LBA::IslandCubeSize)
 			{
 				return SceneIndex;
@@ -254,11 +307,14 @@ FString ULBASceneTravelSubsystem::ChooseSceneryLevel(const ULBASceneAsset* Scene
 		}
 	}
 	const FString Current = GetWorldPackage(World);
+	const TArray<FString> CurrentIslands = GetPlanetIslandLevels(Current);
 	for (const TSoftObjectPtr<UWorld>& Level : Scene->SceneryLevels)
 	{
-		if (Level.ToSoftObjectPath().GetLongPackageName() == Current)
+		const FString Package = Level.ToSoftObjectPath().GetLongPackageName();
+		if (Package == Current || CurrentIslands.Contains(Package))
 		{
-			return Current;
+			// On a planet, its island level (TravelToSceneAt stays on the planet).
+			return Package;
 		}
 	}
 	if (const FString* Last = LastIslandLevels.Find(Scene->Island); Last && Scene->bExterior)
@@ -274,7 +330,8 @@ FString ULBASceneTravelSubsystem::ChooseSceneryLevel(const ULBASceneAsset* Scene
 	return Scene->SceneryLevels.IsEmpty() ? FString() : Scene->SceneryLevels[0].ToSoftObjectPath().GetLongPackageName();
 }
 
-bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround, const FString& PreferredLevel)
+bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround, const FString& PreferredLevel,
+	bool bToPlanet)
 {
 	const ULBASceneAsset* Scene = FindScene(SceneIndex);
 	UWorld* World = GetGameInstance()->GetWorld();
@@ -284,28 +341,41 @@ bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVecto
 		return false;
 	}
 	// The island variant being left, then the one asked for, are remembered like a door taken from them: leaving an
-	// interior comes back to the same variant.
+	// interior comes back to the same variant. Leaving a planet, its islands' levels are the variants left.
 	const FString CurrentLevel = GetWorldPackage(World);
-	const int32 CurrentIsland = GetLevelSceneIsland(CurrentLevel);
-	if (CurrentIsland != INDEX_NONE)
+	TArray<FString> LeftLevels = GetPlanetIslandLevels(CurrentLevel);
+	LeftLevels.Add(CurrentLevel);
+	for (const FString& Left : LeftLevels)
 	{
-		LastIslandLevels.Add(CurrentIsland, CurrentLevel);
+		const int32 LeftIsland = GetLevelSceneIsland(Left);
+		if (LeftIsland != INDEX_NONE)
+		{
+			LastIslandLevels.Add(LeftIsland, Left);
+		}
 	}
 	if (!PreferredLevel.IsEmpty() && GetLevelSceneIsland(PreferredLevel) == Scene->Island)
 	{
 		LastIslandLevels.Add(Scene->Island, PreferredLevel);
 	}
-	const FString Level = ChooseSceneryLevel(Scene, World, PreferredLevel);
+	FString Level = ChooseSceneryLevel(Scene, World, PreferredLevel);
 	if (Level.IsEmpty())
 	{
 		UE_LOG(LogLBA2, Warning, TEXT("Scene %d has no scenery level."), SceneIndex);
 		return false;
 	}
+	// An island laid on a planet is played there when the player is on it already, or asked for (building exits).
+	FTransform LevelToWorld = FTransform::Identity;
+	if (const TOptional<FPlanetPlacement> Placement = Scene->bExterior ? FindPlanetPlacement(Level) : TOptional<FPlanetPlacement>();
+		Placement && (bToPlanet || Placement->PlanetLevel == CurrentLevel))
+	{
+		Level = Placement->PlanetLevel;
+		LevelToWorld = Placement->IslandToPlanet;
+	}
 
 	FArrival Arrival;
 	Arrival.LevelPackage = Level;
-	Arrival.Feet = Scene->ToWorld(Feet);
-	Arrival.Yaw = ULBASceneAsset::BetaToActorYaw(Beta);
+	Arrival.Feet = LevelToWorld.TransformPosition(Scene->ToWorld(Feet));
+	Arrival.Yaw = FRotator::NormalizeAxis(ULBASceneAsset::BetaToActorYaw(Beta) + LevelToWorld.Rotator().Yaw);
 	Arrival.bSnapToGround = bSnapToGround;
 
 	APlayerController* Player = GetGameInstance()->GetFirstLocalPlayerController(World);
@@ -347,7 +417,8 @@ void ULBASceneTravelSubsystem::OnCubeChangeZone(ALBACubeChangeVolume* Zone, APaw
 	// added to the arrival point (its height relative to the zone's floor).
 	const UCapsuleComponent* Capsule = Pawn->FindComponentByClass<UCapsuleComponent>();
 	const FVector FeetWorld = Pawn->GetActorLocation() - FVector(0.0, 0.0, Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 0.0);
-	const FIntVector Hero = Source->ToScene(FeetWorld);
+	const FTransform LevelToWorld = GetLevelToWorld(Zone->GetLevel());
+	const FIntVector Hero = Source->ToScene(LevelToWorld.InverseTransformPosition(FeetWorld));
 	const int32 Turn = (-Zone->ArrivalQuarterTurns * 1024) & (LBA::AngleFullTurn - 1);
 	const double Radians = FMath::DegreesToRadians(LBA::AngleToDegrees(Turn));
 	const double DX = Hero.X - Data->Min.X;
@@ -356,9 +427,10 @@ void ULBASceneTravelSubsystem::OnCubeChangeZone(ALBACubeChangeVolume* Zone, APaw
 		Zone->Arrival.X + FMath::RoundToInt(DX * FMath::Cos(Radians) + DZ * FMath::Sin(Radians)),
 		Hero.Y - Data->Min.Y + Zone->Arrival.Y,
 		Zone->Arrival.Z + FMath::RoundToInt(DZ * FMath::Cos(Radians) - DX * FMath::Sin(Radians)));
-	const int32 Beta = ULBASceneAsset::ActorYawToBeta(Pawn->GetActorRotation().Yaw) + Turn;
+	const int32 Beta = ULBASceneAsset::ActorYawToBeta(Pawn->GetActorRotation().Yaw - LevelToWorld.Rotator().Yaw) + Turn;
 	UE_LOG(LogLBA2, Log, TEXT("Cube change zone %d of scene %d -> scene %d at %s"), Zone->ZoneIndex, Source->SceneIndex, Zone->TargetScene, *Arrival.ToString());
-	TravelToSceneAt(Zone->TargetScene, Arrival, Beta & (LBA::AngleFullTurn - 1), !Zone->bKeepArrivalHeight);
+	// A building's exit leads out onto the planet when its island is laid on one.
+	TravelToSceneAt(Zone->TargetScene, Arrival, Beta & (LBA::AngleFullTurn - 1), !Zone->bKeepArrivalHeight, FString(), !Source->bExterior);
 }
 
 bool ULBASceneTravelSubsystem::ConsumeArrival(UWorld* World, float PawnHalfHeight, FTransform& OutTransform)

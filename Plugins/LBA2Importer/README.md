@@ -499,7 +499,10 @@ islands' levels where they are on the planet's map, each with its scenes (Unreal
 sub-levels, so the planet lists them itself), the belt and the home island's sea. The home island (Citadel, sunny: the
 first placed) keeps its level's place, so its coordinates are the same as in its own level; its sky, lights and look are
 the planet's, the other islands' go when it plays. Importing an island of the planet (Islands layer) or its scenes
-(Scenes layer) rebuilds it; open in the editor (not playing), it shows every island's own sky and sun.
+(Scenes layer) rebuilds it; open in the editor (not playing), it shows every island's own sky and sun. A building's
+exit leads out onto the planet whenever its island level is placed there (sunny Citadel, the desert island), whichever
+level the player came in from; Citadel in the storm isn't on the planet, so its buildings still lead back to it.
+`lba.Scene` on the planet stays on it.
 
 In the editor, the toolbar's **Globe** button (next to Levels; also Tools > Play on the Globe, or `lba.Globe.Play`)
 plays the planet's level in the level viewport without opening it here; a packaged game starts on it. An island's own level opens on the planet too
