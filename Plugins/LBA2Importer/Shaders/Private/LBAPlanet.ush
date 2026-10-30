@@ -1,15 +1,16 @@
 // LBAPlanet.ush
 //
-// Globe mode (ULBAPlanetSubsystem): the world is flat and still, only the view is round. Around the camera, the world
-// stays flat out to a radius (Flat); past it, it bends down onto a sphere of the planet's radius: a point at Distance
-// from the camera (horizontally) goes Distance - Flat along the sphere from the flat circle's edge, its height above
-// the sea becoming height above the sphere. So the sea curves away to a horizon, and far islands sink below it as they
-// tilt away, rising as they come close. Values come from MPC_LBA_Planet, written each frame from the camera:
+// Globe mode (ULBAPlanetSubsystem): the world is flat and still, only the view is round. From the camera on, it bends
+// down onto a sphere of the planet's radius, the camera on top: a point at Distance from the camera (horizontally)
+// goes Distance along the sphere, its height above the sea becoming height above the sphere. So the sea curves away
+// to a horizon, and far islands sink below it as they tilt away, rising as they come close. Values come from
+// MPC_LBA_Planet, written each frame from the camera:
 //
-//   PlanetBend          x: radius (cm), y: flat radius around the camera (cm), z: sea level (world Z), w: 1 when on
+//   PlanetBend          x: radius (cm), y: unused (0), z: sea level (world Z), w: 1 when on
 //   PlanetView          xyz: the camera (world)
 //   PlanetViewPrevious  xyz: the camera last frame (world), for motion vectors
 //   PlanetSeaMove       xyz: how far the sea disc (kept under the camera) moved since last frame
+//   PlanetSkyBelow      rgb: how much sky the sea reflects below the flat horizon (0: none, the renderer has its own)
 
 #pragma once
 
@@ -19,20 +20,19 @@ float3 LBAPlanetBendOffset(float3 FromView, float3 View, float4 Bend)
 {
 	const float Radius = max(Bend.x, 1.0);
 	const float Distance = length(FromView.xy);
-	const float Beyond = Distance - Bend.y;
-	if (Bend.w <= 0.0 || Beyond <= 0.0)
+	if (Bend.w <= 0.0 || Distance <= 0.0)
 	{
 		return 0.0;
 	}
 	const float2 Along = FromView.xy / Distance;
 	const float Height = View.z + FromView.z - Bend.z;
 	// Past half way around, everything ends at the far side of the planet.
-	const float Angle = min(Beyond / Radius, PI);
+	const float Angle = min(Distance / Radius, PI);
 	const float Sin = sin(Angle);
 	const float HalfSin = sin(0.5 * Angle);
-	// Horizontally Flat + (Radius + Height) sin(Angle) from the camera instead of Distance; vertically
+	// Horizontally (Radius + Height) sin(Angle) from the camera instead of Distance; vertically
 	// (Radius + Height)(cos(Angle) - 1) lower, written so they stay precise for small angles.
-	const float Outward = Radius * (Sin - Angle) - (Beyond - Radius * Angle) + Height * Sin;
+	const float Outward = Radius * (Sin - Angle) - (Distance - Radius * Angle) + Height * Sin;
 	const float Down = -2.0 * (Radius + Height) * HalfSin * HalfSin;
 	return float3(Along * Outward, Down);
 }
@@ -49,12 +49,11 @@ float3 LBAPlanetSeaPreviousOffset(float3 FromViewPrevious, float3 ViewPrevious, 
 float3 LBAPlanetBentUp(float3 FromView, float4 Bend)
 {
 	const float Distance = length(FromView.xy);
-	const float Beyond = Distance - Bend.y;
-	if (Bend.w <= 0.0 || Beyond <= 0.0)
+	if (Bend.w <= 0.0 || Distance <= 0.0)
 	{
 		return float3(0.0, 0.0, 1.0);
 	}
-	const float Angle = min(Beyond / max(Bend.x, 1.0), PI);
+	const float Angle = min(Distance / max(Bend.x, 1.0), PI);
 	return float3(FromView.xy / Distance * sin(Angle), cos(Angle));
 }
 
@@ -63,18 +62,44 @@ float3 LBAPlanetBentUp(float3 FromView, float4 Bend)
 float3 LBAPlanetBendVector(float3 FromView, float4 Bend, float3 Vector)
 {
 	const float Distance = length(FromView.xy);
-	const float Beyond = Distance - Bend.y;
-	if (Bend.w <= 0.0 || Beyond <= 0.0)
+	if (Bend.w <= 0.0 || Distance <= 0.0)
 	{
 		return Vector;
 	}
-	const float Angle = min(Beyond / max(Bend.x, 1.0), PI);
+	const float Angle = min(Distance / max(Bend.x, 1.0), PI);
 	// Turn about the horizontal axis across the way from the camera, away from it.
 	const float2 Along = FromView.xy / Distance;
 	const float3 Axis = float3(-Along.y, Along.x, 0.0);
 	const float Cos = cos(Angle);
 	const float Sin = sin(Angle);
 	return Vector * Cos + cross(Axis, Vector) * Sin + Axis * dot(Axis, Vector) * (1.0 - Cos);
+}
+
+// The sky the sea reflects below the flat horizon. Its normals turn with the bend, so far water reflects directions
+// under the flat world's horizon, where the sky light is black (as in the island levels: the land must not get light
+// from below); on a small planet the sky goes on down there to its own horizon. The sea gives it off as light: the
+// sky light sampled in LBAPlanetSeaSkyBelowDirection, times LBAPlanetSeaSkyBelowWeight. Normal: the sea's (world,
+// bent); ToCamera: the camera vector (world).
+
+// The sea's reflection mirrored above the flat horizon: the sky near the horizon stands for the sky below it.
+float3 LBAPlanetSeaSkyBelowDirection(float3 Normal, float3 ToCamera)
+{
+	const float3 N = normalize(Normal);
+	const float3 V = normalize(ToCamera);
+	const float3 Reflected = 2.0 * dot(N, V) * N - V;
+	return float3(Reflected.xy, abs(Reflected.z));
+}
+
+// How much of it the sea reflects: water's Fresnel (Schlick, F0 0.02) where the reflection goes below the horizon,
+// the sky light's black edge softened like a slightly rough reflection; SkyBelow: PlanetSkyBelow (0: none).
+float3 LBAPlanetSeaSkyBelowWeight(float3 Normal, float3 ToCamera, float3 SkyBelow)
+{
+	const float3 N = normalize(Normal);
+	const float3 V = normalize(ToCamera);
+	const float NoV = saturate(dot(N, V));
+	const float3 Reflected = 2.0 * NoV * N - V;
+	const float Fresnel = 0.02 + 0.98 * pow(1.0 - NoV, 5.0);
+	return SkyBelow * Fresnel * saturate(0.5 - 8.0 * Reflected.z);
 }
 
 // Normal of the sea (world) at a point given by its flat world position, with small ripples laid out on the flat sea.
@@ -117,17 +142,16 @@ float3 LBAPlanetUnbend(FLBAPlanetView P, float3 World)
 {
 	const float3 FromView = World - P.View;
 	const float Distance = length(FromView.xy);
-	const float Beyond = Distance - P.Bend.y;
-	if (!LBAPlanetBent(P) || Beyond <= 0.0)
+	if (!LBAPlanetBent(P) || Distance <= 0.0)
 	{
 		return World;
 	}
-	// From the center of the bend's sphere below the flat circle's edge: the angle along it and the height above it.
+	// From the center of the bend's sphere below the camera: the angle along it and the height above it.
 	const float Radius = max(P.Bend.x, 1.0);
 	const float Up = World.z - (P.Bend.z - Radius);
-	const float Angle = atan2(Beyond, Up);
-	const float Height = sqrt(Beyond * Beyond + Up * Up) - Radius;
-	return float3(P.View.xy + FromView.xy / Distance * (P.Bend.y + Radius * Angle), P.Bend.z + Height);
+	const float Angle = atan2(Distance, Up);
+	const float Height = sqrt(Distance * Distance + Up * Up) - Radius;
+	return float3(P.View.xy + FromView.xy / Distance * (Radius * Angle), P.Bend.z + Height);
 }
 
 // A direction of the bent view (world) at a point of it, as it is in the flat world (the tilt of the bend undone).

@@ -132,7 +132,7 @@ FLBADitherFrame LBADitherSurfaceFrame(float2 ViewportUV, float Depth, float2 Pix
 	float3 DPDY = LBASurfaceDelta(ViewportUV, float2(0.0, PixelSize.y), Center, Depth);
 	FDFVector3 WorldPos = DFFastSubtract(Center, PrimaryView.PreViewTranslation);
 	const float3 World = DFDemote(WorldPos);
-	if (LBAPlanetBent(Planet) && length(World.xy - Planet.View.xy) > Planet.Bend.y)
+	if (LBAPlanetBent(Planet))
 	{
 		const float3 Flat = LBAPlanetUnbend(Planet, World);
 		DPDX = LBAPlanetUnbend(Planet, World + DPDX) - Flat;

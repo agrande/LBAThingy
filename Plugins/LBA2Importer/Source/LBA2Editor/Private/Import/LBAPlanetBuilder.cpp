@@ -51,8 +51,6 @@ namespace
 		const TCHAR* Name;
 		/** Sea level radius (cm). */
 		double Radius;
-		/** The world stays flat this far around the camera (cm), then bends (ULBAPlanetAsset::FlatRadius). */
-		float FlatRadius;
 		/** The first placed island is the planet's home: its sea's look is the planet's. */
 		TArray<FPlanetIslandPreset> Islands;
 		/** Twinsun's Hamalayi belt from the holomap closes the islands' hemisphere (LBAPlanetBelt). */
@@ -64,10 +62,10 @@ namespace
 		// Twinsun at 320 m (2026-10-28, was 287 m, 400 m, 650 m, 750 m, before that 2 km): the holomap's size, where
 		// Citadel island is as big as painted on its globe (the same land area; holomap_fit.py). Citadel island (its
 		// sunny variant) and the desert island where the holomap has them, 226 m apart, Citadel about halfway from the
-		// desert at the pole to the belt. Flat 100 m around the camera: the island under it stays flat.
+		// desert at the pole to the belt.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 32000.0, 10000.f, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0 } }, true },
+			{ TEXT("TWINSUN"), 32000.0, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0 } }, true },
 		};
 		return Presets;
 	}
@@ -348,13 +346,13 @@ namespace
 	/**
 	 * The planet's sea levels: for each placed island whose sea is known, its sea over all the planet's islands, laid
 	 * where they are around it (as the planet subsystem streams them in). The zone takes in every camera near an
-	 * island, plus all the sea the bent view can show from there: out a quarter way around the planet past the flat
-	 * circle (beyond is the far side, never in view).
+	 * island, plus all the sea the bent view can show from there: out a quarter way around the planet (beyond is the
+	 * far side, never in view).
 	 */
 	void BuildSeaLevels(FLBAImportContext& Context, ULBAPlanetAsset* Asset, const FString& Folder)
 	{
 		const double Radius = Asset->Radius;
-		const double Visible = Asset->FlatRadius + 0.5 * UE_DOUBLE_PI * Radius;
+		const double Visible = 0.5 * UE_DOUBLE_PI * Radius;
 		for (FLBAPlanetIsland& Opened : Asset->Islands)
 		{
 			UMaterialInterface* Material = Opened.WaterMaterial.LoadSynchronous();
@@ -651,7 +649,6 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	Asset->Modify();
 	Asset->HomeIsland = Planet->Islands.FindByPredicate([](const FPlanetIslandPreset& Listed) { return Listed.bPlaced; })->Island;
 	Asset->Radius = Radius;
-	Asset->FlatRadius = Planet->FlatRadius;
 	Asset->SunDirection = PlanetSun;
 	Asset->SeaMesh = SeaMesh;
 	Asset->SeaMaterial = SeaMaterial;

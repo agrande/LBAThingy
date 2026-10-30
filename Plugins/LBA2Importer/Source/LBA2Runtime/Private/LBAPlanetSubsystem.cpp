@@ -40,8 +40,6 @@ namespace
 		TEXT("1 prints where the camera is on the planet on screen."));
 	TAutoConsoleVariable<int32> CVarGlobeBend(TEXT("lba.Globe.Bend"), 1,
 		TEXT("0: the view isn't bent onto the planet (the flat world as it is, to compare)."));
-	TAutoConsoleVariable<float> CVarGlobeFlatRadius(TEXT("lba.Globe.FlatRadius"), -1.f,
-		TEXT("Overrides how far around the camera the world stays flat (m; negative: the planet's)."));
 	TAutoConsoleVariable<float> CVarGlobeRadius(TEXT("lba.Globe.Radius"), -1.f,
 		TEXT("Overrides the planet's radius for the next level opened (m; negative: the planet's): the islands' places and the bend."));
 	TAutoConsoleVariable<float> CVarGlobeSkyLightGain(TEXT("lba.Globe.SkyLightGain"), -1.f,
@@ -56,6 +54,9 @@ namespace
 	// 0.8-0.94 (walls under eaves 0.94, plants 0.8).
 	TAutoConsoleVariable<float> CVarGlobeUnoccludedSkyLight(TEXT("lba.Globe.UnoccludedSkyLight"), 0.85f,
 		TEXT("Without Lumen, the sky light's intensity relative to the planet's: nothing shadows it but screen space AO, so it is turned down to give the light Lumen gave."));
+	// Measured on Citabau against Lumen: the far sea matches at 0.75 (horizon (110, 185, 229) against (105, 178, 222)).
+	TAutoConsoleVariable<float> CVarGlobeSeaSkyBelow(TEXT("lba.Globe.SeaSkyBelow"), 0.75f,
+		TEXT("Without Lumen, how much of the sky the sea reflects below the flat horizon (the sky light is black there): 0 none."));
 	TAutoConsoleVariable<int32> CVarGlobeBelt(TEXT("lba.Globe.Belt"), 1,
 		TEXT("0: the planet's belt (Twinsun's Hamalayi mountains) isn't streamed in (for the next level opened)."));
 
@@ -318,9 +319,9 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 
 	const FLBAPlanetIsland& Island = Asset->Islands[Home];
 	const FVector2D Map = Island.GetMapLocation(Radius);
-	UE_LOG(LogLBA2, Display, TEXT("Globe mode: %s on %s (radius %.0f m), latitude %.1f, longitude %.1f, heading %.1f, at (%.0f, %.0f) m on the map, flat %.0f m around the camera"),
+	UE_LOG(LogLBA2, Display, TEXT("Globe mode: %s on %s (radius %.0f m), latitude %.1f, longitude %.1f, heading %.1f, at (%.0f, %.0f) m on the map"),
 		*Island.Island.ToString(), *Asset->GetName(), Radius / 100.0, Island.Latitude, Island.Longitude, Island.Heading,
-		Map.X / 100.0, Map.Y / 100.0, Asset->FlatRadius / 100.0);
+		Map.X / 100.0, Map.Y / 100.0);
 	if (Radius != Asset->Radius)
 	{
 		UE_LOG(LogLBA2, Display, TEXT("Globe mode: radius %.0f m instead of %.0f m (lba.Globe.Radius)"), Radius / 100.0, Asset->Radius / 100.0);
@@ -606,20 +607,21 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 
 	UMaterialParameterCollection* Collection = Asset->MaterialParameters.Get();
 	UMaterialParameterCollectionInstance* Instance = Collection ? GetWorld()->GetParameterCollectionInstance(Collection) : nullptr;
-	const float FlatOverride = CVarGlobeFlatRadius.GetValueOnGameThread();
-	const float FlatRadius = FlatOverride >= 0.f ? FlatOverride * 100.f : Asset->FlatRadius;
 	const bool bBend = CVarGlobeBend.GetValueOnGameThread() != 0;
 	if (ViewExtension)
 	{
-		ViewExtension->SetBend(View, Radius, FlatRadius, SeaLevel, bBend && Instance);
+		ViewExtension->SetBend(View, Radius, SeaLevel, bBend && Instance);
 	}
 	if (Instance)
 	{
-		Instance->SetVectorParameterValue(TEXT("PlanetBend"), FLinearColor(float(Radius), FlatRadius, float(SeaLevel), bBend ? 1.f : 0.f));
+		Instance->SetVectorParameterValue(TEXT("PlanetBend"), FLinearColor(float(Radius), 0.f, float(SeaLevel), bBend ? 1.f : 0.f));
 		Instance->SetVectorParameterValue(TEXT("PlanetView"), ToParameter(View, 0.0));
 		Instance->SetVectorParameterValue(TEXT("PlanetViewPrevious"), ToParameter(PreviousView, 0.0));
 		// The disc's move since last frame: its vertices aren't the same points of the sea from frame to frame.
 		Instance->SetVectorParameterValue(TEXT("PlanetSeaMove"), ToParameter(Sea - PreviousSea, 0.0));
+		// Lumen's reflections see the sky (or the world) below the flat horizon by themselves.
+		const float SkyBelow = bLumen ? 0.f : CVarGlobeSeaSkyBelow.GetValueOnGameThread();
+		Instance->SetVectorParameterValue(TEXT("PlanetSkyBelow"), FLinearColor(SkyBelow, SkyBelow, SkyBelow, 0.f));
 	}
 	PreviousSea = Sea;
 }
@@ -632,13 +634,11 @@ void ULBAPlanetSubsystem::DrawDebug() const
 	}
 	double Distance = 0.0;
 	const int32 Nearest = FindNearestIsland(View, Distance);
-	const double FlatRadius = CVarGlobeFlatRadius.GetValueOnGameThread() >= 0.f ? CVarGlobeFlatRadius.GetValueOnGameThread() * 100.0 : Asset->FlatRadius;
-	const double Beyond = FMath::Max(Distance - FlatRadius, 0.0);
 	// How far the nearest island's center sinks (cm), and the sea horizon's distance at the camera's height (where the
-	// view grazes the sea: flat, then a parabola for small angles).
-	const double Drop = Radius * (1.0 - FMath::Cos(FMath::Min(Beyond / Radius, UE_DOUBLE_PI)));
+	// view grazes the sea, for small angles).
+	const double Drop = Radius * (1.0 - FMath::Cos(FMath::Min(Distance / Radius, UE_DOUBLE_PI)));
 	const double Height = FMath::Max(View.Z - SeaLevel, 0.0);
-	const double Horizon = FMath::Sqrt(FMath::Square(FlatRadius) + 2.0 * Radius * Height);
+	const double Horizon = FMath::Sqrt(2.0 * Radius * Height);
 	GEngine->AddOnScreenDebugMessage(uint64(0x6C6261676C6F6265), 0.f, FColor::Cyan, FString::Printf(
 		TEXT("Globe: camera %.0f m above the sea, %.0f m from %s (sunk %.1f m), sea horizon %.0f m away"),
 		Height / 100.0, Distance / 100.0, Nearest != INDEX_NONE ? *Asset->Islands[Nearest].Island.ToString() : TEXT("-"), Drop / 100.0, Horizon / 100.0));

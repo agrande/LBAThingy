@@ -22,9 +22,9 @@ class USkyLightComponent;
  * sky, lights, look or starts: the opened island's are the planet's). Gameplay, collision and navigation see that
  * flat world.
  *
- * Only the view is round. Past the planet's flat radius around the camera, every generated material moves its vertices
- * down onto a sphere of the planet's radius (LBAPlanet.ush, MPC_LBA_Planet), so the sea curves away to a horizon and far
- * islands sink below it, rising as they come near. The sea is the opened island's sea level (FLBAPlanetIsland::SeaLevel:
+ * Only the view is round. Every generated material moves its vertices down onto a sphere of the planet's radius with
+ * the camera on top (LBAPlanet.ush, MPC_LBA_Planet), so the sea curves away from under it to a horizon and far islands
+ * sink below it, rising as they come near. The sea is the opened island's sea level (FLBAPlanetIsland::SeaLevel:
  * one Water plugin zone over all the sea in view, an ocean per island keeping its coastline dry, its water bent by its
  * material), over a disc kept under the camera for the sea beyond it (or alone, without a sea level). The islands' own
  * water and invisible sea floors are gone; sea queries answer the sea level. The sky atmosphere is a planet of that
@@ -38,7 +38,6 @@ class USkyLightComponent;
  *   lba.Globe 0/1             globe mode off/on for the next island level opened (-1: the project setting)
  *   lba.Globe.Open ISLAND     opens an island in globe mode
  *   lba.Globe.Bend 0/1        the view bent onto the planet (0: the flat world as it is, to compare)
- *   lba.Globe.FlatRadius M    overrides the flat radius around the camera (m; negative: the planet's)
  *   lba.Globe.Radius M        overrides the planet's radius for the next island level opened (m): the islands' places and the bend
  *   lba.Globe.Debug 1         prints where the camera is on screen
  *   lba.Globe.Sea 0           the sea disc alone for the next level opened (to compare)

@@ -127,9 +127,9 @@ namespace
 
 	/**
 	 * Bump to regenerate the clipped water materials (e.g. after an engine upgrade changed the Water plugin's).
-	 * v2: globe mode's bend.
+	 * v2: globe mode's bend. v3: and the sky below the flat horizon (LBAPlanetSeaSkyBelow).
 	 */
-	constexpr int32 ClippedWaterVersion = 2;
+	constexpr int32 ClippedWaterVersion = 3;
 
 	/**
 	 * Unreal's ocean material, clipped where its water zone has no water (inside the coastline). Unreal's only turns
@@ -146,7 +146,10 @@ namespace
 		const TCHAR* OceanName = TEXT("MI_LBA_Water_Ocean");
 		UMaterial* Existing = Context.FindAsset<UMaterial>(Folder, MaterialName);
 		UMaterialInstanceConstant* ExistingOcean = Context.FindAsset<UMaterialInstanceConstant>(Folder, OceanName);
-		if (Existing && ExistingOcean && LBAMaterials::IsGeneratedVersion(Existing, ClippedWaterVersion))
+		// Rebuilt too when globe mode's parameter collection changed layout.
+		UMaterialParameterCollection* Planet = Context.GetRendering().GetPlanetParameters();
+		if (Existing && ExistingOcean && LBAMaterials::IsGeneratedVersion(Existing, ClippedWaterVersion)
+			&& !Context.GetRendering().HavePlanetParametersChanged())
 		{
 			return ExistingOcean;
 		}
@@ -189,7 +192,6 @@ namespace
 		Clip->Inputs.AddDefaulted_GetRef().Connect(MaskOutput, DepthMask);
 
 		// Globe mode's bend, like every generated material: added to the waves, and the normals turned with it.
-		UMaterialParameterCollection* Planet = Context.GetRendering().GetPlanetParameters();
 		UMaterialExpressionGetMaterialAttributes* Own = NewObject<UMaterialExpressionGetMaterialAttributes>(Material);
 		Own->MaterialAttributes.Connect(Graph->MaterialAttributes.OutputIndex, Graph->MaterialAttributes.Expression);
 		const int32 OwnOffset = Own->CreateOrGetOutputAttribute(MP_WorldPositionOffset);
@@ -200,8 +202,17 @@ namespace
 		Offset->B.Connect(0, LBAMaterials::MakePlanetBend(Material, Planet));
 		Clip->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_WorldPositionOffset));
 		Clip->Inputs.AddDefaulted_GetRef().Connect(0, Offset);
+		UMaterialExpression* BentNormal = LBAMaterials::MakePlanetBentNormal(Material, Planet, Own, OwnNormal);
 		Clip->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_Normal));
-		Clip->Inputs.AddDefaulted_GetRef().Connect(0, LBAMaterials::MakePlanetBentNormal(Material, Planet, Own, OwnNormal));
+		Clip->Inputs.AddDefaulted_GetRef().Connect(0, BentNormal);
+		// Without Lumen, the sky its bent normals reflect below the flat horizon.
+		const int32 OwnEmissive = Own->CreateOrGetOutputAttribute(MP_EmissiveColor);
+		const int32 OwnRoughness = Own->CreateOrGetOutputAttribute(MP_Roughness);
+		UMaterialExpressionAdd* Emissive = Cast<UMaterialExpressionAdd>(UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionAdd::StaticClass(), -250, 1800));
+		Emissive->A.Connect(OwnEmissive, Own);
+		Emissive->B.Connect(0, LBAMaterials::MakePlanetSeaSkyBelow(Material, Planet, BentNormal, Own, OwnRoughness));
+		Clip->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_EmissiveColor));
+		Clip->Inputs.AddDefaulted_GetRef().Connect(0, Emissive);
 
 		Clip->MaterialExpressionEditorX = Graph->MaterialAttributes.Expression->MaterialExpressionEditorX + 300;
 		Clip->MaterialExpressionEditorY = Graph->MaterialAttributes.Expression->MaterialExpressionEditorY;

@@ -519,10 +519,12 @@ How it holds together (the world is flat and still; only the view is round):
   and every gameplay system see a flat world, static objects stay static. Streamed islands come without what the
   opened island's level brings for the whole planet (sun and lights, sky atmosphere, sky light, clouds, height fog,
   look volume, rain, storm, player starts) and without their scenes (empty islands for now).
-- **The view bends.** Past a flat circle around the camera (100 m), every generated material moves its vertices down
-  onto a sphere of the planet's radius (`LBAPlanetBendOffset` in `Shaders/Private/LBAPlanet.ush`, added to the master
-  materials by `LBAMaterials::AddPlanetBend`): a point Distance away goes Distance - 100 m along the sphere from the
-  circle's edge, its height above the sea becoming height above the sphere (far islands tilt away). It is centered on
+- **The view bends.** From the camera on, every generated material moves its vertices down onto a sphere of the
+  planet's radius with the camera on top (`LBAPlanetBendOffset` in `Shaders/Private/LBAPlanet.ush`, added to the master
+  materials by `LBAMaterials::AddPlanetBend`): a point Distance away goes Distance along the sphere, its height above
+  the sea becoming height above the sphere (far islands tilt away). There is no flat circle around the camera (there
+  was one, 100 m, until 2026-10-30): the ground under the player curves as the planet's, without the distortion where
+  a flat circle met the curve. It is centered on
   the camera's final location each frame (`ULBAPlanetCameraModifier` writes `MPC_LBA_Planet`), and last frame's camera
   gives the motion vectors (previous frame switch), so TSR and motion blur follow the bend. Without a planet the
   offset is zero. The palette shading undoes the bend (`LBAPlanetUnbend`) for its dither dots and cartoon sea, so
@@ -530,7 +532,7 @@ How it holds together (the world is flat and still; only the view is round):
   Citadel is entirely below the horizon (at 2 km radius it stood on it).
 - **The sea** is the Water plugin's, as in the island levels: the opened island's sea level
   (`/Game/LBA2/Planets/L_<ISLAND>_GlobeSea`, streamed in) has one water zone over all the sea the bent view can show
-  from the islands (out a quarter way around the planet past the flat circle: 1.5 to 1.7 km across for Twinsun, 0.8 m per
+  from the islands (out a quarter way around the planet: 1.5 to 1.7 km across for Twinsun, 0.8 m per
   water info texel: 2048 texels across, as the islands' levels at most; 4096 overran an 8 GB card's video memory) and an ocean per island, each covering its island's cell of the zone (straight cuts between the
   islands' land) and keeping its island's coastline dry, so low land inside the coasts stays dry (the desert's beaches
   no longer leak). The oceans take the opened island's ocean material and waves. The water material (`M_LBA_Water`,
@@ -556,8 +558,19 @@ How it holds together (the world is flat and still; only the view is round):
   (`ALBAPlanetActor::GetLighting`, unbound, over the island's) turns global illumination off and reflections to screen
   space; the sky light casts no shadows (they would be distance field AO) and is turned down to 0.85
   (`lba.Globe.UnoccludedSkyLight`), measured unbent against Lumen on Citabau: open pier 120 against 126, meadow 81
-  against 80, town 105 against 103 (walls under eaves about 8% darker, plants 5% lighter: no bounce light). The far
-  sea reflects a deeper blue with paler streaks than with Lumen's reflections. `lba.Globe.Lumen 1` brings Lumen back.
+  against 80, town 105 against 103 (walls under eaves about 8% darker, plants 5% lighter: no bounce light).
+  `lba.Globe.Lumen 1` brings Lumen back.
+- **The sea's reflections without Lumen:** the sea's normals turn with the bend, so far water reflects directions under
+  the flat world's horizon, where the sky light is black (as in the island levels). The far sea went deep blue with
+  pale streaks and a dark rim at the horizon; unbent, it looks the same with or without Lumen. Lighting that lower half
+  of the sky light would also light the land from below (walls and cliffs went pale), and the atmosphere's own sky down
+  there is far too bright on a 320 m planet (its ground is lit by the sun times the sky's tint boost). So the sea
+  adds it alone: `M_LBA_Water` (v3) gives off the sky light sampled at its reflection mirrored above the horizon, times
+  water's Fresnel, where the reflection goes below it (`LBAPlanetSeaSkyBelowDirection`/`Weight` in LBAPlanet.ush),
+  scaled by `MPC_LBA_Planet`'s `PlanetSkyBelow`: `lba.Globe.SeaSkyBelow` (0.75) without Lumen, 0 with it. Measured on
+  Citabau against Lumen: far sea (131, 179, 215) against (136, 177, 212) (it was (45, 104, 138)), horizon rim
+  (110, 185, 229) against (105, 178, 222) (was (18, 78, 115)). The sea disc's material doesn't have it (it is hidden
+  under the globe oceans).
 - **The Hamalayi belt** (`LBAPlanetBelt`, `/Game/LBA2/Planets/L_TWINSUN_Belt`, streamed in on the map around the
   opened island, `ULBAPlanetAsset::BeltLevel`): low icy mountains all around, 424 to 513 m from the pole, traced
   from the original's holomap (HOLOMAP.HQR: its texture gives the belt's shore, the foot of its snow and its far
@@ -576,8 +589,8 @@ How it holds together (the world is flat and still; only the view is round):
   longitude themselves) and is turned as it is painted on the holomap's globe (a heading in the planets table), else
   so its calibrated sun keeps its angles; the planet's sun is the direction that gives every listed island its sun's elevation (Citadel 31.3 and desert 36.8 degrees, both
   exact). One sun lights the flat world: the opened island's. Output: `/Game/LBA2/Planets/DA_Planet_TWINSUN` (radius,
-  flat radius, islands, each island's coastline, ocean material and waves, sea level), the sea levels, the sea disc
-  and its material; every placed island's import rebuilds every sea level. The planets list (radius, flat radius, islands) is a table in
+  islands, each island's coastline, ocean material and waves, sea level), the sea levels, the sea disc
+  and its material; every placed island's import rebuilds every sea level. The planets list (radius, islands) is a table in
   `LBAPlanetBuilder.cpp`; the builder logs each pair's distance on the planet, on the map and between their coasts, and warns when two
   islands' coasts come within 20 m of each other on the map. Each island's ocean is a rectangle of the zone keeping its
   coastline dry, the rectangles split by straight cuts through the sea between the islands' land, turned all together
@@ -601,12 +614,13 @@ it lands on the flank and Twinsen walks and jumps up it (logs how high he got: 7
 Saved/LookDev/belt). Shots: Saved/LookDev/flatglobe750 (and
 flatglobe1000, flatglobe1 for 1 and 2 km, compare_750_1000.png, flatglobe_cmp.png against the flat level; the Water
 plugin sea against the disc in globesea, sheets sheet_a to sheet_j).
-Console: `lba.Globe.Bend 0` (the flat world unbent, to compare), `lba.Globe.FlatRadius 150` (m),
+Console: `lba.Globe.Bend 0` (the flat world unbent, to compare),
 `lba.Globe.Radius 1000` (m, for the next level opened: places and bend; the sea disc is built for the asset's radius),
 `lba.Globe.Debug 1` (camera height, nearest island and how far it sinks, horizon distance), `lba.Globe.Islands 0`
 (the next island opened comes alone), `lba.Globe.Sea 0` (the sea disc alone, for the next island opened), `lba.Globe.Belt 0` (no belt, next island opened),
 `lba.Globe.SeaDiscDrop 60` (cm under the sea level's water), `lba.Globe.SkyLightGain 1.4`, `lba.Globe.Lumen 1`
-(Lumen as in the island levels, to compare), `lba.Globe.UnoccludedSkyLight 0.85`, `lba.Globe.Clouds 5 10`
+(Lumen as in the island levels, to compare), `lba.Globe.UnoccludedSkyLight 0.85`, `lba.Globe.SeaSkyBelow 0.75`
+(0: the sea reflects black below the flat horizon), `lba.Globe.Clouds 5 10`
 (km), `lba.Globe.SeaErrors` (the sea disc material's compile errors).
 
 Next: the other southern islands from LBA1, first approximations

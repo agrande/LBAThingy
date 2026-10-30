@@ -782,6 +782,8 @@ UMaterialParameterCollection* FLBARenderingAssets::GetPlanetParameters()
 		// Last frame, for motion vectors: the camera, and the sea disc's move since.
 		{ TEXT("PlanetViewPrevious"), FLinearColor::Transparent },
 		{ TEXT("PlanetSeaMove"), FLinearColor::Transparent },
+		// The sky the sea reflects below the flat horizon (LBAPlanetSeaSkyBelow).
+		{ TEXT("PlanetSkyBelow"), FLinearColor::Transparent },
 	};
 	// Parameters dropped from the list go (only generated materials use the collection).
 	bool bChanged = PlanetParameters->VectorParameters.RemoveAll([&Defaults](const FCollectionVectorParameter& Parameter)

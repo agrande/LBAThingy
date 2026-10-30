@@ -24,11 +24,10 @@ FLBAPlanetViewExtension::FLBAPlanetViewExtension(const FAutoRegister& AutoRegist
 {
 }
 
-void FLBAPlanetViewExtension::SetBend(const FVector& InView, double InRadius, double InFlatRadius, double InSeaLevel, bool bInBent)
+void FLBAPlanetViewExtension::SetBend(const FVector& InView, double InRadius, double InSeaLevel, bool bInBent)
 {
 	View = InView;
 	Radius = InRadius;
-	FlatRadius = FMath::Max(InFlatRadius, 0.0);
 	SeaLevel = InSeaLevel;
 	bBent = bInBent;
 }
@@ -51,7 +50,7 @@ void FLBAPlanetViewExtension::SetupViewFamily(FSceneViewFamily& InViewFamily)
 template <typename FVisit>
 void FLBAPlanetViewExtension::ForEachFlatPlace(const FVector& Direction, FVisit&& Visit) const
 {
-	// Inside the flat circle the ray shows the flat world as it is.
+	// At the camera the ray shows the flat world as it is.
 	Visit(Direction);
 
 	const double Across = Direction.Size2D();
@@ -59,15 +58,14 @@ void FLBAPlanetViewExtension::ForEachFlatPlace(const FVector& Direction, FVisit&
 	{
 		return;
 	}
-	// Past it, in the ray's vertical plane: the bend's sphere is centered below the flat circle's edge, the camera at
-	// Up above that center and the ray at (t Across - FlatRadius, Up + t Direction.Z) from it. A flat place at a height
-	// above the sea is bent onto the sphere of the radius plus that height.
+	// Further along, in the ray's vertical plane: the bend's sphere is centered below the camera, the camera at Up above
+	// that center and the ray at (t Across, Up + t Direction.Z) from it. A flat place at a height above the sea is bent
+	// onto the sphere of the radius plus that height.
 	const FVector2D Along = FVector2D(Direction.X, Direction.Y) / Across;
 	const double Height = View.Z - SeaLevel;
 	const double Up = Height + Radius;
-	const double Beyond = FlatRadius / Across;
-	const double B = Direction.Z * Up - FlatRadius * Across;
-	const double C = FlatRadius * FlatRadius + Up * Up;
+	const double B = Direction.Z * Up;
+	const double C = Up * Up;
 	auto Crossing = [B, C](double Sphere, double& OutEnter, double& OutLeave)
 	{
 		const double Discriminant = B * B - (C - Sphere * Sphere);
@@ -85,11 +83,11 @@ void FLBAPlanetViewExtension::ForEachFlatPlace(const FVector& Direction, FVisit&
 	// bent planet is all there is, and it hides what is behind.
 	double Enter = 0.0;
 	double Leave = 0.0;
-	if (!Crossing(Radius + CVarGlobeCullAbove.GetValueOnGameThread() * 100.0, Enter, Leave) || Leave <= Beyond)
+	if (!Crossing(Radius + CVarGlobeCullAbove.GetValueOnGameThread() * 100.0, Enter, Leave) || Leave <= 0.0)
 	{
 		return;
 	}
-	const double Start = FMath::Max(Beyond, Enter);
+	const double Start = FMath::Max(0.0, Enter);
 	double End = Leave;
 	const double Core = Radius - CVarGlobeCullBelow.GetValueOnGameThread() * 100.0;
 	if (Core > 0.0 && Crossing(Core, Enter, Leave) && Leave > Start)
@@ -105,11 +103,11 @@ void FLBAPlanetViewExtension::ForEachFlatPlace(const FVector& Direction, FVisit&
 	for (int32 Index = 0; Index <= Samples; ++Index)
 	{
 		const double T = FMath::Lerp(Start, End, double(Index) / Samples);
-		const double Out = T * Across - FlatRadius;
+		const double Out = T * Across;
 		const double Above = Up + T * Direction.Z;
 		const double Angle = FMath::Atan2(Out, Above);
 		const double PlaceHeight = FMath::Sqrt(Out * Out + Above * Above) - Radius;
-		const FVector2D Place = Along * (FlatRadius + Radius * Angle);
+		const FVector2D Place = Along * (Radius * Angle);
 		Visit(FVector(Place.X, Place.Y, PlaceHeight - Height));
 	}
 }
@@ -168,7 +166,7 @@ void FLBAPlanetViewExtension::SetupView(FSceneViewFamily& InViewFamily, FSceneVi
 		// How high and low they are seen from the camera, toward the middle way, and how far out they go.
 		double MinRise = UE_DOUBLE_HALF_PI;
 		double MaxRise = -UE_DOUBLE_HALF_PI;
-		double Reach = FlatRadius;
+		double Reach = 0.0;
 		for (const FVector& Direction : Directions)
 		{
 			ForEachFlatPlace(Direction, [&](const FVector& Place)
@@ -199,7 +197,7 @@ void FLBAPlanetViewExtension::SetupView(FSceneViewFamily& InViewFamily, FSceneVi
 	else
 	{
 		// All around the camera, as far out as the flat places in view go.
-		double Reach = FlatRadius;
+		double Reach = 0.0;
 		for (const FVector& Direction : Directions)
 		{
 			ForEachFlatPlace(Direction, [&Reach](const FVector& Place) { Reach = FMath::Max(Reach, Place.Size2D()); });

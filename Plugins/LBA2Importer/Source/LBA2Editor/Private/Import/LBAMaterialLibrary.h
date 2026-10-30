@@ -69,6 +69,12 @@ namespace LBAMaterials
 	 * output of Normal turned with the bend's tilt at the pixel (LBAPlanetBendVector).
 	 */
 	UMaterialExpression* MakePlanetBentNormal(UMaterial* Material, UMaterialParameterCollection* Planet, UMaterialExpression* Normal, int32 OutputIndex);
+	/**
+	 * Emissive light of the sea reflecting the sky below the flat horizon (LBAPlanetSeaSkyBelowWeight in LBAPlanet.ush),
+	 * for its world space Normal (bent) and its Roughness.
+	 */
+	UMaterialExpression* MakePlanetSeaSkyBelow(UMaterial* Material, UMaterialParameterCollection* Planet, UMaterialExpression* Normal,
+		UMaterialExpression* Roughness, int32 RoughnessOutput);
 }
 
 class FLBAMaterialLibrary

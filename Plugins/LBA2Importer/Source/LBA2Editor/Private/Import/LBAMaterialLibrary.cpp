@@ -6,6 +6,7 @@
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionCameraVectorWS.h"
 #include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionComment.h"
 #include "Materials/MaterialExpressionCustom.h"
@@ -16,6 +17,7 @@
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionPreviousFrameSwitch.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionSkyLightEnvMapSample.h"
 #include "Materials/MaterialExpressionSubtract.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionTime.h"
@@ -248,6 +250,28 @@ UMaterialExpression* LBAMaterials::MakePlanetBentNormal(UMaterial* Material, UMa
 		-650, 1400);
 	Custom->Inputs[2].Input.Connect(OutputIndex, Normal);
 	return Custom;
+}
+
+UMaterialExpression* LBAMaterials::MakePlanetSeaSkyBelow(UMaterial* Material, UMaterialParameterCollection* Planet, UMaterialExpression* Normal,
+	UMaterialExpression* Roughness, int32 RoughnessOutput)
+{
+	UMaterialExpression* ToCamera = AddExpression(Material, UMaterialExpressionCameraVectorWS::StaticClass(), -850, 1800);
+	UMaterialExpressionComponentMask* SkyBelow = Cast<UMaterialExpressionComponentMask>(AddExpression(Material, UMaterialExpressionComponentMask::StaticClass(), -1000, 1950));
+	SkyBelow->R = SkyBelow->G = SkyBelow->B = true;
+	SkyBelow->A = false;
+	SkyBelow->Input.Connect(0, AddPlanetParameter(Material, Planet, TEXT("PlanetSkyBelow"), 1950));
+	UMaterialExpression* Direction = AddPlanetCustom(Material, TEXT("return LBAPlanetSeaSkyBelowDirection(Normal, ToCamera);"),
+		{ { TEXT("Normal"), Normal }, { TEXT("ToCamera"), ToCamera } }, -650, 1800);
+	UMaterialExpressionSkyLightEnvMapSample* Sky = Cast<UMaterialExpressionSkyLightEnvMapSample>(AddExpression(Material,
+		UMaterialExpressionSkyLightEnvMapSample::StaticClass(), -400, 1800));
+	Sky->Direction.Connect(0, Direction);
+	Sky->Roughness.Connect(RoughnessOutput, Roughness);
+	UMaterialExpression* Weight = AddPlanetCustom(Material, TEXT("return LBAPlanetSeaSkyBelowWeight(Normal, ToCamera, SkyBelow);"),
+		{ { TEXT("Normal"), Normal }, { TEXT("ToCamera"), ToCamera }, { TEXT("SkyBelow"), SkyBelow } }, -650, 1950);
+	UMaterialExpressionMultiply* Light = Cast<UMaterialExpressionMultiply>(AddExpression(Material, UMaterialExpressionMultiply::StaticClass(), -200, 1850));
+	Light->A.Connect(0, Sky);
+	Light->B.Connect(0, Weight);
+	return Light;
 }
 
 UMaterialExpression* LBAMaterials::MakePlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet)

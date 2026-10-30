@@ -19,8 +19,8 @@ class FLBAPlanetViewExtension : public FWorldSceneViewExtension
 public:
 	FLBAPlanetViewExtension(const FAutoRegister& AutoRegister, UWorld* InWorld);
 
-	/** The bend this frame, as MPC_LBA_Planet has it (cm): the camera, radius, flat radius, sea level, whether on. */
-	void SetBend(const FVector& InView, double InRadius, double InFlatRadius, double InSeaLevel, bool bInBent);
+	/** The bend this frame, as MPC_LBA_Planet has it (cm): the camera, radius, sea level, whether on. */
+	void SetBend(const FVector& InView, double InRadius, double InSeaLevel, bool bInBent);
 
 	virtual void SetupViewFamily(FSceneViewFamily& InViewFamily) override;
 	virtual void SetupView(FSceneViewFamily& InViewFamily, FSceneView& InView) override;
@@ -36,7 +36,6 @@ private:
 
 	FVector View = FVector::ZeroVector;
 	double Radius = 0.0;
-	double FlatRadius = 0.0;
 	double SeaLevel = 0.0;
 	bool bBent = false;
 };
