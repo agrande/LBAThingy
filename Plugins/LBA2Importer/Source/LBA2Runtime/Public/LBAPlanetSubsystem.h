@@ -29,7 +29,8 @@ class USkyLightComponent;
  * material), over a disc kept under the camera for the sea beyond it (or alone, without a sea level). The islands' own
  * water and invisible sea floors are gone; sea queries answer the sea level. The sky atmosphere is a planet of that
  * radius centered under the camera, so its horizon follows. The planet's belt (ULBAPlanetAsset::BeltLevel: Twinsun's
- * Hamalayi mountains) is streamed in on the map around them, closing the islands' hemisphere by its shape alone.
+ * Hamalayi mountains) is streamed in on the map around them, closing the islands' hemisphere by its shape alone, and
+ * with it the stub islands (ULBAPlanetAsset::StubLevel: the holomap's other islands, copied from its painting).
  *
  * The planet's own level (ULBAPlanetAsset::Level) is that world built ahead: its sub-levels are the islands' levels and
  * their scenes, the belt and the home island's sea, where they are around the home island. It always plays in globe
@@ -42,6 +43,7 @@ class USkyLightComponent;
  *   lba.Globe.Debug 1         prints where the camera is on screen
  *   lba.Globe.Sea 0           the sea disc alone for the next level opened (to compare)
  *   lba.Globe.Belt 0          no belt for the next level opened
+ *   lba.Globe.Stubs 0         no stub islands for the next level opened
  *   lba.Globe.BentCulling 0   the renderer's own culling, by the flat world (LBAPlanetCulling.h)
  */
 UCLASS()
@@ -123,6 +125,8 @@ private:
 	TWeakObjectPtr<ULevelStreaming> SeaStream;
 	/** The planet's belt (ULBAPlanetAsset::BeltLevel), on its map. */
 	TWeakObjectPtr<ULevelStreaming> BeltStream;
+	/** The planet's stub islands (ULBAPlanetAsset::StubLevel), on its map. */
+	TWeakObjectPtr<ULevelStreaming> StubStream;
 
 	/** Culls by what the bent view shows (LBAPlanetCulling.h). */
 	TSharedPtr<FLBAPlanetViewExtension, ESPMode::ThreadSafe> ViewExtension;

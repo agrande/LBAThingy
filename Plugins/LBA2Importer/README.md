@@ -598,6 +598,16 @@ How it holds together (the world is flat and still; only the view is round):
   triangles). Laid on the map, its length is stretched sideways by about half (4 km around at the shore against
   2.8 km on a real planet of that size). `lba.Globe.Belt 0` leaves it out; it is laid out for the asset's radius,
   so `lba.Globe.Radius` leaves it out too.
+- **Stub islands** (`LBAPlanetStubs`, `/Game/LBA2/Planets/L_TWINSUN_Stubs`, `ULBAPlanetAsset::StubLevel`, streamed in
+  with the belt): the islands the holomap paints but the game never visits, copied from its painting as a first
+  prototype of the rest of the hemisphere. LBA2's holomap texture is LBA1's repainted (same islands, same places;
+  only Citadel and the desert were redrawn, plus two islets), so LBA1's arrows name them: Principal (32,600 m2 of
+  land, 4 times Citadel's), Rebellion (15,700), Proxima (8,500), Islet_1 south-west of Citadel, Islet_2 east of the
+  desert. The painted land, smoothed, is the coast; a beach rises to 1.2 m, then hills whose height follows the
+  painted colors (sand low, green, brown, then grey, white and pale blue highest) up to 6 m on an islet and 20 m on
+  Principal; a pale shelf under the sea around them. Vertex colored with the painting's colors, lightened (gamma
+  0.75); collision from their triangles. Painted land under a placed island is left out. `lba.Globe.Stubs 0` leaves
+  them out.
 - **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
   (HOLOMAP.HQR, ARROW.BIN: two angles that turn the arrow onto the globe as HOLOGLOB.CPP does, not latitude and
   longitude themselves) and is turned as it is painted on the holomap's globe (a heading in the planets table), else

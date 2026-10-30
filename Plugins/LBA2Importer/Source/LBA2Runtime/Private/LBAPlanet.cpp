@@ -36,6 +36,7 @@ FTransform FLBAPlanetIsland::GetLevelToMap(double Radius) const
 }
 
 const FName ULBAPlanetAsset::BeltTag(TEXT("LBA_Belt"));
+const FName ULBAPlanetAsset::StubTag(TEXT("LBA_Stub"));
 
 const FLBAPlanetIsland* ULBAPlanetAsset::FindIsland(FName Island) const
 {

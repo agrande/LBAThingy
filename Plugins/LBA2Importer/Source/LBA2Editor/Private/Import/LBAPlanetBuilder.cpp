@@ -10,6 +10,7 @@
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBAPlanetBelt.h"
+#include "Import/LBAPlanetStubs.h"
 #include "Import/LBARenderingAssets.h"
 #include "Import/LBAWater.h"
 #include "WaterWaves.h"
@@ -55,6 +56,8 @@ namespace
 		TArray<FPlanetIslandPreset> Islands;
 		/** Twinsun's Hamalayi belt from the holomap closes the islands' hemisphere (LBAPlanetBelt). */
 		bool bBelt = false;
+		/** The holomap's other islands, copied from its painting (LBAPlanetStubs). */
+		bool bStubs = false;
 	};
 
 	const TArray<FPlanetPreset>& GetPresets()
@@ -65,7 +68,7 @@ namespace
 		// desert at the pole to the belt.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 32000.0, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0 } }, true },
+			{ TEXT("TWINSUN"), 32000.0, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0 } }, true, true },
 		};
 		return Presets;
 	}
@@ -515,6 +518,10 @@ namespace
 		{
 			AddLevel(FName(*Asset->BeltLevel.ToSoftObjectPath().GetLongPackageName()), Asset->Islands[Home].GetLevelToMap(Asset->Radius).Inverse(), FLinearColor::White);
 		}
+		if (!Asset->StubLevel.IsNull())
+		{
+			AddLevel(FName(*Asset->StubLevel.ToSoftObjectPath().GetLongPackageName()), Asset->Islands[Home].GetLevelToMap(Asset->Radius).Inverse(), FLinearColor::Gray);
+		}
 		if (!Asset->Islands[Home].SeaLevel.IsNull())
 		{
 			AddLevel(FName(*Asset->Islands[Home].SeaLevel.ToSoftObjectPath().GetLongPackageName()), FTransform::Identity, FLinearColor::Blue);
@@ -687,6 +694,10 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	if (Planet->bBelt)
 	{
 		Asset->BeltLevel = LBAPlanetBelt::Build(Context, Planet->Name, Radius, PlanetFolder);
+	}
+	if (Planet->bStubs)
+	{
+		Asset->StubLevel = LBAPlanetStubs::Build(Context, Planet->Name, Asset, Radius, PlanetFolder);
 	}
 	BuildPlanetLevel(Context, Asset, Planet->Name, PlanetFolder);
 	Context.MarkForSave(Asset);

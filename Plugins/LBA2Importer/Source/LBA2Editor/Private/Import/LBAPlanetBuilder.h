@@ -20,6 +20,7 @@ struct FLBAWaterSea;
  *                              shows from the islands, an ocean per island (each keeping its coastline dry), in the
  *                              island's water look (its level's ocean material and waves)
  *   L_<PLANET>_Belt            Twinsun's Hamalayi belt around the islands' hemisphere (LBAPlanetBelt)
+ *   L_<PLANET>_Stubs           the holomap's other islands, copied from its painting (LBAPlanetStubs)
  *   L_<PLANET>                 the planet's level: the placed islands' levels and their scenes, the belt and the home
  *                              island's sea as sub-levels, the islands where they are on the map around the home island
  *                              (the first placed), whose level keeps its place

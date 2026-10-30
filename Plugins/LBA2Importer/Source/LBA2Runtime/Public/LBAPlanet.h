@@ -135,6 +135,16 @@ public:
 	static const FName BeltTag;
 
 	/**
+	 * Stand-ins for the islands the original's holomap paints but nobody visits (Twinsun's Principal, Proxima,
+	 * Rebellion and two islets), copied from its painting onto the map like the belt; their actors are tagged StubTag.
+	 * Streamed in with the belt.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Planet")
+	TSoftObjectPtr<UWorld> StubLevel;
+
+	static const FName StubTag;
+
+	/**
 	 * Disc of sea kept under the camera, bent like everything else by its material (built by the importer): the sea
 	 * beyond the opened island's sea level (FLBAPlanetIsland::SeaLevel), or all of it without one.
 	 */

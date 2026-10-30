@@ -59,6 +59,8 @@ namespace
 		TEXT("Without Lumen, how much of the sky the sea reflects below the flat horizon (the sky light is black there): 0 none."));
 	TAutoConsoleVariable<int32> CVarGlobeBelt(TEXT("lba.Globe.Belt"), 1,
 		TEXT("0: the planet's belt (Twinsun's Hamalayi mountains) isn't streamed in (for the next level opened)."));
+	TAutoConsoleVariable<int32> CVarGlobeStubs(TEXT("lba.Globe.Stubs"), 1,
+		TEXT("0: the planet's stub islands (the holomap's other islands) aren't streamed in (for the next level opened)."));
 
 	/**
 	 * Under the sea level's water, the sea disc lies this much lower (cm), out of sight: far from the camera, the water
@@ -290,6 +292,7 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 		// Already sub-levels of the world (renamed UEDPIE_<n>_<level> in PIE).
 		const FString SeaPackage = Asset->Islands[Home].SeaLevel.ToSoftObjectPath().GetLongPackageName();
 		const FString BeltPackage = Asset->BeltLevel.ToSoftObjectPath().GetLongPackageName();
+		const FString StubPackage = Asset->StubLevel.ToSoftObjectPath().GetLongPackageName();
 		for (ULevelStreaming* Streaming : World->GetStreamingLevels())
 		{
 			const FString Package = Streaming ? UWorld::RemovePIEPrefix(Streaming->GetWorldAssetPackageName()) : FString();
@@ -300,6 +303,10 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 			else if (Package == BeltPackage)
 			{
 				BeltStream = Streaming;
+			}
+			else if (Package == StubPackage)
+			{
+				StubStream = Streaming;
 			}
 		}
 		bWaterSea = SeaStream.IsValid();
@@ -404,6 +411,10 @@ void ULBAPlanetSubsystem::OnLevelAdded(ULevel* Level, UWorld* InWorld)
 		{
 			UE_LOG(LogLBA2, Display, TEXT("Globe mode: the belt streamed in, %d actors"), Level->Actors.Num());
 		}
+		else if (StubStream.IsValid() && StubStream->GetLoadedLevel() == Level)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("Globe mode: the stub islands streamed in, %d actors"), Level->Actors.Num());
+		}
 		return;
 	}
 	const int32 IslandIndex = FindIsland(Level);
@@ -416,7 +427,8 @@ void ULBAPlanetSubsystem::OnLevelAdded(ULevel* Level, UWorld* InWorld)
 
 bool ULBAPlanetSubsystem::IsPlanetLevel(const ULevel* Level) const
 {
-	return Level && ((SeaStream.IsValid() && SeaStream->GetLoadedLevel() == Level) || (BeltStream.IsValid() && BeltStream->GetLoadedLevel() == Level));
+	auto IsStreamed = [Level](const TWeakObjectPtr<ULevelStreaming>& Stream) { return Stream.IsValid() && Stream->GetLoadedLevel() == Level; };
+	return Level && (IsStreamed(SeaStream) || IsStreamed(BeltStream) || IsStreamed(StubStream));
 }
 
 int32 ULBAPlanetSubsystem::FindIsland(const ULevel* Level) const
@@ -482,6 +494,17 @@ void ULBAPlanetSubsystem::LoadIslands()
 			{
 				UE_LOG(LogLBA2, Warning, TEXT("Globe mode: couldn't stream in the belt (%s)"), *Asset->BeltLevel.ToString());
 			}
+		}
+	}
+	// Laid on the map for the asset's radius, like the belt.
+	if (!Asset->StubLevel.IsNull() && CVarGlobeStubs.GetValueOnGameThread() != 0 && Radius == Asset->Radius)
+	{
+		bool bLoaded = false;
+		StubStream = ULevelStreamingDynamic::LoadLevelInstanceBySoftObjectPtr(GetWorld(), Asset->StubLevel, GetMapToWorld(), bLoaded,
+			Asset->StubLevel.GetAssetName() + TEXT("_Instance"));
+		if (!bLoaded)
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("Globe mode: couldn't stream in the stub islands (%s)"), *Asset->StubLevel.ToString());
 		}
 	}
 	IslandStreams.SetNum(Asset->Islands.Num());
