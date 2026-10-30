@@ -1144,12 +1144,16 @@ void ALBACharacter::OnMouseLook(const FInputActionValue& Value)
 
 void ALBACharacter::OnStickLook(const FInputActionValue& Value)
 {
-	// The stick's value is a rate: this frame's share of StickLookRate, in look input (which the player controller
-	// scales by its legacy input scale before it turns the camera).
+	// The stick's value is a rate: this frame's share of StickLookRate (sideways) and StickLookPitchRate (up/down), in
+	// look input (which the player controller scales by its legacy input scales before it turns the camera).
 	const APlayerController* PlayerController = Cast<APlayerController>(Controller);
-	const float InputScale = PlayerController && GetDefault<UInputSettings>()->bEnableLegacyInputScales
-		? FMath::Abs(PlayerController->InputYawScale_DEPRECATED) : 1.f;
-	ApplyLook(Value.Get<FVector2D>() * (StickLookRate * GetWorld()->GetDeltaSeconds() / FMath::Max(InputScale, UE_KINDA_SMALL_NUMBER)));
+	const bool bLegacyScales = PlayerController && GetDefault<UInputSettings>()->bEnableLegacyInputScales;
+	const float YawScale = bLegacyScales ? FMath::Abs(PlayerController->InputYawScale_DEPRECATED) : 1.f;
+	const float PitchScale = bLegacyScales ? FMath::Abs(PlayerController->InputPitchScale_DEPRECATED) : 1.f;
+	const float DeltaSeconds = GetWorld()->GetDeltaSeconds();
+	const FVector2D Rate(StickLookRate / FMath::Max(YawScale, UE_KINDA_SMALL_NUMBER),
+		StickLookPitchRate / FMath::Max(PitchScale, UE_KINDA_SMALL_NUMBER));
+	ApplyLook(Value.Get<FVector2D>() * Rate * DeltaSeconds);
 }
 
 void ALBACharacter::ApplyLook(const FVector2D& Look)

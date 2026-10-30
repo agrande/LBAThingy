@@ -161,9 +161,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
 	float IndoorMouseLookScale = 0.25f;
 
-	/** Right stick camera turn speed at full tilt (degrees/s), the same at any frame rate, indoors and out. */
+	/**
+	 * Right stick camera turn speeds at full tilt (degrees/s), sideways and up/down, the same at any frame rate, indoors
+	 * and out. Up/down is slower, like adventure games: low rooms do not lurch past.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
 	float StickLookRate = 75.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float StickLookPitchRate = 37.5f;
 
 	/** In an interior scene: the free camera comes in close. */
 	UFUNCTION(BlueprintPure, Category = "LBA")
