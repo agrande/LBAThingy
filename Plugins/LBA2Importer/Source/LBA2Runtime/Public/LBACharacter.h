@@ -174,20 +174,20 @@ public:
 	 * the room swinging past less, like adventure games in buildings.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
-	float MouseLookScale = 1.f / 3.f;
+	float MouseLookScale = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
-	float IndoorMouseLookScale = 0.25f;
+	float IndoorMouseLookScale = 0.375f;
 
 	/**
 	 * Right stick camera turn speeds at full tilt (degrees/s), sideways and up/down, the same at any frame rate, indoors
 	 * and out. Up/down is slower, like adventure games: low rooms do not lurch past.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
-	float StickLookRate = 75.f;
+	float StickLookRate = 150.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
-	float StickLookPitchRate = 37.5f;
+	float StickLookPitchRate = 75.f;
 
 	/** In an interior scene: the free camera comes in close. */
 	UFUNCTION(BlueprintPure, Category = "LBA")
