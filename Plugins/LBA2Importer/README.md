@@ -627,6 +627,27 @@ How it holds together (the world is flat and still; only the view is round):
   the pole, is 1.3 times bigger. `Tools/dump_planet.py` (in the
   editor) then `Tools/holomap_fit.py` lay the holomap's texture on the flat map with the placed coastlines and fit
   each island to its painting (`Saved/LookDev/holomap`).
+- **LBA1 against LBA2** (`Tools/lba1.py` reads LBA1's scenes, grids, libraries and bricks, env LBA1_GAME, default the
+  GOG install; `Tools/lba1_rosetta.py` writes `Saved/LookDev/rosetta`): how LBA2 turned LBA1's Citadel and desert
+  into its islands, to place LBA1's towns on the stub islands the same way. LBA1's iso scenes are joined by exits at
+  their edges, which put every scene of an island in one frame (31,744 units apart, two cells overlapping); doors
+  into buildings both games kept are matched, and a scale, turn and offset fitted. Citadel: LBA1's five outdoor
+  scenes are LBA2's spine, in the same order and the same directions, one scene per cube (Outside the Citadel ->
+  Flower's Circle, near the pharmacy -> Lupin-Bourg statue, near the tavern -> Lupin-Bourg landing zone, near
+  Twinsen's house -> Twinsen's House Area, Harbour -> Harbour); Wizard's Tent, Dome, Lighthouse and Woodbridge are new.
+  Best fit 0.86 and -6 degrees, but no single fit holds (door residuals 5 to 10 m): the districts moved as blocks.
+  Inside Lupin-Bourg, the distances stayed or grew (tavern to pharmacy x1.11, pharmacy to ticket office x1.5), while
+  the gap from town down to Twinsen's house shrank (x0.69) and the harbour moved about 12 m further out west. The
+  tavern is Chez Luc, LBA1's architect's house is the Neighbour's house (2 m off under the fit), the warehouse
+  probably Paul's house. Land: LBA1's five scenes 6,300 m2 of ground, LBA2's island 8,100 m2. The desert shares two
+  points: the well into the Temple of Bu (LBA1's hero script changes scene in a scenic zone, a ("zone", scene,
+  number) key; LBA2's door to the Well; same height within 3 cm) and the ferry (LBA1's model 27, found only in the
+  ferry ports, moored at the military camp, an ("actor", scene, index) key; LBA2's ferry in Town Square). From the
+  well, the ferry lies 18 degrees further round in LBA2 and 1.43 times as far (69 -> 99 m). The sheet turns LBA1 18
+  degrees about the well, unscaled: "Outside the Temple of Bu" covers LBA2's Temple of Bu cube, and the camp's
+  shore faces north like LBA2's harbour but lies 30 m short of it, on the Graveyard and Center Dunes. As on Citadel,
+  the harbour moved as its own block; with only two points the turn is a hint (without it the harbour is 39 m off
+  instead of 30). The island was redrawn and grown around the temple: two LBA1 scenes (2,800 m2) against 19,700 m2.
 
 Tests: `-LBA2Shots=globe` on Citadel (open the level with `?Globe`): the Dinofly flies out to sea and back, floats,
 shots from 500 m and 1.5 km up (the whole planet, both islands on it). 102 fps on average in standalone game (123
