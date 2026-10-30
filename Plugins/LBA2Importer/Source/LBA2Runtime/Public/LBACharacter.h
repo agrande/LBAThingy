@@ -151,6 +151,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
 	float IndoorCameraPitch = -20.f;
 
+	/**
+	 * Mouse camera turn speed, as shares of the raw input, outdoors and indoors. The close indoor camera turns slower,
+	 * the room swinging past less, like adventure games in buildings.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float MouseLookScale = 1.f / 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorMouseLookScale = 0.25f;
+
+	/** Right stick camera turn speed at full tilt (degrees/s), the same at any frame rate, indoors and out. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float StickLookRate = 75.f;
+
 	/** In an interior scene: the free camera comes in close. */
 	UFUNCTION(BlueprintPure, Category = "LBA")
 	bool IsIndoors() const { return bIndoors; }
@@ -394,7 +408,11 @@ private:
 
 	void OnMove(const FInputActionValue& Value);
 	void OnMoveReleased(const FInputActionValue& Value);
-	void OnLook(const FInputActionValue& Value);
+	void OnMouseLook(const FInputActionValue& Value);
+	void OnStickLook(const FInputActionValue& Value);
+	void ApplyLook(const FVector2D& Look);
+	/** 0 outdoors, 1 indoors, blending with the camera. */
+	float GetIndoorLookBlend() const;
 	void OnAction(const FInputActionValue& Value);
 	void OnUse(const FInputActionValue& Value);
 	void OnAttack(const FInputActionValue& Value) { Attack(); }
@@ -431,6 +449,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> LookAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> StickLookAction;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> ActionAction;

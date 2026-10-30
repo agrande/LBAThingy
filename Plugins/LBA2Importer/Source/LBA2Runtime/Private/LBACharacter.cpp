@@ -14,6 +14,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/InputSettings.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "Engine/PlayerStartPIE.h"
@@ -1023,12 +1024,15 @@ void ALBACharacter::CreateInput()
 	LookAction = NewObject<UInputAction>(this, TEXT("IA_LBA_Look"));
 	LookAction->ValueType = EInputActionValueType::Axis2D;
 	InputContext->MapKey(LookAction, EKeys::Mouse2D);
+	// The stick looks through its own action: it turns at a set rate, the mouse by how far it moves.
+	StickLookAction = NewObject<UInputAction>(this, TEXT("IA_LBA_StickLook"));
+	StickLookAction->ValueType = EInputActionValueType::Axis2D;
 	{
 		// Vertical inverted on the stick (pushing up looks down), not on the mouse, like the Dinofly.
 		UInputModifierNegate* InvertY = NewObject<UInputModifierNegate>(InputContext);
 		InvertY->bX = false;
 		InvertY->bZ = false;
-		MapStick(LookAction, EKeys::Gamepad_Right2D).Modifiers.Add(InvertY);
+		MapStick(StickLookAction, EKeys::Gamepad_Right2D).Modifiers.Add(InvertY);
 	}
 
 	auto MapKeys = [this](UInputAction* Action, const TArray<FKey>& Keys)
@@ -1089,7 +1093,8 @@ void ALBACharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	}
 	Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ALBACharacter::OnMove);
 	Input->BindAction(MoveAction, ETriggerEvent::Completed, this, &ALBACharacter::OnMoveReleased);
-	Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALBACharacter::OnLook);
+	Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALBACharacter::OnMouseLook);
+	Input->BindAction(StickLookAction, ETriggerEvent::Triggered, this, &ALBACharacter::OnStickLook);
 	Input->BindAction(ActionAction, ETriggerEvent::Started, this, &ALBACharacter::OnAction);
 	Input->BindAction(UseAction, ETriggerEvent::Started, this, &ALBACharacter::OnUse);
 	Input->BindAction(AttackAction, ETriggerEvent::Started, this, &ALBACharacter::OnAttack);
@@ -1127,9 +1132,28 @@ void ALBACharacter::OnMoveReleased(const FInputActionValue& Value)
 	MoveInput = FVector2D::ZeroVector;
 }
 
-void ALBACharacter::OnLook(const FInputActionValue& Value)
+float ALBACharacter::GetIndoorLookBlend() const
 {
-	const FVector2D Look = Value.Get<FVector2D>();
+	return FMath::SmoothStep(0.f, 1.f, FMath::Max(IndoorBlend, 0.f));
+}
+
+void ALBACharacter::OnMouseLook(const FInputActionValue& Value)
+{
+	ApplyLook(Value.Get<FVector2D>() * FMath::Lerp(MouseLookScale, IndoorMouseLookScale, GetIndoorLookBlend()));
+}
+
+void ALBACharacter::OnStickLook(const FInputActionValue& Value)
+{
+	// The stick's value is a rate: this frame's share of StickLookRate, in look input (which the player controller
+	// scales by its legacy input scale before it turns the camera).
+	const APlayerController* PlayerController = Cast<APlayerController>(Controller);
+	const float InputScale = PlayerController && GetDefault<UInputSettings>()->bEnableLegacyInputScales
+		? FMath::Abs(PlayerController->InputYawScale_DEPRECATED) : 1.f;
+	ApplyLook(Value.Get<FVector2D>() * (StickLookRate * GetWorld()->GetDeltaSeconds() / FMath::Max(InputScale, UE_KINDA_SMALL_NUMBER)));
+}
+
+void ALBACharacter::ApplyLook(const FVector2D& Look)
+{
 	if (ControlMode == ELBAControlMode::Modern)
 	{
 		AddControllerYawInput(Look.X);
