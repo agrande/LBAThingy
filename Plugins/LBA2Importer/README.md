@@ -503,7 +503,7 @@ the first enemy that hurts (`-501` stops), `-300` presses Retry (`-LBA2MenuScene
 
 Islands placed on a planet can open on it: a tiny round planet (Twinsun: 320 m radius, the holomap's size) whose sea curves away to a
 horizon, far islands sinking below it until they come close. The planet is a level of its own,
-`/Game/LBA2/Planets/L_TWINSUN`, the game's default map: an empty persistent level whose sub-levels are the placed
+`/Game/LBA2/Planets/L_TWINSUN`: an empty persistent level whose sub-levels are the placed
 islands' levels where they are on the planet's map, each with its scenes (Unreal never loads a sub-level's own
 sub-levels, so the planet lists them itself), the belt and the home island's sea. The home island (Citadel, sunny: the
 first placed) keeps its level's place, so its coordinates are the same as in its own level; its sky, lights and look are
@@ -511,10 +511,12 @@ the planet's, the other islands' go when it plays. Importing an island of the pl
 (Scenes layer) rebuilds it; open in the editor (not playing), it shows every island's own sky and sun. A building's
 exit leads out onto the planet whenever its island level is placed there (sunny Citadel, the desert island), whichever
 level the player came in from; Citadel in the storm isn't on the planet, so its buildings still lead back to it.
+The game starts in Twinsen's house (its interior level is the default map); an island not played yet opens as its
+variant on the planet, so stepping out leads onto it.
 `lba.Scene` on the planet stays on it.
 
 In the editor, the toolbar's **Globe** button (next to Levels; also Tools > Play on the Globe, or `lba.Globe.Play`)
-plays the planet's level in the level viewport without opening it here; a packaged game starts on it. An island's own level opens on the planet too
+plays the planet's level in the level viewport without opening it here. An island's own level opens on the planet too
 (the other islands streamed in around it): in game, `lba.Globe.Open CITABAU`, or any travel to it with `?Globe`,
 `lba.Globe 1` or **Project Settings > Plugins > LBA2 > Globe > Globe**. Citadel
 and the desert island are placed where the holomap has them, 226 m apart (54 m of sea between their coasts): open either one and the other is out there,

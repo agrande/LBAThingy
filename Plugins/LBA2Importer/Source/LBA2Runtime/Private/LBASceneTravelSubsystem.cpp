@@ -327,6 +327,18 @@ FString ULBASceneTravelSubsystem::ChooseSceneryLevel(const ULBASceneAsset* Scene
 			}
 		}
 	}
+	if (Scene->bExterior)
+	{
+		// An island not played yet (the game starts in Twinsen's house): its variant laid on a planet, sunny Citadel.
+		for (const TSoftObjectPtr<UWorld>& Level : Scene->SceneryLevels)
+		{
+			const FString Package = Level.ToSoftObjectPath().GetLongPackageName();
+			if (FindPlanetPlacement(Package))
+			{
+				return Package;
+			}
+		}
+	}
 	return Scene->SceneryLevels.IsEmpty() ? FString() : Scene->SceneryLevels[0].ToSoftObjectPath().GetLongPackageName();
 }
 
