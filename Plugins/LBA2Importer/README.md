@@ -603,10 +603,16 @@ How it holds together (the world is flat and still; only the view is round):
   prototype of the rest of the hemisphere. LBA2's holomap texture is LBA1's repainted (same islands, same places;
   only Citadel and the desert were redrawn, plus two islets), so LBA1's arrows name them: Principal (32,600 m2 of
   land, 4 times Citadel's), Rebellion (15,700), Proxima (8,500), Islet_1 south-west of Citadel, Islet_2 east of the
-  desert. The painted land, smoothed, is the coast; a beach rises to 1.2 m, then hills whose height follows the
-  painted colors (sand low, green, brown, then grey, white and pale blue highest) up to 6 m on an islet and 20 m on
-  Principal; a pale shelf under the sea around them. Vertex colored with the painting's colors, lightened (gamma
-  0.75); collision from their triangles. Painted land under a placed island is left out. `lba.Globe.Stubs 0` leaves
+  desert. The painted land, smoothed, is the coast. The ground follows a grammar measured on LBA2's own islands
+  (`Tools/terrain_stats.py` over every .ILE, prototyped in `Tools/stub_grammar.py`): a low shore at 0.4 m, flat
+  benches at a few levels (2.8 m, then 2.5 to 6 m apart, up to 0.15 sqrt(land m2): 25 m on Principal), each where a
+  wanted height passes halfway to it (the painting read by hue: olive lowland, brown ridges, pale stone highest; plus
+  broad noise for hill masses), cliffs 1.4 m wide between benches and along headlands, ramps 9 m wide on a quarter of
+  the edges, beaches in bays (10 m of sand before the first bench), rolling ground over it all; a pale shelf under the
+  sea around them. Measured like LBA2's: about a third of the land flat (LBA2 20-40 %), most of the coast cliffs
+  (Citadel 60 %), a tenth beaches (Citadel 10 %). Vertex colored with LBA2's own ground colors (rock on cliffs, the
+  coast's rim and steep ground, sand on beaches, grass or earth on benches as painted, pale stone on a pale-painted top
+  bench); collision from their triangles. Painted land under a placed island is left out. `lba.Globe.Stubs 0` leaves
   them out.
 - **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
   (HOLOMAP.HQR, ARROW.BIN: two angles that turn the arrow onto the globe as HOLOGLOB.CPP does, not latitude and

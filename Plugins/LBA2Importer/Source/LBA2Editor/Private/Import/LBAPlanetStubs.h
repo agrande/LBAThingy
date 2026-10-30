@@ -15,10 +15,12 @@ class UWorld;
  * The holomap's texture (HOLOMAP.HQR HQR_TWINSUN_HMG, 256 x 256, longitude along U, latitude along V, RESS palette 0)
  * is LBA1's (RESS.HQR entry 7) repainted: the same islands in the same places. Its land, laid on the map out to the
  * belt's flank (latitude 14), splits into islands; those under a placed island (the planet asset's) are left out.
- * Each kept one: its coast where the smoothed painting turns from sea to land, a beach up to 1.2 m, then hills whose
- * height follows the painting's colors (sand low, green higher, brown and rock higher still, grey, white and pale blue
- * highest), up to 6 m on an islet and 20 m on the largest (Principal, 4 times Citadel's land), a shelf under the sea
- * around it. Vertex colored with the painting's colors (M_LBA_Color), collision from its triangles: boats run aground,
+ * Each kept one: its coast where the smoothed painting turns from sea to land, then ground grown by a grammar measured
+ * on LBA2's own islands (Tools/terrain_stats.py, prototyped in Tools/stub_grammar.py): a low shore, a few flat benches
+ * at levels meters apart, each where a wanted height (the painting read by hue: olive lowland, brown ridges, pale
+ * stone highest; broad noise for hill masses) passes halfway to it, cliffs between benches and along headlands, ramps
+ * on some edges, beaches in bays, rolling ground; a shelf under the sea around it. Vertex colored with LBA2's own
+ * ground colors (rock, sand, grass, earth, pale stone; M_LBA_Color), collision from its triangles: boats run aground,
  * Twinsen walks on it.
  *
  * Names: LBA1's holomap arrows (tlba-classic RESS.HQR entry 8, text 201, 203, 204) over the painting; others Islet_N.
