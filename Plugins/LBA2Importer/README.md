@@ -246,10 +246,19 @@ In modern mode the LBA animations play in place and are kept in step with the mo
   - the head turns towards where Twinsen is going, or, standing, towards where the camera looks.
 - **Jumps.** Jumps take off at once. The athletic jump animations are stretched over the actual
   flight, then touch down and recover; a hard landing stumbles.
+- **Indoor camera.** In an interior scene the camera comes in close behind Twinsen, like third-person
+  games in buildings: 1.9 m instead of 3.6 m, aimed a little higher, a narrower field of view (75
+  degrees), starting slightly lower. The room's walls and ceilings stop it, so it stays in the room
+  (they ignore the camera channel, so that the far outdoor camera sees into rooms; the indoor camera
+  sweeps against static geometry itself). `lba.Modern.IndoorCamera 0` keeps the outdoor camera
+  everywhere.
 
-Tunables are under *LBA|Modern* on the character: speeds, jump, camera distance, lean, head turn,
-and the leg/head bones. `-LBA2Shots=modern` runs a scripted test (starts, stops, walk, turns,
-reversal, jumps; side views with bursts of shots and a per-frame log).
+Tunables are under *LBA|Modern* on the character: speeds, jump, camera distances, heights and indoor
+field of view, lean, head turn, and the leg/head bones. `-LBA2Shots=modern` runs a scripted test
+(starts, stops, walk, turns, reversal, jumps; side views with bursts of shots and a per-frame log).
+`-LBA2Shots=camera` with `-LBA2HeroAt=x,y,yaw[,traceZ]` shoots the player's own camera around Twinsen
+standing still (ahead, right, behind, left, up, down) and logs whether he is indoors, the arm length
+and the camera height.
 
 **Life points.** Twinsen has the original's 50 life points (`ULBAHitPointsComponent`, no HUD: hit stars fly out of
 his head, one per 5 points lost, and he plays his hit reaction). What hurts him:

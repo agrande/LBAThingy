@@ -39,6 +39,7 @@ private:
 	bool Tick(float DeltaTime);
 	bool TickHero(UWorld* World, float DeltaTime);
 	bool TickModern(UWorld* World, float DeltaTime);
+	bool TickCamera(UWorld* World, float DeltaTime);
 	bool TickDinofly(UWorld* World, float DeltaTime);
 	bool TickWind(UWorld* World, float DeltaTime);
 	bool TickScenes(UWorld* World, float DeltaTime);
@@ -60,6 +61,13 @@ private:
 	double NextBurst = 0.0;
 	int32 BurstIndex = 0;
 	float ModernBaseYaw = 0.f;
+	/**
+	 * -LBA2Shots=camera: the player's own modern camera around Twinsen standing still (-LBA2HeroAt): ahead, right,
+	 * behind, left, looking up and down. Logs whether he is indoors, the arm length and the camera's height.
+	 */
+	bool bCamera = false;
+	bool bCameraShotTaken = false;
+	float CameraBasePitch = 0.f;
 	/** -LBA2Shots=dinofly: Twinsen summons the Dinofly, which flies a scripted sequence of inputs. */
 	bool bDinofly = false;
 	/**

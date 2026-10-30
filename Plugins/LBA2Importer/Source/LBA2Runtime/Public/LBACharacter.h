@@ -130,6 +130,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
 	float ModernCameraDistance = 360.f;
 
+	/**
+	 * Free camera distance indoors (interior scenes): close behind Twinsen, like third-person games in buildings. Indoors
+	 * the room's walls and ceilings stop the camera too, although the camera channel ignores them.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorCameraDistance = 190.f;
+
+	/** Height above the capsule center the free camera looks at, outdoors and indoors (near the shoulders). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float ModernCameraHeight = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorCameraHeight = 50.f;
+
+	/** Indoors the free camera's field of view narrows (degrees, horizontal) and it starts looking down this much. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorFieldOfView = 75.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
+	float IndoorCameraPitch = -20.f;
+
+	/** In an interior scene: the free camera comes in close. */
+	UFUNCTION(BlueprintPure, Category = "LBA")
+	bool IsIndoors() const { return bIndoors; }
+
 	/** Landing faster than this (cm/s) stumbles. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Modern")
 	float HardLandingSpeed = 1100.f;
@@ -328,6 +353,7 @@ private:
 	void UpdateAuthentic(float DeltaSeconds);
 	void UpdateModern(float DeltaSeconds);
 	void UpdateModernLocomotion(float DeltaSeconds);
+	void UpdateModernCamera(float DeltaSeconds);
 	void UpdateProceduralPose(float DeltaSeconds);
 	void ModernLanded();
 	void PlaySlot(int32 AnimType, bool bLoop, float BlendTime = 0.15f, float PlayRate = 1.f);
@@ -430,6 +456,14 @@ private:
 	int32 AttackCycle = 0;
 	float FallTime = 0.f;
 	float CameraYawOffset = 0.f;
+
+	// Indoors: looked up now and then from the scene Twinsen is in.
+	bool bIndoors = false;
+	int32 IndoorsScene = INDEX_NONE;
+	double NextIndoorsCheck = 0.0;
+	/** 0 outdoor camera, 1 indoor camera; -1 until the scene is known (no blend then). */
+	float IndoorBlend = -1.f;
+	float OutdoorFieldOfView = 90.f;
 
 	// Modern locomotion
 	enum class EModernState : uint8

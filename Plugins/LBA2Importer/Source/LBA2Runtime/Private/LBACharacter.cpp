@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/SkeletalMesh.h"
@@ -31,6 +32,7 @@
 #include "LBASceneActor.h"
 #include "LBAInteractable.h"
 #include "LBAPlayerController.h"
+#include "LBASceneAsset.h"
 #include "LBASceneTravelSubsystem.h"
 #include "LBATestStation.h"
 #include "LBATypes.h"
@@ -59,6 +61,8 @@ namespace
 		TEXT("Modern mode: interpolate LBA keyframes with smooth curves (0 = the original's straight in-betweens)."));
 	TAutoConsoleVariable<bool> CVarProcedural(TEXT("lba.Modern.Procedural"), true,
 		TEXT("Modern mode: lean, foot placement and head turn over the animations."));
+	TAutoConsoleVariable<bool> CVarIndoorCamera(TEXT("lba.Modern.IndoorCamera"), true,
+		TEXT("Modern mode: the camera comes in close indoors (0 = the outdoor camera everywhere)."));
 
 	/** Natural speed (cm/s) of an animation's root motion. */
 	float RootMotionSpeed(const UAnimSequence* Sequence)
@@ -268,6 +272,12 @@ void ALBACharacter::SetControlMode(ELBAControlMode NewMode)
 	CameraBoom->bInheritPitch = !bAuthentic;
 	CameraBoom->bInheritRoll = !bAuthentic;
 	CameraBoom->bEnableCameraRotationLag = bAuthentic;
+	if (IndoorBlend >= 0.f)
+	{
+		// The modern camera is placed again (indoors or not) on its next update.
+		FollowCamera->SetFieldOfView(OutdoorFieldOfView);
+		IndoorBlend = -1.f;
+	}
 	if (bAuthentic)
 	{
 		CameraBoom->TargetArmLength = 650.f;
@@ -284,10 +294,10 @@ void ALBACharacter::SetControlMode(ELBAControlMode NewMode)
 	}
 	else
 	{
-		// Free camera, like Unreal's third-person template, looking at Twinsen's chest.
+		// Free camera, like Unreal's third-person template, looking at Twinsen's chest (closer indoors: UpdateModernCamera).
 		CameraBoom->TargetArmLength = ModernCameraDistance;
 		CameraBoom->SocketOffset = FVector::ZeroVector;
-		CameraBoom->TargetOffset = FVector(0.f, 0.f, 30.f);
+		CameraBoom->TargetOffset = FVector(0.f, 0.f, ModernCameraHeight);
 		CameraBoom->bEnableCameraLag = true;
 		CameraBoom->CameraLagSpeed = 15.f;
 		CameraBoom->SetRelativeRotation(FRotator::ZeroRotator);
@@ -446,6 +456,10 @@ void ALBACharacter::Tick(float DeltaSeconds)
 		HitPoints->Heal(LifeRegenPerSecond * DeltaSeconds);
 	}
 	UpdateAttack(DeltaSeconds);
+	if (ControlMode == ELBAControlMode::Modern)
+	{
+		UpdateModernCamera(DeltaSeconds);
+	}
 	if (IsClimbing() || TryStartClimb())
 	{
 		UpdateClimb(DeltaSeconds);
@@ -565,6 +579,60 @@ void ALBACharacter::UpdateModern(float DeltaSeconds)
 
 	UpdateModernLocomotion(DeltaSeconds);
 	UpdateProceduralPose(DeltaSeconds);
+}
+
+void ALBACharacter::UpdateModernCamera(float DeltaSeconds)
+{
+	// Indoors is the scene Twinsen is in being an interior. The scene levels may stream in after he spawns: until his
+	// scene is known (at most 2 s), look every frame, so that the camera is placed at once rather than zooming in.
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now >= NextIndoorsCheck)
+	{
+		const ULBASceneTravelSubsystem* Travel = GetGameInstance() ? GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>() : nullptr;
+		const int32 Scene = Travel ? Travel->GetCurrentScene() : INDEX_NONE;
+		NextIndoorsCheck = Scene == INDEX_NONE && Now < 2.0 ? Now : Now + 1.0;
+		if (Scene != IndoorsScene)
+		{
+			IndoorsScene = Scene;
+			const ULBASceneAsset* SceneAsset = Scene != INDEX_NONE ? ULBASceneTravelSubsystem::FindScene(Scene) : nullptr;
+			bIndoors = SceneAsset && !SceneAsset->bExterior;
+		}
+	}
+	const float Target = bIndoors && CVarIndoorCamera.GetValueOnGameThread() ? 1.f : 0.f;
+	if (IndoorBlend < 0.f)
+	{
+		if (IndoorsScene == INDEX_NONE && Now < 2.0)
+		{
+			return;
+		}
+		OutdoorFieldOfView = FollowCamera->FieldOfView;
+		IndoorBlend = Target;
+		if (Target > 0.f && Controller)
+		{
+			Controller->SetControlRotation(FRotator(IndoorCameraPitch, Controller->GetControlRotation().Yaw, 0.f));
+		}
+	}
+	IndoorBlend = FMath::FInterpConstantTo(IndoorBlend, Target, DeltaSeconds, 2.f);
+	const float Blend = FMath::SmoothStep(0.f, 1.f, IndoorBlend);
+	float Distance = FMath::Lerp(ModernCameraDistance, IndoorCameraDistance, Blend);
+	CameraBoom->TargetOffset = FVector(0.f, 0.f, FMath::Lerp(ModernCameraHeight, IndoorCameraHeight, Blend));
+	FollowCamera->SetFieldOfView(FMath::Lerp(OutdoorFieldOfView, IndoorFieldOfView, Blend));
+
+	// Indoors the camera stays in the room: walls and ceilings (static, ignoring the camera channel so that the far
+	// outdoor camera sees into rooms) stop it, like the spring arm's own probe does for the rest.
+	if (Blend > 0.f && Controller)
+	{
+		const FVector Pivot = CameraBoom->GetComponentLocation() + CameraBoom->TargetOffset;
+		const FVector End = Pivot - Controller->GetControlRotation().Vector() * Distance;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(LBAIndoorCamera), false, this);
+		FHitResult Hit;
+		if (GetWorld()->SweepSingleByObjectType(Hit, Pivot, End, FQuat::Identity, FCollisionObjectQueryParams(ECC_WorldStatic),
+			FCollisionShape::MakeSphere(CameraBoom->ProbeSize), Params) && !Hit.bStartPenetrating)
+		{
+			Distance = FMath::Lerp(Distance, Hit.Distance, Blend);
+		}
+	}
+	CameraBoom->TargetArmLength = Distance;
 }
 
 void ALBACharacter::UpdateModernLocomotion(float DeltaSeconds)

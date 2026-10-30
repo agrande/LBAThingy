@@ -2,6 +2,7 @@
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -70,6 +71,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	else if (Spec.Equals(TEXT("modern"), ESearchCase::IgnoreCase))
 	{
 		bModern = true;
+		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("camera"), ESearchCase::IgnoreCase))
+	{
+		bCamera = true;
 		bPosesReady = true;
 	}
 	else if (Spec.Equals(TEXT("dinofly"), ESearchCase::IgnoreCase))
@@ -404,6 +410,7 @@ bool ULBA2SnapshotSubsystem::TickModern(UWorld* World, float DeltaTime)
 		Hero->SetControlMode(ELBAControlMode::Modern);
 		PlaceHero(World, Hero);
 		// Closer than in play, to see the legs.
+		Hero->ModernCameraDistance = 260.f;
 		Hero->GetCameraBoom()->TargetArmLength = 260.f;
 		Hero->GetCameraBoom()->bEnableCameraLag = false;
 		ModernBaseYaw = Hero->GetActorRotation().Yaw;
@@ -466,6 +473,98 @@ bool ULBA2SnapshotSubsystem::TickModern(UWorld* World, float DeltaTime)
 		if (HeroStep >= NumSteps)
 		{
 			Hero->SetMoveInput(FVector2D::ZeroVector);
+		}
+	}
+	return true;
+}
+
+bool ULBA2SnapshotSubsystem::TickCamera(UWorld* World, float DeltaTime)
+{
+	struct FStep
+	{
+		const TCHAR* Name;
+		/** From the pitch the game gives the camera (the first shot is what the player sees on arrival). */
+		float Pitch;
+		float Yaw;
+	};
+	static const FStep Steps[] =
+	{
+		{ TEXT("ahead"), 0.f, 0.f },
+		{ TEXT("right"), 0.f, 90.f },
+		{ TEXT("behind"), 0.f, 180.f },
+		{ TEXT("left"), 0.f, 270.f },
+		{ TEXT("up"), 40.f, 0.f },
+		{ TEXT("down"), -35.f, 0.f },
+	};
+	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	ALBACharacter* Hero = PC ? Cast<ALBACharacter>(PC->GetPawn()) : nullptr;
+	if (!Hero)
+	{
+		if (Elapsed > 15.0)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots camera: the player pawn is not an ALBACharacter"));
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+	if (HeroStep < 0)
+	{
+		Hero->DisableInput(PC);
+		Hero->SetControlMode(ELBAControlMode::Modern);
+		PlaceHero(World, Hero);
+		ModernBaseYaw = Hero->GetActorRotation().Yaw;
+		HeroStep = 0;
+		HeroStepStart = Elapsed;
+		PC->SetControlRotation(FRotator(PC->GetControlRotation().Pitch, ModernBaseYaw, 0.f));
+		return true;
+	}
+	if (HeroStep >= NumSteps)
+	{
+		if (Elapsed - HeroStepStart > 1.0)
+		{
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		return true;
+	}
+
+	// Let the camera settle, shoot, then turn on a later frame (the shot is the next rendered frame).
+	const FStep& Step = Steps[HeroStep];
+	if (!bCameraShotTaken && Elapsed - HeroStepStart >= 1.5)
+	{
+		if (HeroStep == 0)
+		{
+			CameraBasePitch = FRotator::NormalizeAxis(PC->GetControlRotation().Pitch);
+			// What is overhead: the ceiling the indoor camera stays under.
+			FHitResult Hit;
+			const FVector Head = Hero->GetActorLocation();
+			if (World->LineTraceSingleByObjectType(Hit, Head, Head + FVector(0.0, 0.0, 2000.0), FCollisionObjectQueryParams(ECC_WorldStatic),
+				FCollisionQueryParams(SCENE_QUERY_STAT(LBA2ShotsCeiling), true, Hero)))
+			{
+				UE_LOG(LogLBA2, Display, TEXT("LBA2Shots camera: overhead %s (%s) %.0f cm above the feet"), *GetNameSafe(Hit.GetActor()),
+					*GetNameSafe(Hit.GetComponent()), Hit.ImpactPoint.Z - (Head.Z - Hero->GetSimpleCollisionHalfHeight()));
+			}
+		}
+		const FVector View = PC->PlayerCameraManager->GetCameraLocation();
+		const double Feet = Hero->GetActorLocation().Z - Hero->GetSimpleCollisionHalfHeight();
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots camera %s: indoors %d pitch %.0f fov %.0f arm %.0f camera %.0f cm above the feet, %.0f cm from the hero at %s yaw %.0f (view yaw %.0f)"), Step.Name,
+			Hero->IsIndoors() ? 1 : 0, FRotator::NormalizeAxis(PC->GetControlRotation().Pitch), PC->PlayerCameraManager->GetFOVAngle(),
+			Hero->GetCameraBoom()->TargetArmLength, View.Z - Feet, FVector::Dist(View, Hero->GetActorLocation()),
+			*Hero->GetActorLocation().ToCompactString(), Hero->GetActorRotation().Yaw, PC->PlayerCameraManager->GetCameraRotation().Yaw);
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Camera_%02d_%s.png"), HeroStep, Step.Name), false, false);
+		bCameraShotTaken = true;
+	}
+	else if (bCameraShotTaken && Elapsed - HeroStepStart >= 2.0)
+	{
+		bCameraShotTaken = false;
+		++HeroStep;
+		HeroStepStart = Elapsed;
+		if (HeroStep < NumSteps)
+		{
+			PC->SetControlRotation(FRotator(CameraBasePitch + Steps[HeroStep].Pitch, ModernBaseYaw + Steps[HeroStep].Yaw, 0.f));
 		}
 	}
 	return true;
@@ -2186,6 +2285,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bModern)
 	{
 		return TickModern(World, DeltaTime);
+	}
+	if (bCamera)
+	{
+		return TickCamera(World, DeltaTime);
 	}
 	if (bDinofly)
 	{
