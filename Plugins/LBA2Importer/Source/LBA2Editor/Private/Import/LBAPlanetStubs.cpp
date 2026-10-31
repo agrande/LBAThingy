@@ -11,7 +11,7 @@
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
 
-namespace
+namespace LBAPlanetStubsPrivate
 {
 	/** HOLOMAP.HQR's texture of Twinsun (HQR_TWINSUN_HMG). */
 	constexpr int32 TextureEntry = 2;
@@ -434,6 +434,8 @@ namespace
 
 TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const FString& Planet, const ULBAPlanetAsset* Asset, double Radius, const FString& Folder)
 {
+	using namespace LBAPlanetStubsPrivate;
+
 	const FLBAHqrFile* Holomap = Context.GetHqr(TEXT("HOLOMAP.HQR"));
 	const FLBAHqrFile* Ress = Context.GetHqr(TEXT("RESS.HQR"));
 	TArray<uint8> Texture;

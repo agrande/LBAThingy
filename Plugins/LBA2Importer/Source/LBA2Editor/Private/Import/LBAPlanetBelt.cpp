@@ -11,7 +11,7 @@
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
 
-namespace
+namespace LBAPlanetBeltPrivate
 {
 	/** HOLOMAP.HQR entries (HOLO.H): Twinsun's altitudes (HQR_TWINSUN_HMT) and texture (HQR_TWINSUN_HMG). */
 	constexpr int32 AltitudeEntry = 1;
@@ -236,6 +236,8 @@ namespace
 
 TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FString& Planet, double Radius, const FString& Folder)
 {
+	using namespace LBAPlanetBeltPrivate;
+
 	const FLBAHqrFile* Holomap = Context.GetHqr(TEXT("HOLOMAP.HQR"));
 	const FLBAHqrFile* Ress = Context.GetHqr(TEXT("RESS.HQR"));
 	TArray<uint8> Altitudes;
