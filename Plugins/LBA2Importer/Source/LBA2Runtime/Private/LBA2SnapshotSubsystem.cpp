@@ -38,6 +38,7 @@
 #include "LBATravelGateway.h"
 #include "LBAWindSubsystem.h"
 #include "LBAZoneVolume.h"
+#include "Misc/App.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
@@ -188,6 +189,19 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		bPosesReady = true;
 	}
 	FParse::Value(FCommandLine::Get(), TEXT("LBA2ShotSettle="), PoseSettle);
+
+	// Faster than real time: every frame advances the game (and these steps' clock) by a fixed 1/N s, as fast as frames
+	// render. The Dinofly's steps are all in game time (its flight substeps at 120 Hz), so it runs this way by default,
+	// at 1/15 s: its run takes 45 s instead of 150, and lands within a few meters of a real-time run (2026-10-31);
+	// -LBA2ShotStep=0 plays in real time.
+	int32 StepRate = bDinofly ? 15 : 0;
+	FParse::Value(FCommandLine::Get(), TEXT("LBA2ShotStep="), StepRate);
+	if (StepRate > 0)
+	{
+		FApp::SetUseFixedTimeStep(true);
+		FApp::SetFixedDeltaTime(1.0 / StepRate);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots: fixed time step 1/%d s, as fast as frames render"), StepRate);
+	}
 
 	FString HeroSpec;
 	if (FParse::Value(FCommandLine::Get(), TEXT("LBA2HeroAt="), HeroSpec, false))
