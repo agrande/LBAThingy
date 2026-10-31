@@ -2,6 +2,7 @@
 
 #include "Formats/LBAIso.h"
 #include "HAL/FileManager.h"
+#include "LBATypes.h"
 #include "Misc/Paths.h"
 
 namespace LBA1Private
@@ -100,12 +101,79 @@ bool LBA1::FData::LoadScene(int32 Index, FScene& Out) const
 	return Scenes.GetEntry(Index, Data) && Out.Load(Data, Index);
 }
 
+bool LBA1::FData::LoadGrid(int32 Index, FLBAGrid& Out) const
+{
+	TArray<uint8> Data;
+	if (!Grids.GetEntry(Index, Data) || Data.Num() < SceneCells * SceneCells * 2)
+	{
+		return false;
+	}
+	Out.Index = Index;
+	Out.LibraryIndex = Index;
+	Out.GrmIndex = 0;
+	Out.Cells.Reset();
+	Out.Cells.SetNum(SceneCells * LBA::GridSizeY * SceneCells);
+	FLBAReader R(Data);
+	for (int32 Column = 0; Column < SceneCells * SceneCells; ++Column)
+	{
+		// The column's cells bottom up: (1-based layout, block), layout 0 when empty.
+		const int32 X = Column % SceneCells;
+		const int32 Z = Column / SceneCells;
+		int32 At = R.U16At(Column * 2);
+		const int32 Runs = R.U8At(At++);
+		int32 Y = 0;
+		for (int32 Run = 0; Run < Runs; ++Run)
+		{
+			const uint8 Flags = R.U8At(At++);
+			const int32 Count = (Flags & 63) + 1;
+			const int32 Type = Flags >> 6;
+			for (int32 K = 0; K < Count; ++K, ++Y)
+			{
+				FLBAGridCell Cell;
+				if (Type >= 1)
+				{
+					Cell.Layout = int16(R.U8At(At)) - 1;
+					Cell.Block = R.U8At(At + 1);
+					At += Type == 1 ? 2 : 0;
+				}
+				if (Y < LBA::GridSizeY)
+				{
+					Out.Cells[FLBAGrid::CellIndex(X, Y, Z)] = Cell;
+				}
+			}
+			At += Type >= 2 ? 2 : 0;
+		}
+	}
+	return R.IsOk();
+}
+
+bool LBA1::FData::LoadLibrary(int32 Index, FLBALibrary& Out) const
+{
+	TArray<uint8> Data;
+	return Libraries.GetEntry(Index, Data) && Out.Load(Data, Index);
+}
+
+bool LBA1::FData::LoadBrick(int32 Brick, FLBABrickSprite& Out) const
+{
+	TArray<uint8> Data;
+	return Brick > 0 && Bricks.GetEntry(Brick - 1, Data) && Out.Decode(Data);
+}
+
+TArray<FColor> LBA1::FData::GetPalette() const
+{
+	TArray<FColor> Colors;
+	for (const FVector3f& Color : Palette)
+	{
+		Colors.Add(FColor(uint8(Color.X), uint8(Color.Y), uint8(Color.Z)));
+	}
+	return Colors;
+}
+
 bool LBA1::FData::LoadPlan(int32 Index, FPlan& Out) const
 {
-	TArray<uint8> Grid;
-	TArray<uint8> LibraryData;
+	FLBAGrid Grid;
 	FLBALibrary Library;
-	if (!Grids.GetEntry(Index, Grid) || !Libraries.GetEntry(Index, LibraryData) || !Library.Load(LibraryData, Index) || Grid.Num() < SceneCells * SceneCells * 2)
+	if (!LoadGrid(Index, Grid) || !LoadLibrary(Index, Library))
 	{
 		return false;
 	}
@@ -113,57 +181,32 @@ bool LBA1::FData::LoadPlan(int32 Index, FPlan& Out) const
 	Out.Heights.Init(-1, Columns);
 	Out.Colors.Init(FVector3f::ZeroVector, Columns);
 	Out.Water.Init(false, Columns);
-	FLBAReader R(Grid);
 	for (int32 Column = 0; Column < Columns; ++Column)
 	{
-		// The column's cells bottom up: (1-based layout, block), 0 when empty.
-		TArray<FIntPoint, TInlineAllocator<25>> Cells;
-		int32 At = R.U16At(Column * 2);
-		const int32 Runs = R.U8At(At++);
-		for (int32 Run = 0; Run < Runs; ++Run)
+		for (int32 Y = LBA::GridSizeY - 1; Y >= 0; --Y)
 		{
-			const uint8 Flags = R.U8At(At++);
-			const int32 Count = (Flags & 63) + 1;
-			const int32 Type = Flags >> 6;
-			for (int32 K = 0; K < Count; ++K)
-			{
-				FIntPoint Cell(0, 0);
-				if (Type == 1)
-				{
-					Cell = FIntPoint(R.U8At(At), R.U8At(At + 1));
-					At += 2;
-				}
-				else if (Type >= 2)
-				{
-					Cell = FIntPoint(R.U8At(At), R.U8At(At + 1));
-				}
-				Cells.Add(Cell);
-			}
-			if (Type >= 2)
-			{
-				At += 2;
-			}
-		}
-		for (int32 Y = FMath::Min(Cells.Num(), 25) - 1; Y >= 0; --Y)
-		{
-			const int32 Layout = Cells[Y].X;
-			const int32 Block = Cells[Y].Y;
-			if (Layout < 1 || Layout > Library.Layouts.Num() || Block >= Library.Layouts[Layout - 1].Blocks.Num())
-			{
-				continue;
-			}
-			const FLBALayoutBlock& Brick = Library.Layouts[Layout - 1].Blocks[Block];
-			if (Brick.Brick == 0)
+			const FLBALayoutBlock* Brick = GetBlock(Library, Grid.Get(Column % SceneCells, Y, Column / SceneCells));
+			if (!Brick || Brick->Brick == 0)
 			{
 				continue;
 			}
 			Out.Heights[Column] = Y;
-			Out.Colors[Column] = GetTopColor(Brick.Brick);
-			Out.Water[Column] = Brick.Code == WaterCode;
+			Out.Colors[Column] = GetTopColor(Brick->Brick);
+			Out.Water[Column] = Brick->Code == WaterCode;
 			break;
 		}
 	}
-	return R.IsOk();
+	return true;
+}
+
+const FLBALayoutBlock* LBA1::GetBlock(const FLBALibrary& Library, const FLBAGridCell& Cell)
+{
+	if (!Library.Layouts.IsValidIndex(Cell.Layout))
+	{
+		return nullptr;
+	}
+	const FLBALayout& Layout = Library.Layouts[Cell.Layout];
+	return Layout.Blocks.IsValidIndex(Cell.Block) ? &Layout.Blocks[Cell.Block] : nullptr;
 }
 
 FVector3f LBA1::FData::GetTopColor(int32 Brick) const
@@ -173,7 +216,7 @@ FVector3f LBA1::FData::GetTopColor(int32 Brick) const
 		return *Known;
 	}
 	FLBABrickSprite Sprite;
-	Sprite.Decode(Bricks.GetEntry(Brick - 1));
+	LoadBrick(Brick, Sprite);
 	FVector3f Top = FVector3f::ZeroVector, All = FVector3f::ZeroVector;
 	int32 NumTop = 0, NumAll = 0;
 	for (int32 Y = 0; Y < FLBABrickSprite::Height; ++Y)

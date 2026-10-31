@@ -13,6 +13,7 @@
 #include "Formats/LBAScene.h"
 #include "GameFramework/PlayerStart.h"
 #include "Import/LBABodyConverter.h"
+#include "Import/LBABrickMesh.h"
 #include "Import/LBARoomPlan.h"
 #include "Import/LBAEnvironment.h"
 #include "Import/LBAGridPlanText.h"
@@ -57,19 +58,7 @@ namespace
 	constexpr float OpaqueCoverage = 0.9f;
 
 	/** Read access to a block of bricks (a whole grid or a single layout). */
-	struct FCellQuery
-	{
-		FIntVector Size;
-		TFunction<int32(int32 X, int32 Y, int32 Z)> Brick;
-		TFunction<int32(int32 X, int32 Y, int32 Z)> Shape;
-
-		bool Inside(int32 X, int32 Y, int32 Z) const
-		{
-			return X >= 0 && Y >= 0 && Z >= 0 && X < Size.X && Y < Size.Y && Z < Size.Z;
-		}
-		int32 BrickAt(int32 X, int32 Y, int32 Z) const { return Inside(X, Y, Z) ? Brick(X, Y, Z) : 0; }
-		int32 ShapeAt(int32 X, int32 Y, int32 Z) const { return Inside(X, Y, Z) ? Shape(X, Y, Z) : 0; }
-	};
+	using FCellQuery = LBABrickMesh::FCells;
 
 	/** The cells of an iso grid: the art and collision shape of their layout block (or the invisible shape of cells without). */
 	FCellQuery MakeGridQuery(const FLBAGrid& Grid, const FLBALibrary& Library, int32 Forbidden)
@@ -1339,7 +1328,9 @@ namespace
 	}
 
 	/** Complex collision: exact block and ramp surfaces, hidden faces between full blocks removed. */
-	void EmitCollision(const FCellQuery& Query, FLBAMeshBuilder& Builder, int32 Section, float Scale)
+	/** KeepCell: whether a cell's shape goes into this mesh (its neighbours still hide its faces). */
+	void EmitCollision(const FCellQuery& Query, FLBAMeshBuilder& Builder, int32 Section, float Scale,
+		TFunctionRef<bool(const FIntVector&)> KeepCell = [](const FIntVector&) { return true; })
 	{
 		auto Solid = [&Query](int32 X, int32 Y, int32 Z) { return Query.ShapeAt(X, Y, Z) == 1; };
 		auto Quad = [&](const FVector3f& A, const FVector3f& B, const FVector3f& C, const FVector3f& D, const FVector3f& Outward)
@@ -1367,7 +1358,7 @@ namespace
 				for (int32 Y = 0; Y < Query.Size.Y; ++Y)
 				{
 					const int32 Shape = Query.ShapeAt(X, Y, Z);
-					if (Shape <= 0 || Shape > 13)
+					if (Shape <= 0 || Shape > 13 || !KeepCell(FIntVector(X, Y, Z)))
 					{
 						continue;
 					}
@@ -1501,80 +1492,21 @@ namespace
 	}
 }
 
-FLBAIsoImporter::FLBAIsoImporter(FLBAImportContext& InContext)
-	: Context(InContext)
+void LBABrickMesh::MakeAtlas(TConstArrayView<int32> Bricks, TFunctionRef<bool(int32 Brick, FLBABrickSprite& Sprite)> Decode, const TArray<FColor>& Palette,
+	FLBAIsoImporter::FAtlas& Atlas, TArray<FColor>& Pixels)
 {
-}
-
-FLBAIsoImporter::~FLBAIsoImporter() = default;
-
-bool FLBAIsoImporter::LoadHeader()
-{
-	Bkg = Context.GetHqr(TEXT("LBA_BKG.HQR"));
-	if (!Bkg || !Header.Load(*Bkg))
-	{
-		Context.Warn(TEXT("LBA_BKG.HQR is missing or unreadable"));
-		return false;
-	}
-	SceneMap = LBAIso::LoadSceneMap(Bkg->GetEntry(Header.GetSceneMapIndex()));
-	return true;
-}
-
-const FLBALibrary* FLBAIsoImporter::GetLibrary(int32 LibraryIndex)
-{
-	if (const TUniquePtr<FLBALibrary>* Found = Libraries.Find(LibraryIndex))
-	{
-		return Found->Get();
-	}
-	TUniquePtr<FLBALibrary> Library = MakeUnique<FLBALibrary>();
-	if (!Library->Load(Bkg->GetEntry(Header.LibraryStart + LibraryIndex), LibraryIndex))
-	{
-		Context.Warn(FString::Printf(TEXT("Library %d is unreadable"), LibraryIndex));
-		Library.Reset();
-	}
-	return Libraries.Add(LibraryIndex, MoveTemp(Library)).Get();
-}
-
-const FLBAIsoImporter::FAtlas* FLBAIsoImporter::GetAtlas(int32 LibraryIndex)
-{
-	if (const TUniquePtr<FAtlas>* Found = Atlases.Find(LibraryIndex))
-	{
-		return Found->Get();
-	}
-	const FLBALibrary* Library = GetLibrary(LibraryIndex);
-	if (!Library)
-	{
-		return nullptr;
-	}
-
-	TArray<int32> Bricks;
-	for (const FLBALayout& Layout : Library->Layouts)
-	{
-		for (const FLBALayoutBlock& Block : Layout.Blocks)
-		{
-			if (Block.Brick != 0 && Block.Brick != Header.ForbiddenBrick)
-			{
-				Bricks.AddUnique(Block.Brick);
-			}
-		}
-	}
-	Bricks.Sort();
-
-	FAtlas Atlas;
 	Atlas.Width = 2048;
 	const int32 PerRow = Atlas.Width / CellW;
 	const int32 Rows = FMath::DivideAndRoundUp(FMath::Max(Bricks.Num(), 1), PerRow);
 	Atlas.Height = FMath::RoundUpToPowerOfTwo(Rows * CellH);
 
-	const TArray<FColor>& Palette = Context.GetPalette();
-	TArray<FColor> Pixels;
 	Pixels.SetNumZeroed(Atlas.Width * Atlas.Height);
 	FLBABrickSprite Sprite;
 	for (int32 Index = 0; Index < Bricks.Num(); ++Index)
 	{
 		const FIntPoint Cell((Index % PerRow) * CellW, (Index / PerRow) * CellH);
 		Atlas.Cells.Add(Bricks[Index], Cell);
-		if (!Sprite.Decode(Bkg->GetEntry(Header.BrickStart + Bricks[Index] - 1)))
+		if (!Decode(Bricks[Index], Sprite))
 		{
 			continue;
 		}
@@ -1676,6 +1608,82 @@ const FLBAIsoImporter::FAtlas* FLBAIsoImporter::GetAtlas(int32 LibraryIndex)
 			}
 		}
 	}
+}
+
+void LBABrickMesh::EmitVisual(const FCells& Cells, const FLBAIsoImporter::FAtlas& Atlas, FLBAMeshBuilder& Builder, int32 Section, float Scale,
+	ELBABackFaceMode BackFaces, TFunctionRef<bool(const FIntVector&, int32)> KeepFace)
+{
+	::EmitVisual(Cells, Atlas, Builder, Section, Scale, BackFaces, KeepFace);
+}
+
+void LBABrickMesh::EmitCollision(const FCells& Cells, FLBAMeshBuilder& Builder, int32 Section, float Scale, TFunctionRef<bool(const FIntVector&)> KeepCell)
+{
+	::EmitCollision(Cells, Builder, Section, Scale, KeepCell);
+}
+
+FLBAIsoImporter::FLBAIsoImporter(FLBAImportContext& InContext)
+	: Context(InContext)
+{
+}
+
+FLBAIsoImporter::~FLBAIsoImporter() = default;
+
+bool FLBAIsoImporter::LoadHeader()
+{
+	Bkg = Context.GetHqr(TEXT("LBA_BKG.HQR"));
+	if (!Bkg || !Header.Load(*Bkg))
+	{
+		Context.Warn(TEXT("LBA_BKG.HQR is missing or unreadable"));
+		return false;
+	}
+	SceneMap = LBAIso::LoadSceneMap(Bkg->GetEntry(Header.GetSceneMapIndex()));
+	return true;
+}
+
+const FLBALibrary* FLBAIsoImporter::GetLibrary(int32 LibraryIndex)
+{
+	if (const TUniquePtr<FLBALibrary>* Found = Libraries.Find(LibraryIndex))
+	{
+		return Found->Get();
+	}
+	TUniquePtr<FLBALibrary> Library = MakeUnique<FLBALibrary>();
+	if (!Library->Load(Bkg->GetEntry(Header.LibraryStart + LibraryIndex), LibraryIndex))
+	{
+		Context.Warn(FString::Printf(TEXT("Library %d is unreadable"), LibraryIndex));
+		Library.Reset();
+	}
+	return Libraries.Add(LibraryIndex, MoveTemp(Library)).Get();
+}
+
+const FLBAIsoImporter::FAtlas* FLBAIsoImporter::GetAtlas(int32 LibraryIndex)
+{
+	if (const TUniquePtr<FAtlas>* Found = Atlases.Find(LibraryIndex))
+	{
+		return Found->Get();
+	}
+	const FLBALibrary* Library = GetLibrary(LibraryIndex);
+	if (!Library)
+	{
+		return nullptr;
+	}
+
+	TArray<int32> Bricks;
+	for (const FLBALayout& Layout : Library->Layouts)
+	{
+		for (const FLBALayoutBlock& Block : Layout.Blocks)
+		{
+			if (Block.Brick != 0 && Block.Brick != Header.ForbiddenBrick)
+			{
+				Bricks.AddUnique(Block.Brick);
+			}
+		}
+	}
+	Bricks.Sort();
+
+	FAtlas Atlas;
+	TArray<FColor> Pixels;
+	LBABrickMesh::MakeAtlas(Bricks, [this](int32 Brick, FLBABrickSprite& Sprite) { return Sprite.Decode(Bkg->GetEntry(Header.BrickStart + Brick - 1)); },
+		Context.GetPalette(), Atlas, Pixels);
 
 	if (bPlansOnly)
 	{
@@ -2594,7 +2602,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	if (RemovedFrames.Num() > 0 || CoveredFaces.Num() > 0)
 	{
 		FLBAMeshBuilder FramesBuilder;
-		EmitVisual(Query, *Atlas, FramesBuilder, FramesBuilder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale,
+		::EmitVisual(Query, *Atlas, FramesBuilder, FramesBuilder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale,
 			Context.GetProjectSettings().BackFaces, [&RemovedFrames, &CoveredFaces](const FIntVector& Cell, int32 FaceIndex)
 			{
 				return RemovedFrames.Contains(Cell) || CoveredFaces.Contains(FIntVector4(Cell.X, Cell.Y, Cell.Z, FaceIndex));
@@ -2611,7 +2619,7 @@ bool FLBAIsoImporter::ImportGrid(int32 GridIndex)
 	}
 
 	FLBAMeshBuilder Builder;
-	EmitVisual(VisualQuery, *Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale,
+	::EmitVisual(VisualQuery, *Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas->Material), Scale,
 		Context.GetProjectSettings().BackFaces, [&CoveredFaces](const FIntVector& Cell, int32 FaceIndex)
 		{
 			return !CoveredFaces.Contains(FIntVector4(Cell.X, Cell.Y, Cell.Z, FaceIndex));

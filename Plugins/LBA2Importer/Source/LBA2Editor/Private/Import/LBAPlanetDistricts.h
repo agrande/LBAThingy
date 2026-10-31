@@ -13,10 +13,18 @@
  *   fitted   to the stub's coast: the offset (45 m around) and turn (30 degrees around) where its land lies on the
  *            stub's land and its water on its sea, near the markers and heading 0; largest first, off the ones before.
  *
- * Its pad: its land at LBA1's ground (the streets' level among the top bricks, over each scene's own sea level), its
- * water carved into the sea, the stub's ground eased into it over 6 m, its colors the ground's top bricks'. Land the
- * stub's painting lacks under a pad is grown, as LBA2 grew the desert around the Temple of Bu.
+ * Its pad: its land under LBA1's bricks (their lowest, or the streets' level among the top bricks where that is lower: under
+ * a roof), its water carved into the sea, the stub's ground eased into it over 6 m, its colors the ground's top bricks'.
+ * Land the stub's painting lacks under a pad is grown, as LBA2 grew the desert around the Temple of Bu.
+ *
+ * Its town (L4): the bricks of its scenes in its frame, as LBA1 joins them (its scenes' sea levels differ: Principal's
+ * are 0 and 3 cells in one frame, so a quay may stand 1 m over the sea), each column from the scene drawn over it.
  */
+namespace LBA1
+{
+	class FData;
+}
+
 namespace LBAPlanetDistricts
 {
 	/** How far (cm) a stub's grid reaches past its painted land when districts are laid on it: room for land they grow. */
@@ -41,6 +49,8 @@ namespace LBAPlanetDistricts
 	/** A district as laid on its stub. */
 	struct FPlaced
 	{
+		/** Which of the districts (FDistricts::MakeTown). */
+		int32 District = INDEX_NONE;
 		FString Name;
 		TArray<int32> Scenes;
 		/** Where its pivot (its scenes' centers' mean) is on the map (cm). */
@@ -57,6 +67,22 @@ namespace LBAPlanetDistricts
 		double LandArea = 0.0;
 	};
 
+	/** A district's bricks in its frame: cells (x, y up, z) from Low (frame cells: 64 cm across, 32 cm up). */
+	struct FTown
+	{
+		FIntVector Low = FIntVector::ZeroValue;
+		FIntVector Size = FIntVector::ZeroValue;
+		/** Per cell (Index): LBA1's brick (1-based, 0 = none) and its collision shape. */
+		TArray<int32> Bricks;
+		TArray<uint8> Shapes;
+		/** Per column (z * Size.X + x): the scene drawn there (INDEX_NONE: none). */
+		TArray<int32> Scenes;
+
+		int32 Index(int32 X, int32 Y, int32 Z) const { return (Z * Size.X + X) * Size.Y + Y; }
+		/** Where cell 0, 0, 0 is in the frame (cm, as FPlaced::FrameToMap takes it). */
+		FVector GetOrigin() const;
+	};
+
 	class FDistricts
 	{
 	public:
@@ -71,8 +97,14 @@ namespace LBAPlanetDistricts
 		/** Places the island's districts on its ground and lays their pads. */
 		TArray<FPlaced> Lay(const FString& Island, FGround& Ground) const;
 
+		/** A placed district's bricks: its land's, not its sea's (the planet's sea is there); quays reach under the sea. */
+		bool MakeTown(const FPlaced& Placed, FTown& Out) const;
+		/** LBA1's data, for the towns' bricks (after Load). */
+		const LBA1::FData& GetData() const { return *Data; }
+
 	private:
 		struct FDistrict;
+		TUniquePtr<LBA1::FData> Data;
 		FString Directory;
 		TArray<TUniquePtr<FDistrict>> Districts;
 	};

@@ -10,6 +10,7 @@
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBAPlanetDistricts.h"
+#include "Import/LBAPlanetTowns.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
@@ -966,6 +967,11 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				Note->Text = Text;
 #endif
 			}
+		}
+		// Their towns on the pads, LBA1's bricks in 3D.
+		if (!Placed.IsEmpty())
+		{
+			LBAPlanetTowns::Build(Context, World, Folder, Name, Districts, Placed, Radius);
 		}
 	}
 	Context.EndLevel(World);

@@ -670,10 +670,12 @@ How it holds together (the world is flat and still; only the view is round):
   (LBA1 keeps one per scene, RESS.HQR entry 8 by scene number; on Citadel each is 12-40 m off the truth, their mean
   13 m). Which way: LBA1's x east and z north, unscaled. Then fitted to the stub's coast: the offset (within 45 m) and
   turn (within 30 degrees) where its land lies on the painted land and its water on the sea, near the markers and
-  heading 0, largest district first and each off the ones before. The pad: its land at LBA1's ground (the level 20 %
-  of the top bricks around each cell, 11 m, are under: streets, not roofs; over each scene's own sea level, which LBA1
-  keeps per scene), its water carved into the sea at least 1.2 m deep, the stub's ground eased into it over 6 m, its
-  colors the ground's top bricks'. Land a pad needs off the painted coast is grown (the stub's grid reaches 60 m
+  heading 0, largest district first and each off the ones before. The pad: its land 10 cm under its town's bricks
+  (their lowest, or the streets' level where that is lower: the level 20 % of the top bricks around each cell, 11 m,
+  are under; the lowest of the 5 x 5 cells around, so the stub's 1 m triangles stay under the streets), over the
+  district's sea (the lowest of its scenes' own: LBA1 keeps one per scene, Principal's harbour at 0 and the scenes
+  around it at 3 cells), its water carved into the sea at least 1.2 m deep, the stub's ground eased into it over 6 m,
+  its colors the ground's top bricks'. Land a pad needs off the painted coast is grown (the stub's grid reaches 60 m
   further); LBA1's small water (fountains, gutters) and brick-less holes under 30 m2 are ground. Districts: Principal
   harbour (7 scenes: the harbour, Outside the fortress, Old Burg, Ruins, Outside the library, Military camp, Peg Leg
   Street; 7,500 m2 of land on the south coast, turned 9 degrees, 11 m from its markers, 74 % of its land on painted
@@ -681,8 +683,16 @@ How it holds together (the world is flat and still; only the view is round):
   tower (each alone, reached by ferry or a path; within 6 m of their markers); Proxim City (2 scenes, 10 m off) and its
   three rune stone scenes, islets in the sea where their markers are; Rebellion harbour (moved 29 m from its markers,
   out of the bay's water onto its shore). Each district gets a note in the stub level
-  (`District_<island>_<name>`) and a log line with its fit and its LBA1 frame's transform to the map, for building its
-  scenes there (L4).
+  (`District_<island>_<name>`) and a log line with its fit and its LBA1 frame's transform to the map.
+- **LBA1's towns in 3D** (`LBAPlanetTowns`, L4; `/Game/LBA2/Planets/Towns`): each district's bricks as they are, in its
+  frame on the map: its scenes' grids (`LBA1::FData::LoadGrid`, the same cells and layouts as LBA2's interiors), each
+  column from the scene drawn over it, the sea's columns left to the planet's sea, quays by the sea carried down 4
+  cells under it (their lowest brick repeated). Extruded as the interiors are (`LBABrickMesh`, shared with
+  `FLBAIsoImporter`): cubes UV-mapped onto LBA1's brick sprites in LBA1's palette, one atlas per island
+  (`T_LBA1_<ISLAND>_Bricks`), collision from the bricks' shapes. One mesh per scene (`SM_LBA1_Scene_NNN` + `_Collision`,
+  2,800-30,000 triangles each, 250,000 in all), its actor `Town_<island>_Scene_NNN` tagged `LBA_Stub` in the stubs'
+  level. Twinsen walks the harbour's streets. Globe test on `L_TWINSUN`: 128.0 fps (130.6 without the stub islands).
+  Later layers replace the bricks with LBA2-like or remake models.
 
 Tests: `-LBA2Shots=globe` on Citadel (open the level with `?Globe`): the Dinofly flies out to sea and back, floats,
 shots from 500 m and 1.5 km up (the whole planet, both islands on it). 102 fps on average in standalone game (123

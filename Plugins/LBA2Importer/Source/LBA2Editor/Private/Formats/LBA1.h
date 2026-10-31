@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Formats/LBAHqr.h"
+#include "Formats/LBAIso.h"
 
 /**
  * Little Big Adventure 1's data (the GOG "tlba-classic" Common folder), read for the globe's district pads (L3): its
@@ -17,6 +18,8 @@
  *               U8 block }; cells 512 x 256 x 512 units, 25 high
  *   its library LBA_BLL.HQR entry n, as LBA2's (FLBALibrary); bricks LBA_BRK.HQR entry brick - 1, as LBA2's sprites
  *   markers     RESS.HQR entry 8: one per scene, by scene number, { S16 angle x, angle y, size, text }, 1024 per turn
+ *
+ * Its grids hold the same cells as LBA2's interiors (FLBAGrid), its libraries the same layouts (FLBALibrary).
  *
  * An exit (zone type 0) into scene `number` puts the hero at its info0..2 from where he stood: across an edge, the
  * two scenes' frames are min - info apart.
@@ -59,6 +62,9 @@ namespace LBA1
 		TArray<bool> Water;
 	};
 
+	/** A grid cell's layout block in its library, null when empty. */
+	const FLBALayoutBlock* GetBlock(const FLBALibrary& Library, const FLBAGridCell& Cell);
+
 	/** LBA1's data folder and files. */
 	class FData
 	{
@@ -68,6 +74,13 @@ namespace LBA1
 		const FString& GetDirectory() const { return Folder; }
 
 		bool LoadScene(int32 Index, FScene& Out) const;
+		/** Scene Index's grid (its library is the scene's: LibraryIndex = Index). */
+		bool LoadGrid(int32 Index, FLBAGrid& Out) const;
+		bool LoadLibrary(int32 Index, FLBALibrary& Out) const;
+		/** A brick's sprite (1-based, as layouts' blocks name them). */
+		bool LoadBrick(int32 Brick, FLBABrickSprite& Out) const;
+		/** LBA1's palette (sRGB). */
+		TArray<FColor> GetPalette() const;
 		bool LoadPlan(int32 Index, FPlan& Out) const;
 		/** The holomap's markers, by scene: (latitude, longitude) in degrees, on the frame of LBA2's holomap texture. */
 		TArray<FVector2D> LoadMarkers() const;

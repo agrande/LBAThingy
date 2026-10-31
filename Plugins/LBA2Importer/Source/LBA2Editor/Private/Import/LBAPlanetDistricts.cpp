@@ -5,6 +5,7 @@
 #include "Formats/LBA1.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
+#include "LBATypes.h"
 
 namespace LBAPlanetDistrictsPrivate
 {
@@ -53,9 +54,12 @@ namespace LBAPlanetDistrictsPrivate
 	constexpr double GroundShare = 0.2;
 	/** Smaller pieces of water (cm2: fountains, gutters) or without bricks are ground, level with the streets around them. */
 	constexpr double Pond = 30.0 * 10000.0;
-	/** A scene's sea level eases into its neighbours' over this (cm, gaussian); a scene with less water takes the district's. */
-	constexpr double SeaEase = 800.0;
+	/** A scene with this much water has a sea level of its own (logged where it isn't the district's). */
 	constexpr int32 MinSeaCells = 64;
+	/** A pad lies this far (cm) under its bricks' lowest faces. */
+	constexpr double Sink = 10.0;
+	/** Quays (bricks by the sea) reach this many cells under the district's sea, down to the carved sea floor. */
+	constexpr int32 QuayDepth = 4;
 	/** A top brick this many cells over the ground stands on it (a house, a tree): its ground color is the nearest ground's. */
 	constexpr int32 StandsOn = 2;
 	constexpr int32 ColorReach = 40;
@@ -126,44 +130,6 @@ namespace LBAPlanetDistrictsPrivate
 			}
 		}
 		return Out;
-	}
-
-	/** Gaussian blur (Sigma in cells), edges clamped. */
-	void Blur(TArray<float>& Values, int32 SizeX, int32 SizeY, double Sigma)
-	{
-		const int32 BlurReach = FMath::CeilToInt(3.0 * Sigma);
-		TArray<float> Weights;
-		float Total = 0.f;
-		for (int32 Offset = -BlurReach; Offset <= BlurReach; ++Offset)
-		{
-			Weights.Add(float(FMath::Exp(-0.5 * FMath::Square(Offset / Sigma))));
-			Total += Weights.Last();
-		}
-		TArray<float> Pass = Values;
-		for (int32 Y = 0; Y < SizeY; ++Y)
-		{
-			for (int32 X = 0; X < SizeX; ++X)
-			{
-				float Sum = 0.f;
-				for (int32 Offset = -BlurReach; Offset <= BlurReach; ++Offset)
-				{
-					Sum += Weights[Offset + BlurReach] * Values[Y * SizeX + FMath::Clamp(X + Offset, 0, SizeX - 1)];
-				}
-				Pass[Y * SizeX + X] = Sum / Total;
-			}
-		}
-		for (int32 Y = 0; Y < SizeY; ++Y)
-		{
-			for (int32 X = 0; X < SizeX; ++X)
-			{
-				float Sum = 0.f;
-				for (int32 Offset = -BlurReach; Offset <= BlurReach; ++Offset)
-				{
-					Sum += Weights[Offset + BlurReach] * Pass[FMath::Clamp(Y + Offset, 0, SizeY - 1) * SizeX + X];
-				}
-				Values[Y * SizeX + X] = Sum / Total;
-			}
-		}
 	}
 
 	/** Each cell's nearest cell where Source is set, within Radius cells (INDEX_NONE when none). */
@@ -286,6 +252,9 @@ struct LBAPlanetDistricts::FDistricts::FDistrict
 	/** The ground over the sea (cm) and its color (sRGB). */
 	TArray<float> Ground;
 	TArray<FVector3f> Colors;
+	/** Its scenes and where their frames are in its frame (units), and per cell the scene drawn there (INDEX_NONE: none). */
+	TArray<TPair<int32, FIntVector>> Offsets;
+	TArray<int32> SceneOf;
 	/** The scenes' sea level (cells in the frame), when it has water. */
 	bool bSea = false;
 	int32 SeaY = 0;
@@ -318,13 +287,14 @@ struct LBAPlanetDistricts::FDistricts::FDistrict
 		return X >= 0 && Z >= 0 && X < SizeX && Z < SizeZ ? Z * SizeX + X : INDEX_NONE;
 	}
 
-	bool Build(const LBA1::FData& Data, const TArray<TPair<int32, FIntVector>>& Offsets, const TArray<FVector2D>& Markers, double Radius);
+	bool Build(const LBA1::FData& Data, const TArray<TPair<int32, FIntVector>>& InOffsets, const TArray<FVector2D>& Markers, double Radius);
 };
 
-bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, const TArray<TPair<int32, FIntVector>>& Offsets, const TArray<FVector2D>& Markers, double Radius)
+bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, const TArray<TPair<int32, FIntVector>>& InOffsets, const TArray<FVector2D>& Markers, double Radius)
 {
 	using namespace LBAPlanetDistrictsPrivate;
 	constexpr int32 Empty = -999;
+	Offsets = InOffsets;
 
 	// The scenes laid in the frame: later ones draw over earlier ones only where they are higher.
 	FIntPoint High(MIN_int32);
@@ -338,9 +308,10 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 	SizeX = High.X - Low.X;
 	SizeZ = High.Y - Low.Y;
 	const int32 Cells = SizeX * SizeZ;
-	TArray<int32> Heights, SceneOf;
+	TArray<int32> Heights, Bottoms;
 	TArray<FVector3f> Tops;
 	Heights.Init(Empty, Cells);
+	Bottoms.Init(Empty, Cells);
 	SceneOf.Init(INDEX_NONE, Cells);
 	Tops.Init(FVector3f::ZeroVector, Cells);
 	Land.Init(false, Cells);
@@ -348,7 +319,9 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 	for (const TPair<int32, FIntVector>& Offset : Offsets)
 	{
 		LBA1::FPlan Plan;
-		if (!Data.LoadPlan(Offset.Key, Plan))
+		FLBAGrid Grid;
+		FLBALibrary Library;
+		if (!Data.LoadPlan(Offset.Key, Plan) || !Data.LoadGrid(Offset.Key, Grid) || !Data.LoadLibrary(Offset.Key, Library))
 		{
 			return false;
 		}
@@ -371,6 +344,15 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 					Tops[Index] = Plan.Colors[Column];
 					Land[Index] = !Plan.Water[Column];
 					SceneOf[Index] = Offset.Key;
+					for (int32 Y = 0; Y <= Plan.Heights[Column]; ++Y)
+					{
+						const FLBALayoutBlock* Block = LBA1::GetBlock(Library, Grid.Get(X, Y, Z));
+						if (Block && Block->Brick != 0)
+						{
+							Bottoms[Index] = Y + Up;
+							break;
+						}
+					}
 				}
 			}
 		}
@@ -426,12 +408,12 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 		GroundY[Index] = FMath::Min(GroundY[Index], Top[Index]);
 	}
 
-	// The sea: each scene's most common water height (LBA1's scenes keep theirs at their own: Principal's at 0 and 3
-	// cells in one frame), the district's for a scene with little water, eased across the scenes' seams.
+	// The sea: the lowest of the scenes' own (each scene's most common water height), else the most common. LBA1's
+	// scenes keep theirs at their own (Principal's harbour at 0, the scenes around it at 3 cells in one frame), but walk
+	// into each other in this frame: the bricks keep it, nothing goes under the sea, the higher quays reach down to it.
 	bSea = !AllWater.IsEmpty();
 	SeaY = Mode(AllWater);
-	TArray<float> Sea;
-	Sea.Init(float(SeaY), Cells);
+	TMap<int32, int32> SceneSeas;
 	for (const TPair<int32, FIntVector>& Offset : Offsets)
 	{
 		TArray<int32> Own;
@@ -444,18 +426,34 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 		}
 		if (Own.Num() > MinSeaCells)
 		{
-			const int32 Level = Mode(Own);
-			for (int32 Index = 0; Index < Cells; ++Index)
-			{
-				Sea[Index] = SceneOf[Index] == Offset.Key ? float(Level) : Sea[Index];
-			}
+			SceneSeas.Add(Offset.Key, Mode(Own));
 		}
 	}
-	Blur(Sea, SizeX, SizeZ, SeaEase / CellCm);
+	for (const TPair<int32, int32>& Scene : SceneSeas)
+	{
+		SeaY = FMath::Min(SeaY, Scene.Value);
+	}
+	for (const TPair<int32, int32>& Scene : SceneSeas)
+	{
+		if (Scene.Value != SeaY)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA1 district %s: scene %d's sea is %+d cells over the district's"), *Name, Scene.Key, Scene.Value - SeaY);
+		}
+	}
+	// The ground under the bricks: their lowest, or the streets' where that is lower (under a roof or a bridge), the
+	// lowest of the cells around (5 x 5, 1.3 m: the stub's 1 m triangles between a terrace and the street below it stay
+	// under the street).
+	TArray<float> Under;
+	Under.SetNumUninitialized(Cells);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		Under[Index] = Bottoms[Index] > Empty ? FMath::Min(GroundY[Index], float(Bottoms[Index])) : GroundY[Index];
+	}
+	Under = Extreme3(Extreme3(Under, SizeX, SizeZ, false), SizeX, SizeZ, false);
 	Ground.SetNumUninitialized(Cells);
 	for (int32 Index = 0; Index < Cells; ++Index)
 	{
-		Ground[Index] = float((GroundY[Index] - Sea[Index]) * StepCm);
+		Ground[Index] = float((Under[Index] - SeaY) * StepCm - Sink);
 	}
 
 	// Its colors: the top brick's where that is the ground, else the nearest ground's (a pond's ground too).
@@ -500,20 +498,20 @@ bool LBAPlanetDistricts::FDistricts::Load(const FString& InDirectory, double Rad
 {
 	using namespace LBAPlanetDistrictsPrivate;
 	Districts.Reset();
-	LBA1::FData Data;
-	if (!Data.Open(InDirectory))
+	Data = MakeUnique<LBA1::FData>();
+	if (!Data->Open(InDirectory))
 	{
 		return false;
 	}
-	Directory = Data.GetDirectory();
-	const TArray<FVector2D> Markers = Data.LoadMarkers();
+	Directory = Data->GetDirectory();
+	const TArray<FVector2D> Markers = Data->LoadMarkers();
 
 	// Per island, its scenes grouped by edge exits, each group in its first scene's frame.
 	TMap<int32, LBA1::FScene> Scenes;
 	for (const FOutdoor& Entry : Outdoor)
 	{
 		LBA1::FScene& Scene = Scenes.Add(Entry.Scene);
-		if (!Data.LoadScene(Entry.Scene, Scene))
+		if (!Data->LoadScene(Entry.Scene, Scene))
 		{
 			UE_LOG(LogLBA2, Warning, TEXT("LBA1 scene %d (%s) can't be read from %s"), Entry.Scene, Entry.Name, *Directory);
 			return false;
@@ -551,7 +549,7 @@ bool LBAPlanetDistricts::FDistricts::Load(const FString& InDirectory, double Rad
 		{
 			District->Scenes.Add(Offset.Key);
 		}
-		if (!District->Build(Data, Offsets, Markers, Radius))
+		if (!District->Build(*Data, Offsets, Markers, Radius))
 		{
 			UE_LOG(LogLBA2, Warning, TEXT("LBA1 district %s: its scenes' grids can't be read from %s"), *District->Name, *Directory);
 			return false;
@@ -667,6 +665,7 @@ TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FS
 		const FVector2D At = CellToMap(Bests[BestTurn].Cell.X, Bests[BestTurn].Cell.Y);
 
 		FPlaced& Place = Placed.AddDefaulted_GetRef();
+		Place.District = Districts.IndexOfByPredicate([District](const TUniquePtr<FDistrict>& Each) { return Each.Get() == District; });
 		Place.Name = District->Name;
 		Place.Scenes = District->Scenes;
 		Place.Map = At;
@@ -767,4 +766,99 @@ TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FS
 		}
 	}
 	return Placed;
+}
+
+FVector LBAPlanetDistricts::FTown::GetOrigin() const
+{
+	using namespace LBAPlanetDistrictsPrivate;
+	return FVector(Low.X * CellCm, Low.Z * CellCm, Low.Y * StepCm);
+}
+
+bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out) const
+{
+	using namespace LBAPlanetDistrictsPrivate;
+	if (!Districts.IsValidIndex(Placed.District))
+	{
+		return false;
+	}
+	const FDistrict& District = *Districts[Placed.District];
+	int32 Lowest = District.bSea ? District.SeaY - QuayDepth : MAX_int32;
+	int32 Highest = MIN_int32;
+	for (const TPair<int32, FIntVector>& Offset : District.Offsets)
+	{
+		const int32 Up = FMath::RoundToInt(Offset.Value.Y / double(LBA1::CellHeight));
+		Lowest = FMath::Min(Lowest, Up);
+		Highest = FMath::Max(Highest, Up + LBA::GridSizeY);
+	}
+	Out.Low = FIntVector(District.Low.X, Lowest, District.Low.Y);
+	Out.Size = FIntVector(District.SizeX, Highest - Lowest, District.SizeZ);
+	Out.Bricks.Init(0, Out.Size.X * Out.Size.Y * Out.Size.Z);
+	Out.Shapes.Init(0, Out.Bricks.Num());
+	Out.Scenes.Init(INDEX_NONE, Out.Size.X * Out.Size.Z);
+
+	// Each column from the scene drawn over it, but the sea's (its water and the sea floor under it).
+	auto IsSea = [&District](int32 X, int32 Z)
+	{
+		return X >= 0 && Z >= 0 && X < District.SizeX && Z < District.SizeZ && District.Water[Z * District.SizeX + X];
+	};
+	for (const TPair<int32, FIntVector>& Offset : District.Offsets)
+	{
+		FLBAGrid Grid;
+		FLBALibrary Library;
+		if (!Data->LoadGrid(Offset.Key, Grid) || !Data->LoadLibrary(Offset.Key, Library))
+		{
+			return false;
+		}
+		const FIntPoint Cell = FIntPoint(FMath::RoundToInt(Offset.Value.X / double(LBA1::CellSize)), FMath::RoundToInt(Offset.Value.Z / double(LBA1::CellSize))) - District.Low;
+		const int32 Up = FMath::RoundToInt(Offset.Value.Y / double(LBA1::CellHeight)) - Lowest;
+		for (int32 Z = 0; Z < LBA1::SceneCells; ++Z)
+		{
+			for (int32 X = 0; X < LBA1::SceneCells; ++X)
+			{
+				const int32 TX = Cell.X + X;
+				const int32 TZ = Cell.Y + Z;
+				const int32 Column = TZ * Out.Size.X + TX;
+				if (District.SceneOf[Column] != Offset.Key || IsSea(TX, TZ))
+				{
+					continue;
+				}
+				Out.Scenes[Column] = Offset.Key;
+				for (int32 Y = 0; Y < LBA::GridSizeY; ++Y)
+				{
+					if (const FLBALayoutBlock* Block = LBA1::GetBlock(Library, Grid.Get(X, Y, Z)))
+					{
+						Out.Bricks[Out.Index(TX, Y + Up, TZ)] = Block->Brick;
+						Out.Shapes[Out.Index(TX, Y + Up, TZ)] = Block->Shape;
+					}
+				}
+			}
+		}
+	}
+
+	// Quays: a column by the sea goes down under it, its lowest brick repeated.
+	if (District.bSea)
+	{
+		const int32 Floor = District.SeaY - QuayDepth - Lowest;
+		for (int32 Z = 0; Z < Out.Size.Z; ++Z)
+		{
+			for (int32 X = 0; X < Out.Size.X; ++X)
+			{
+				if (Out.Scenes[Z * Out.Size.X + X] == INDEX_NONE || !(IsSea(X + 1, Z) || IsSea(X - 1, Z) || IsSea(X, Z + 1) || IsSea(X, Z - 1)))
+				{
+					continue;
+				}
+				int32 Bottom = 0;
+				while (Bottom < Out.Size.Y && Out.Bricks[Out.Index(X, Bottom, Z)] == 0)
+				{
+					++Bottom;
+				}
+				for (int32 Y = Floor; Y < Bottom && Bottom < Out.Size.Y; ++Y)
+				{
+					Out.Bricks[Out.Index(X, Y, Z)] = Out.Bricks[Out.Index(X, Bottom, Z)];
+					Out.Shapes[Out.Index(X, Y, Z)] = 1;
+				}
+			}
+		}
+	}
+	return true;
 }
