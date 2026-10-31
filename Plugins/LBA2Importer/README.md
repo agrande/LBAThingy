@@ -586,18 +586,27 @@ How it holds together (the world is flat and still; only the view is round):
   (110, 185, 229) against (105, 178, 222) (was (18, 78, 115)). The sea disc's material doesn't have it (it is hidden
   under the globe oceans).
 - **The Hamalayi belt** (`LBAPlanetBelt`, `/Game/LBA2/Planets/L_TWINSUN_Belt`, streamed in on the map around the
-  opened island, `ULBAPlanetAsset::BeltLevel`): low icy mountains all around, 424 to 513 m from the pole, traced
-  from the original's holomap (HOLOMAP.HQR: its texture gives the belt's shore, the foot of its snow and its far
-  edge at each longitude, its altitudes where the crest is higher or lower), a third as wide as the holomap's band.
-  Across it: a pale shelf about 24 m wide under 0.3 to 2.5 m of water (the water over it turns light cyan, like the
-  holomap's band between the belt and the deep sea), a flank up to 6 m (walkable, the Dinofly lands there), a cliff
-  band up to 16 m at 68 degrees (steeper than Twinsen walks: 55), snow up to crests of 20 to 30 m, the far side down
-  into the other hemisphere's sea. Colored like the holomap: blue-white ice and snow on the islands' side (light blue
-  flank, deeper blue cliffs, no bare rock), brown rock on the far side. Nothing but its shape stops anyone: boats run aground, Twinsen stops at the cliff, the Dinofly flies over it
-  (32 sectors of 11.25 degrees, vertex colored with `M_LBA_Color`, collision from their triangles; 200k
-  triangles). Laid on the map, its length is stretched sideways by about half (4 km around at the shore against
-  2.8 km on a real planet of that size). `lba.Globe.Belt 0` leaves it out; it is laid out for the asset's radius,
-  so `lba.Globe.Radius` leaves it out too.
+  opened island, `ULBAPlanetAsset::BeltLevel`): icy mountains all around, from 425 m from the pole, as the original's
+  holomap has them (prototyped in `Tools/belt_grammar.py`, which also draws it against the painting and checks it).
+  Its footprint is the holomap's painting at full width (HOLOMAP.HQR texture: about 140 m across, 513,000 m2 of
+  land): its blues, whites, browns and greens are land, its teal fringe shallow water (a pale shelf under 0.3 to
+  2.5 m of water, as shallow as the painted speckles are dense), the dark basins inside it frozen low ground, its
+  coasts wandering a few meters off the texels. Its heights are the holomap's own (HOLOGLOB.CPP: radius 1000 plus
+  twice the HMT altitude, so 0 to 65 m on a 320 m Twinsun), times the painting's brightness (dark blue low, white
+  high), eased under the holomap's highest vertices around and scaled per 11.25 degrees until the mean is the holomap
+  mesh's (25 m against 26.6 m). The ground is benched like the stub islands', taller: a flank over the shore
+  (walkable, 6 to 24 m wide, the Dinofly lands there), a wall of 7.5 to 12.5 m rising in one cell (steeper than
+  Twinsen walks: 55 degrees; every column's crest is held above it), then terraces 3.5 to 7 m apart up to ~60 m,
+  their heights drifting along the belt, cliffs or ramps between them. Colored through the albedos calibrated for
+  the enhanced grade: dark ice, light ice and snow by the painting's brightness, brown rock on the far side, cliff
+  ice where steep. Nothing but its shape stops anyone: boats run aground, Twinsen stops at the wall, the Dinofly
+  flies over its lower parts. The import checks no walkable ground joins the islands' sea to the other hemisphere's
+  ("closed to walkers" in its log). 32 sectors of 11.25 degrees (a 1536 x 179 grid of 2 m rows), vertex colored with
+  `M_LBA_Color`, collision from their triangles; 345k triangles, about 2 fps in the globe test (128.9 against 131.1
+  without it). Laid on the map, its length is stretched sideways (4 km around at the shore against 2.8 km on a real
+  planet of that size). `lba.Globe.Belt 0` leaves it out; it is laid out for the asset's radius, so
+  `lba.Globe.Radius` leaves it out too. Next: LBA1's Hamalayi scenes as pads on it, placed by their holomap markers
+  (one per scene: south 9, 62-66, 69-72, 82; north 15, 67, 68, 73, 81, 91, 92, 96).
 - **Stub islands** (`LBAPlanetStubs`, `/Game/LBA2/Planets/L_TWINSUN_Stubs`, `ULBAPlanetAsset::StubLevel`, streamed in
   with the belt): the islands the holomap paints but the game never visits, copied from its painting as a first
   prototype of the rest of the hemisphere. LBA2's holomap texture is LBA1's repainted (same islands, same places;
@@ -681,8 +690,8 @@ with the sea disc alone).
 `-LBA2GlobeTo=DESERT`: across to the desert until within its reach, looks back from
 above, lands. `-LBA2Shots=boat -LBA2BoatTo=DESERT` crosses by ferry, `-LBA2BoatTo=BELT` drives at the belt until
 it runs aground. `-LBA2Shots=belt`: the Dinofly flies to the belt and over it, the planet from above the pole, then
-it lands on the flank and Twinsen walks and jumps up it (logs how high he got: 7 m, stopped at the cliff; shots
-Saved/LookDev/belt). Shots: Saved/LookDev/flatglobe750 (and
+it lands on the flank and Twinsen walks and jumps up it (logs how high he got: 3.7 m, stopped at the wall; shots
+Saved/LookDev/belt_v2). Shots: Saved/LookDev/flatglobe750 (and
 flatglobe1000, flatglobe1 for 1 and 2 km, compare_750_1000.png, flatglobe_cmp.png against the flat level; the Water
 plugin sea against the disc in globesea, sheets sheet_a to sheet_j).
 Console: `lba.Globe.Bend 0` (the flat world unbent, to compare),
