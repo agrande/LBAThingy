@@ -1,0 +1,770 @@
+#include "Import/LBAPlanetDistricts.h"
+
+#include "Algo/StableSort.h"
+#include "Async/ParallelFor.h"
+#include "Formats/LBA1.h"
+#include "LBA2Runtime.h"
+#include "LBAPlanet.h"
+
+namespace LBAPlanetDistrictsPrivate
+{
+	/** LBA1's outdoor scenes on the stub islands (its interiors are left to L5), in the order districts are found. */
+	struct FOutdoor
+	{
+		const TCHAR* Island;
+		int32 Scene;
+		const TCHAR* Name;
+	};
+	const FOutdoor Outdoor[] =
+	{
+		{ TEXT("Principal"), 11, TEXT("Principal harbour") },
+		{ TEXT("Principal"), 12, TEXT("Outside the fortress") },
+		{ TEXT("Principal"), 13, TEXT("Old Burg") },
+		{ TEXT("Principal"), 17, TEXT("Ruins") },
+		{ TEXT("Principal"), 18, TEXT("Outside the library") },
+		{ TEXT("Principal"), 19, TEXT("Military camp") },
+		{ TEXT("Principal"), 25, TEXT("Peg Leg Street") },
+		{ TEXT("Principal"), 24, TEXT("Port Belooga") },
+		{ TEXT("Principal"), 37, TEXT("Water tower") },
+		{ TEXT("Proxima"), 42, TEXT("Proxim City") },
+		{ TEXT("Proxima"), 44, TEXT("Near the inventor's house") },
+		{ TEXT("Proxima"), 45, TEXT("Upper rune stone") },
+		{ TEXT("Proxima"), 46, TEXT("Lower rune stone") },
+		{ TEXT("Proxima"), 47, TEXT("Before the upper rune stone") },
+		{ TEXT("Rebellion"), 59, TEXT("Rebellion harbour") },
+	};
+
+	/** LBA1's cells in cm (units / 8, as LBA2's). */
+	constexpr double CellCm = LBA1::CellSize / 8.0;
+	constexpr double StepCm = LBA1::CellHeight / 8.0;
+
+	/** The fit: how far from its markers' mean (cm) and heading 0 (degrees) a district may go, in turns of TurnStep. */
+	constexpr double Reach = 4500.0;
+	constexpr double MaxTurn = 30.0;
+	constexpr double TurnStep = 3.0;
+	/** The preference for the markers and heading 0: gaussians this wide, weighed against the coast's agreement. */
+	constexpr double PriorReach = 2500.0;
+	constexpr double PriorTurn = 15.0;
+	constexpr double PriorWeight = 0.1;
+	/** Per cell of a district over one placed before. */
+	constexpr double OverlapCost = 3.0;
+	/** The ground: the top bricks' height this share of the cells around (GroundWindow LBA1 cells, 11 m) are under. */
+	constexpr int32 GroundWindow = 17;
+	constexpr double GroundShare = 0.2;
+	/** Smaller pieces of water (cm2: fountains, gutters) or without bricks are ground, level with the streets around them. */
+	constexpr double Pond = 30.0 * 10000.0;
+	/** A scene's sea level eases into its neighbours' over this (cm, gaussian); a scene with less water takes the district's. */
+	constexpr double SeaEase = 800.0;
+	constexpr int32 MinSeaCells = 64;
+	/** A top brick this many cells over the ground stands on it (a house, a tree): its ground color is the nearest ground's. */
+	constexpr int32 StandsOn = 2;
+	constexpr int32 ColorReach = 40;
+	/** The stub's ground eases into a pad over this (cm). */
+	constexpr double Blend = 600.0;
+
+	/** An exit across a scene's edge moves the hero a scene's width one way and little the other. */
+	bool IsEdgeExit(const FIntVector& Move)
+	{
+		return FMath::Max(FMath::Abs(Move.X), FMath::Abs(Move.Z)) >= 29000 && FMath::Min(FMath::Abs(Move.X), FMath::Abs(Move.Z)) <= 8192;
+	}
+
+	/** Index I mirrored back into 0..Num-1 about the edges (d c b a | a b c d | d c b a). */
+	int32 Reflect(int32 I, int32 Num)
+	{
+		I = I < 0 ? -I - 1 : I;
+		I = I >= Num ? 2 * Num - I - 1 : I;
+		return FMath::Clamp(I, 0, Num - 1);
+	}
+
+	/** The Rank-th smallest value (0-based) of each cell's Size x Size window, edges mirrored. */
+	TArray<float> RankFilter(const TArray<float>& In, int32 SizeX, int32 SizeY, int32 Size, int32 Rank)
+	{
+		TArray<float> Out;
+		Out.SetNumUninitialized(In.Num());
+		const int32 Half = Size / 2;
+		ParallelFor(SizeY, [&](int32 Y)
+		{
+			TArray<float> Window;
+			Window.SetNumUninitialized(Size * Size);
+			for (int32 X = 0; X < SizeX; ++X)
+			{
+				int32 N = 0;
+				for (int32 DY = -Half; DY <= Half; ++DY)
+				{
+					const int32 Row = Reflect(Y + DY, SizeY) * SizeX;
+					for (int32 DX = -Half; DX <= Half; ++DX)
+					{
+						Window[N++] = In[Row + Reflect(X + DX, SizeX)];
+					}
+				}
+				Window.Sort();
+				Out[Y * SizeX + X] = Window[Rank];
+			}
+		});
+		return Out;
+	}
+
+	/** The highest (or lowest) value of each cell's 3 x 3 window, edges mirrored. */
+	TArray<float> Extreme3(const TArray<float>& In, int32 SizeX, int32 SizeY, bool bHighest)
+	{
+		TArray<float> Out;
+		Out.SetNumUninitialized(In.Num());
+		for (int32 Y = 0; Y < SizeY; ++Y)
+		{
+			for (int32 X = 0; X < SizeX; ++X)
+			{
+				float Value = In[Y * SizeX + X];
+				for (int32 DY = -1; DY <= 1; ++DY)
+				{
+					for (int32 DX = -1; DX <= 1; ++DX)
+					{
+						const float Other = In[Reflect(Y + DY, SizeY) * SizeX + Reflect(X + DX, SizeX)];
+						Value = bHighest ? FMath::Max(Value, Other) : FMath::Min(Value, Other);
+					}
+				}
+				Out[Y * SizeX + X] = Value;
+			}
+		}
+		return Out;
+	}
+
+	/** Gaussian blur (Sigma in cells), edges clamped. */
+	void Blur(TArray<float>& Values, int32 SizeX, int32 SizeY, double Sigma)
+	{
+		const int32 BlurReach = FMath::CeilToInt(3.0 * Sigma);
+		TArray<float> Weights;
+		float Total = 0.f;
+		for (int32 Offset = -BlurReach; Offset <= BlurReach; ++Offset)
+		{
+			Weights.Add(float(FMath::Exp(-0.5 * FMath::Square(Offset / Sigma))));
+			Total += Weights.Last();
+		}
+		TArray<float> Pass = Values;
+		for (int32 Y = 0; Y < SizeY; ++Y)
+		{
+			for (int32 X = 0; X < SizeX; ++X)
+			{
+				float Sum = 0.f;
+				for (int32 Offset = -BlurReach; Offset <= BlurReach; ++Offset)
+				{
+					Sum += Weights[Offset + BlurReach] * Values[Y * SizeX + FMath::Clamp(X + Offset, 0, SizeX - 1)];
+				}
+				Pass[Y * SizeX + X] = Sum / Total;
+			}
+		}
+		for (int32 Y = 0; Y < SizeY; ++Y)
+		{
+			for (int32 X = 0; X < SizeX; ++X)
+			{
+				float Sum = 0.f;
+				for (int32 Offset = -BlurReach; Offset <= BlurReach; ++Offset)
+				{
+					Sum += Weights[Offset + BlurReach] * Pass[FMath::Clamp(Y + Offset, 0, SizeY - 1) * SizeX + X];
+				}
+				Values[Y * SizeX + X] = Sum / Total;
+			}
+		}
+	}
+
+	/** Each cell's nearest cell where Source is set, within Radius cells (INDEX_NONE when none). */
+	TArray<int32> Nearest(const TArray<bool>& Source, int32 SizeX, int32 SizeY, int32 Radius)
+	{
+		TArray<int32> Out;
+		Out.Init(INDEX_NONE, Source.Num());
+		ParallelFor(SizeY, [&](int32 Y)
+		{
+			for (int32 X = 0; X < SizeX; ++X)
+			{
+				if (Source[Y * SizeX + X])
+				{
+					Out[Y * SizeX + X] = Y * SizeX + X;
+					continue;
+				}
+				int32 Best = MAX_int32;
+				for (int32 SY = FMath::Max(Y - Radius, 0); SY <= FMath::Min(Y + Radius, SizeY - 1); ++SY)
+				{
+					for (int32 SX = FMath::Max(X - Radius, 0); SX <= FMath::Min(X + Radius, SizeX - 1); ++SX)
+					{
+						const int32 Distance = FMath::Square(SX - X) + FMath::Square(SY - Y);
+						if (Source[SY * SizeX + SX] && Distance < Best)
+						{
+							Best = Distance;
+							Out[Y * SizeX + X] = SY * SizeX + SX;
+						}
+					}
+				}
+			}
+		});
+		return Out;
+	}
+
+	/** The cells of Mask's 4-connected pieces under MinCells. */
+	TArray<bool> SmallPieces(const TArray<bool>& Mask, int32 SizeX, int32 SizeY, int32 MinCells)
+	{
+		TArray<bool> Out, Seen;
+		Out.Init(false, Mask.Num());
+		Seen.Init(false, Mask.Num());
+		TArray<int32> Piece;
+		for (int32 Start = 0; Start < Mask.Num(); ++Start)
+		{
+			if (!Mask[Start] || Seen[Start])
+			{
+				continue;
+			}
+			Piece.Reset();
+			Piece.Add(Start);
+			Seen[Start] = true;
+			for (int32 Next = 0; Next < Piece.Num(); ++Next)
+			{
+				const int32 X = Piece[Next] % SizeX;
+				const int32 Y = Piece[Next] / SizeX;
+				for (const FIntPoint& Step : { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) })
+				{
+					const int32 NX = X + Step.X;
+					const int32 NY = Y + Step.Y;
+					const int32 N = NY * SizeX + NX;
+					if (NX >= 0 && NY >= 0 && NX < SizeX && NY < SizeY && Mask[N] && !Seen[N])
+					{
+						Seen[N] = true;
+						Piece.Add(N);
+					}
+				}
+			}
+			for (const int32 Index : Piece)
+			{
+				Out[Index] = Piece.Num() < MinCells;
+			}
+		}
+		return Out;
+	}
+
+	/** The most common of Values (the lowest of equals); 0 when empty. */
+	int32 Mode(const TArray<int32>& Values)
+	{
+		TMap<int32, int32> Counts;
+		for (const int32 Value : Values)
+		{
+			++Counts.FindOrAdd(Value);
+		}
+		int32 Best = 0;
+		int32 BestCount = 0;
+		for (const TPair<int32, int32>& Count : Counts)
+		{
+			if (Count.Value > BestCount || (Count.Value == BestCount && Count.Key < Best))
+			{
+				Best = Count.Key;
+				BestCount = Count.Value;
+			}
+		}
+		return Best;
+	}
+
+	float Median(TArray<float> Values)
+	{
+		if (Values.IsEmpty())
+		{
+			return 0.f;
+		}
+		Values.Sort();
+		const int32 Half = Values.Num() / 2;
+		return Values.Num() % 2 ? Values[Half] : 0.5f * (Values[Half - 1] + Values[Half]);
+	}
+}
+
+/** LBA1's scenes of a district in one frame (its first scene's), seen from above: per cell (z * SizeX + x), 0.64 m. */
+struct LBAPlanetDistricts::FDistricts::FDistrict
+{
+	FString Island;
+	FString Name;
+	TArray<int32> Scenes;
+	int32 SizeX = 0;
+	int32 SizeZ = 0;
+	/** The frame's cell (x, z) at cell 0, 0. */
+	FIntPoint Low = FIntPoint::ZeroValue;
+	TArray<bool> Land;
+	TArray<bool> Water;
+	/** The ground over the sea (cm) and its color (sRGB). */
+	TArray<float> Ground;
+	TArray<FVector3f> Colors;
+	/** The scenes' sea level (cells in the frame), when it has water. */
+	bool bSea = false;
+	int32 SeaY = 0;
+	/** Where the markers' mean goes: the scenes' centers' mean, cm from cell 0, 0. */
+	FVector2D Pivot = FVector2D::ZeroVector;
+	/** The markers' mean on the map (cm), its east and north there. */
+	FVector2D Anchor = FVector2D::ZeroVector;
+	FVector2D East = FVector2D::UnitX();
+	FVector2D North = FVector2D::UnitY();
+	double Area = 0.0;
+
+	/** The district's x and z on the map, turned by Turn (degrees) from east and north. */
+	FVector2D AxisX(double Turn) const
+	{
+		const double T = FMath::DegreesToRadians(Turn);
+		return East * FMath::Cos(T) + North * FMath::Sin(T);
+	}
+	FVector2D AxisZ(double Turn) const
+	{
+		const double T = FMath::DegreesToRadians(Turn);
+		return North * FMath::Cos(T) - East * FMath::Sin(T);
+	}
+
+	/** The cell under a map point (cm), the district's pivot at At turned by Turn; INDEX_NONE off it. */
+	int32 CellAt(const FVector2D& Map, double Turn, const FVector2D& At) const
+	{
+		const FVector2D Local = Map - At;
+		const int32 X = FMath::FloorToInt((FVector2D::DotProduct(Local, AxisX(Turn)) + Pivot.X) / LBAPlanetDistrictsPrivate::CellCm);
+		const int32 Z = FMath::FloorToInt((FVector2D::DotProduct(Local, AxisZ(Turn)) + Pivot.Y) / LBAPlanetDistrictsPrivate::CellCm);
+		return X >= 0 && Z >= 0 && X < SizeX && Z < SizeZ ? Z * SizeX + X : INDEX_NONE;
+	}
+
+	bool Build(const LBA1::FData& Data, const TArray<TPair<int32, FIntVector>>& Offsets, const TArray<FVector2D>& Markers, double Radius);
+};
+
+bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, const TArray<TPair<int32, FIntVector>>& Offsets, const TArray<FVector2D>& Markers, double Radius)
+{
+	using namespace LBAPlanetDistrictsPrivate;
+	constexpr int32 Empty = -999;
+
+	// The scenes laid in the frame: later ones draw over earlier ones only where they are higher.
+	FIntPoint High(MIN_int32);
+	Low = FIntPoint(MAX_int32);
+	for (const TPair<int32, FIntVector>& Offset : Offsets)
+	{
+		const FIntPoint Cell(FMath::RoundToInt(Offset.Value.X / double(LBA1::CellSize)), FMath::RoundToInt(Offset.Value.Z / double(LBA1::CellSize)));
+		Low = Low.ComponentMin(Cell);
+		High = High.ComponentMax(Cell + FIntPoint(LBA1::SceneCells));
+	}
+	SizeX = High.X - Low.X;
+	SizeZ = High.Y - Low.Y;
+	const int32 Cells = SizeX * SizeZ;
+	TArray<int32> Heights, SceneOf;
+	TArray<FVector3f> Tops;
+	Heights.Init(Empty, Cells);
+	SceneOf.Init(INDEX_NONE, Cells);
+	Tops.Init(FVector3f::ZeroVector, Cells);
+	Land.Init(false, Cells);
+	FVector2D Centers = FVector2D::ZeroVector;
+	for (const TPair<int32, FIntVector>& Offset : Offsets)
+	{
+		LBA1::FPlan Plan;
+		if (!Data.LoadPlan(Offset.Key, Plan))
+		{
+			return false;
+		}
+		const FIntPoint Cell = FIntPoint(FMath::RoundToInt(Offset.Value.X / double(LBA1::CellSize)), FMath::RoundToInt(Offset.Value.Z / double(LBA1::CellSize))) - Low;
+		const int32 Up = FMath::RoundToInt(Offset.Value.Y / double(LBA1::CellHeight));
+		for (int32 Z = 0; Z < LBA1::SceneCells; ++Z)
+		{
+			for (int32 X = 0; X < LBA1::SceneCells; ++X)
+			{
+				const int32 Column = Z * LBA1::SceneCells + X;
+				if (Plan.Heights[Column] < 0)
+				{
+					continue;
+				}
+				const int32 Index = (Cell.Y + Z) * SizeX + Cell.X + X;
+				const int32 Height = Plan.Heights[Column] + Up;
+				if (Height > Heights[Index])
+				{
+					Heights[Index] = Height;
+					Tops[Index] = Plan.Colors[Column];
+					Land[Index] = !Plan.Water[Column];
+					SceneOf[Index] = Offset.Key;
+				}
+			}
+		}
+		Centers += FVector2D(Offset.Value.X, Offset.Value.Z) + FVector2D(LBA1::SceneCells * LBA1::CellSize / 2);
+	}
+	Pivot = (Centers / Offsets.Num() - FVector2D(Low) * LBA1::CellSize) / 8.0;
+	Water.SetNumUninitialized(Cells);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		Water[Index] = Heights[Index] > Empty && !Land[Index];
+	}
+	// Water in pieces under Pond (fountains, gutters) and holes without bricks as small are ground, not sea.
+	TArray<bool> Holes;
+	Holes.SetNumUninitialized(Cells);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		Holes[Index] = Heights[Index] == Empty;
+	}
+	const int32 PondCells = FMath::CeilToInt(Pond / (CellCm * CellCm));
+	TArray<bool> Ponds = SmallPieces(Water, SizeX, SizeZ, PondCells);
+	const TArray<bool> SmallHoles = SmallPieces(Holes, SizeX, SizeZ, PondCells);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		Ponds[Index] = Ponds[Index] || SmallHoles[Index];
+	}
+	TArray<int32> AllWater;
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		Water[Index] = Water[Index] && !Ponds[Index];
+		Land[Index] = Land[Index] || Ponds[Index];
+		if (Water[Index])
+		{
+			AllWater.Add(Heights[Index]);
+		}
+		Area += Land[Index] ? CellCm * CellCm : 0.0;
+	}
+
+	// The ground: the streets' level among the top bricks (houses and trees stand above it).
+	TArray<float> Top;
+	Top.SetNumUninitialized(Cells);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		Top[Index] = Heights[Index] > Empty ? float(Heights[Index]) : 999.f;
+	}
+	TArray<float> LowTops = RankFilter(Top, SizeX, SizeZ, GroundWindow, int32(GroundWindow * GroundWindow * GroundShare));
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		LowTops[Index] = FMath::Min(LowTops[Index], Top[Index]);
+	}
+	TArray<float> GroundY = Extreme3(Extreme3(LowTops, SizeX, SizeZ, true), SizeX, SizeZ, false);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		GroundY[Index] = FMath::Min(GroundY[Index], Top[Index]);
+	}
+
+	// The sea: each scene's most common water height (LBA1's scenes keep theirs at their own: Principal's at 0 and 3
+	// cells in one frame), the district's for a scene with little water, eased across the scenes' seams.
+	bSea = !AllWater.IsEmpty();
+	SeaY = Mode(AllWater);
+	TArray<float> Sea;
+	Sea.Init(float(SeaY), Cells);
+	for (const TPair<int32, FIntVector>& Offset : Offsets)
+	{
+		TArray<int32> Own;
+		for (int32 Index = 0; Index < Cells; ++Index)
+		{
+			if (SceneOf[Index] == Offset.Key && Water[Index])
+			{
+				Own.Add(Heights[Index]);
+			}
+		}
+		if (Own.Num() > MinSeaCells)
+		{
+			const int32 Level = Mode(Own);
+			for (int32 Index = 0; Index < Cells; ++Index)
+			{
+				Sea[Index] = SceneOf[Index] == Offset.Key ? float(Level) : Sea[Index];
+			}
+		}
+	}
+	Blur(Sea, SizeX, SizeZ, SeaEase / CellCm);
+	Ground.SetNumUninitialized(Cells);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		Ground[Index] = float((GroundY[Index] - Sea[Index]) * StepCm);
+	}
+
+	// Its colors: the top brick's where that is the ground, else the nearest ground's (a pond's ground too).
+	TArray<bool> OnGround;
+	OnGround.SetNumUninitialized(Cells);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		OnGround[Index] = Land[Index] && !Ponds[Index] && Heights[Index] - GroundY[Index] <= StandsOn;
+	}
+	const TArray<int32> NearestGround = Nearest(OnGround, SizeX, SizeZ, ColorReach);
+	Colors.SetNumUninitialized(Cells);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		const int32 From = NearestGround[Index] != INDEX_NONE ? NearestGround[Index] : Index;
+		Colors[Index] = Tops[From];
+		Ground[Index] = Ponds[Index] ? Ground[From] : Ground[Index];
+	}
+
+	// Where: the mean of its scenes' markers (longitudes averaged round the circle); east and north there.
+	double Latitude = 0.0;
+	FVector2D Around = FVector2D::ZeroVector;
+	for (const TPair<int32, FIntVector>& Offset : Offsets)
+	{
+		const FVector2D Marker = Markers.IsValidIndex(Offset.Key) ? Markers[Offset.Key] : FVector2D::ZeroVector;
+		Latitude += Marker.X / Offsets.Num();
+		Around += FVector2D(FMath::Cos(FMath::DegreesToRadians(Marker.Y)), FMath::Sin(FMath::DegreesToRadians(Marker.Y)));
+	}
+	FLBAPlanetIsland Place;
+	Place.Latitude = Latitude;
+	Place.Longitude = FMath::RadiansToDegrees(FMath::Atan2(Around.Y, Around.X));
+	Anchor = Place.GetMapLocation(Radius);
+	const double Lon = FMath::DegreesToRadians(Place.Longitude);
+	East = FVector2D(-FMath::Sin(Lon), FMath::Cos(Lon));
+	North = FVector2D(-FMath::Cos(Lon), -FMath::Sin(Lon));
+	return true;
+}
+
+LBAPlanetDistricts::FDistricts::FDistricts() = default;
+LBAPlanetDistricts::FDistricts::~FDistricts() = default;
+
+bool LBAPlanetDistricts::FDistricts::Load(const FString& InDirectory, double Radius)
+{
+	using namespace LBAPlanetDistrictsPrivate;
+	Districts.Reset();
+	LBA1::FData Data;
+	if (!Data.Open(InDirectory))
+	{
+		return false;
+	}
+	Directory = Data.GetDirectory();
+	const TArray<FVector2D> Markers = Data.LoadMarkers();
+
+	// Per island, its scenes grouped by edge exits, each group in its first scene's frame.
+	TMap<int32, LBA1::FScene> Scenes;
+	for (const FOutdoor& Entry : Outdoor)
+	{
+		LBA1::FScene& Scene = Scenes.Add(Entry.Scene);
+		if (!Data.LoadScene(Entry.Scene, Scene))
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("LBA1 scene %d (%s) can't be read from %s"), Entry.Scene, Entry.Name, *Directory);
+			return false;
+		}
+	}
+	TArray<int32> Left;
+	for (const FOutdoor& Entry : Outdoor)
+	{
+		Left.Add(Entry.Scene);
+	}
+	auto IslandOf = [](int32 Scene) { for (const FOutdoor& Entry : Outdoor) { if (Entry.Scene == Scene) { return FString(Entry.Island); } } return FString(); };
+	auto NameOf = [](int32 Scene) { for (const FOutdoor& Entry : Outdoor) { if (Entry.Scene == Scene) { return FString(Entry.Name); } } return FString(); };
+	while (!Left.IsEmpty())
+	{
+		const int32 First = Left[0];
+		Left.RemoveAt(0);
+		TArray<TPair<int32, FIntVector>> Offsets = { { First, FIntVector::ZeroValue } };
+		for (int32 Next = 0; Next < Offsets.Num(); ++Next)
+		{
+			const TPair<int32, FIntVector> From = Offsets[Next];
+			for (const LBA1::FZone& Zone : Scenes[From.Key].Zones)
+			{
+				const FIntVector Move = Zone.Min - Zone.Info;
+				if (Zone.Type == LBA1::ZoneCube && Left.Contains(Zone.Number) && IslandOf(Zone.Number) == IslandOf(First) && IsEdgeExit(Move))
+				{
+					Offsets.Add({ Zone.Number, From.Value + Move });
+					Left.Remove(Zone.Number);
+				}
+			}
+		}
+		TUniquePtr<FDistrict> District = MakeUnique<FDistrict>();
+		District->Island = IslandOf(First);
+		District->Name = NameOf(First);
+		for (const TPair<int32, FIntVector>& Offset : Offsets)
+		{
+			District->Scenes.Add(Offset.Key);
+		}
+		if (!District->Build(Data, Offsets, Markers, Radius))
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("LBA1 district %s: its scenes' grids can't be read from %s"), *District->Name, *Directory);
+			return false;
+		}
+		Districts.Add(MoveTemp(District));
+	}
+	return true;
+}
+
+bool LBAPlanetDistricts::FDistricts::HasIsland(const FString& Island) const
+{
+	return Districts.ContainsByPredicate([&Island](const TUniquePtr<FDistrict>& District) { return District->Island == Island; });
+}
+
+TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FString& Island, FGround& Ground) const
+{
+	using namespace LBAPlanetDistrictsPrivate;
+	const int32 Cells = Ground.SizeX * Ground.SizeY;
+	auto CellToMap = [&](int32 X, int32 Y) { return Ground.Origin + FVector2D(X, Y) * Ground.Cell; };
+
+	// Largest first.
+	TArray<const FDistrict*> Here;
+	for (const TUniquePtr<FDistrict>& District : Districts)
+	{
+		if (District->Island == Island)
+		{
+			Here.Add(District.Get());
+		}
+	}
+	Algo::StableSort(Here, [](const FDistrict* A, const FDistrict* B) { return A->Area > B->Area; });
+
+	// The fit: per turn, the district on the island's cells about its pivot (land +1, water -1), slid over the stub
+	// (land +1, sea -1) and the districts placed before (each cell under them costs), near its markers and heading 0.
+	TArray<float> Taken;
+	Taken.Init(0.f, Cells);
+	TArray<FPlaced> Placed;
+	TArray<TPair<double, FVector2D>> Places;
+	for (const FDistrict* District : Here)
+	{
+		const int32 Radius = FMath::CeilToInt(FMath::Sqrt(double(FMath::Square(District->SizeX) + FMath::Square(District->SizeZ))) * CellCm / Ground.Cell / 2.0
+			+ District->Pivot.Size() / Ground.Cell) + 2;
+		const FVector2D AnchorCell = (District->Anchor - Ground.Origin) / Ground.Cell;
+		const int32 ReachCells = FMath::CeilToInt(Reach / Ground.Cell);
+		const int32 NumTurns = FMath::RoundToInt(2.0 * MaxTurn / TurnStep) + 1;
+		struct FBest
+		{
+			double Score = -UE_BIG_NUMBER;
+			double Agreement = 0.0;
+			FIntPoint Cell = FIntPoint::ZeroValue;
+		};
+		TArray<FBest> Bests;
+		Bests.SetNum(NumTurns);
+		ParallelFor(NumTurns, [&](int32 TurnIndex)
+		{
+			const double Turn = -MaxTurn + TurnIndex * TurnStep;
+			struct FWeight
+			{
+				int32 DX;
+				int32 DY;
+				float Weight;
+			};
+			TArray<FWeight> Kernel;
+			double Total = 0.0;
+			for (int32 DY = -Radius; DY <= Radius; ++DY)
+			{
+				for (int32 DX = -Radius; DX <= Radius; ++DX)
+				{
+					const int32 Cell = District->CellAt(District->Anchor + FVector2D(DX, DY) * Ground.Cell, Turn, District->Anchor);
+					const float Weight = Cell == INDEX_NONE ? 0.f : District->Land[Cell] ? 1.f : District->Water[Cell] ? -1.f : 0.f;
+					if (Weight != 0.f)
+					{
+						Kernel.Add({ DX, DY, Weight });
+						Total += 1.0;
+					}
+				}
+			}
+			FBest& Best = Bests[TurnIndex];
+			for (int32 Y = FMath::Max(0, FMath::FloorToInt(AnchorCell.Y) - ReachCells); Y <= FMath::Min(Ground.SizeY - 1, FMath::CeilToInt(AnchorCell.Y) + ReachCells); ++Y)
+			{
+				for (int32 X = FMath::Max(0, FMath::FloorToInt(AnchorCell.X) - ReachCells); X <= FMath::Min(Ground.SizeX - 1, FMath::CeilToInt(AnchorCell.X) + ReachCells); ++X)
+				{
+					const double Far = FVector2D::Distance(FVector2D(X, Y), AnchorCell) * Ground.Cell;
+					if (Far > Reach)
+					{
+						continue;
+					}
+					double Sum = 0.0;
+					for (const FWeight& Weight : Kernel)
+					{
+						const int32 GX = X + Weight.DX;
+						const int32 GY = Y + Weight.DY;
+						if (GX >= 0 && GY >= 0 && GX < Ground.SizeX && GY < Ground.SizeY)
+						{
+							const int32 Index = GY * Ground.SizeX + GX;
+							Sum += Weight.Weight * (Ground.Land[Index] ? 1.0 : -1.0) - OverlapCost * Taken[Index];
+						}
+					}
+					const double Agreement = Sum / FMath::Max(Total, 1.0);
+					const double Score = Agreement - PriorWeight * 0.5 * (FMath::Square(Far / PriorReach) + FMath::Square(Turn / PriorTurn));
+					if (Score > Best.Score)
+					{
+						Best = { Score, Agreement, FIntPoint(X, Y) };
+					}
+				}
+			}
+		});
+		int32 BestTurn = 0;
+		for (int32 TurnIndex = 1; TurnIndex < NumTurns; ++TurnIndex)
+		{
+			BestTurn = Bests[TurnIndex].Score > Bests[BestTurn].Score ? TurnIndex : BestTurn;
+		}
+		const double Turn = -MaxTurn + BestTurn * TurnStep;
+		const FVector2D At = CellToMap(Bests[BestTurn].Cell.X, Bests[BestTurn].Cell.Y);
+
+		FPlaced& Place = Placed.AddDefaulted_GetRef();
+		Place.Name = District->Name;
+		Place.Scenes = District->Scenes;
+		Place.Map = At;
+		Place.Turn = Turn;
+		Place.FromMarkers = FVector2D::Distance(At, District->Anchor);
+		Place.Agreement = Bests[BestTurn].Agreement;
+		Place.LandArea = District->Area;
+		const FVector2D AlongX = District->AxisX(Turn);
+		const FQuat Rotation(FVector::UpVector, FMath::Atan2(AlongX.Y, AlongX.X));
+		const FVector Pivot(FVector2D(District->Low) * CellCm + District->Pivot, District->bSea ? District->SeaY * StepCm : 0.0);
+		Place.FrameToMap = FTransform(Rotation, FVector(At, 0.0) - Rotation.RotateVector(Pivot));
+		Places.Add({ Turn, At });
+		int32 OnLand = 0, On = 0, WetOnSea = 0, Wet = 0;
+		for (int32 Y = 0; Y < Ground.SizeY; ++Y)
+		{
+			for (int32 X = 0; X < Ground.SizeX; ++X)
+			{
+				const int32 Cell = District->CellAt(CellToMap(X, Y), Turn, At);
+				const int32 Index = Y * Ground.SizeX + X;
+				if (Cell != INDEX_NONE && (District->Land[Cell] || District->Water[Cell]))
+				{
+					Taken[Index] += 1.f;
+					On += District->Land[Cell] ? 1 : 0;
+					OnLand += District->Land[Cell] && Ground.Land[Index] ? 1 : 0;
+					Wet += District->Water[Cell] ? 1 : 0;
+					WetOnSea += District->Water[Cell] && !Ground.Land[Index] ? 1 : 0;
+				}
+			}
+		}
+		Place.LandOnLand = double(OnLand) / FMath::Max(On, 1);
+		Place.WaterOnSea = double(WetOnSea) / FMath::Max(Wet, 1);
+	}
+
+	// The pads: each district's land at its ground (a district without water: its median ground where the stub's is),
+	// its water carved; the first laid keeps a cell.
+	const TArray<float> Stub = Ground.Heights;
+	TArray<float> PadHeights;
+	PadHeights.Init(0.f, Cells);
+	Ground.Pad.Init(false, Cells);
+	Ground.PadWater.Init(false, Cells);
+	Ground.PadColors.Init(FVector3f::ZeroVector, Cells);
+	for (int32 Which = 0; Which < Here.Num(); ++Which)
+	{
+		const FDistrict* District = Here[Which];
+		const double Turn = Places[Which].Key;
+		const FVector2D At = Places[Which].Value;
+		TArray<int32> Under;
+		Under.Init(INDEX_NONE, Cells);
+		TArray<float> Ours, Stubs;
+		for (int32 Y = 0; Y < Ground.SizeY; ++Y)
+		{
+			for (int32 X = 0; X < Ground.SizeX; ++X)
+			{
+				const int32 Index = Y * Ground.SizeX + X;
+				const int32 Cell = District->CellAt(CellToMap(X, Y), Turn, At);
+				if (Cell != INDEX_NONE && !Ground.Pad[Index] && District->Land[Cell])
+				{
+					Under[Index] = Cell;
+					Ours.Add(District->Ground[Cell]);
+					Stubs.Add(Stub[Index]);
+				}
+				else if (Cell != INDEX_NONE && !Ground.Pad[Index] && District->Water[Cell])
+				{
+					Ground.PadWater[Index] = true;
+				}
+			}
+		}
+		const float Shift = District->bSea ? 0.f : Median(Stubs) - Median(Ours);
+		for (int32 Index = 0; Index < Cells; ++Index)
+		{
+			if (Under[Index] != INDEX_NONE)
+			{
+				Ground.Pad[Index] = true;
+				PadHeights[Index] = District->Ground[Under[Index]] + Shift;
+				Ground.PadColors[Index] = District->Colors[Under[Index]];
+			}
+		}
+		Placed[Which].FrameToMap.AddToTranslation(FVector(0.0, 0.0, Shift));
+	}
+
+	// The stub's ground off a pad eases from the pad's nearest height to its own over Blend.
+	const TArray<int32> NearestPad = Nearest(Ground.Pad, Ground.SizeX, Ground.SizeY, FMath::CeilToInt(Blend / Ground.Cell) + 1);
+	for (int32 Index = 0; Index < Cells; ++Index)
+	{
+		if (Ground.Pad[Index])
+		{
+			Ground.Land[Index] = true;
+			Ground.Heights[Index] = PadHeights[Index];
+			continue;
+		}
+		Ground.Land[Index] = Ground.Land[Index] && !Ground.PadWater[Index];
+		const int32 Source = NearestPad[Index];
+		if (Ground.Land[Index] && Source != INDEX_NONE)
+		{
+			const double Off = FVector2D::Distance(FVector2D(Index % Ground.SizeX, Index / Ground.SizeX), FVector2D(Source % Ground.SizeX, Source / Ground.SizeX)) * Ground.Cell;
+			const double T = FMath::SmoothStep(0.0, 1.0, FMath::Clamp(Off / Blend, 0.0, 1.0));
+			Ground.Heights[Index] = float(FMath::Lerp(double(PadHeights[Source]), double(Stub[Index]), T));
+		}
+	}
+	return Placed;
+}

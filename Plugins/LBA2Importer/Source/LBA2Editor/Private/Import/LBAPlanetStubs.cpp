@@ -2,12 +2,15 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Note.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "Formats/LBAHqr.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBAPlanetDistricts.h"
+#include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
 
@@ -68,6 +71,8 @@ namespace LBAPlanetStubsPrivate
 	/** Under the sea: the shelf falls this steeply from the coast, down to the skirt's depth. */
 	constexpr double ShelfSlope = 0.6;
 	constexpr double SkirtDepth = 800.0;
+	/** A district's water (LBAPlanetDistricts) is carved at least this deep. */
+	constexpr double PadSeaFloor = 120.0;
 
 	/** The ground's colors: LBA2's own (sRGB, median of each kind on Citadel, Otringal and the desert). */
 	const FVector3f RockColor(136.f, 126.f, 128.f);
@@ -528,6 +533,13 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 	{
 		return nullptr;
 	}
+	// LBA1's towns, laid as pads on the islands they were on.
+	LBAPlanetDistricts::FDistricts Districts;
+	const bool bDistricts = Districts.Load(GetDefault<ULBA2ImporterSettings>()->LBA1Directory.Path, Radius);
+	if (!bDistricts)
+	{
+		Context.Warn(FString::Printf(TEXT("Planet %s: no LBA1 towns on the stub islands, LBA1's data isn't found (the importer's LBA1 Directory)"), *Planet));
+	}
 	const int32 Home = FMath::Max(Asset->FindIslandIndex(Asset->HomeIsland), 0);
 	const FTransform MapToHome = Asset->Islands.IsValidIndex(Home) ? Asset->Islands[Home].GetLevelToMap(Radius).Inverse() : FTransform::Identity;
 	int32 Islets = 0;
@@ -557,9 +569,12 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			Name = FString::Printf(TEXT("Islet_%d"), ++Islets);
 		}
 
-		// The island's grid: its painting, its own land (not a neighbour's), the coast's distance, colors and heights.
-		const FVector2D Origin = SurveyToMap(Island.Min.X, Island.Min.Y) - FVector2D(SurveyCell / 2.0 + Margin);
-		const FVector2D Size = FVector2D(Island.Max - Island.Min + FIntPoint(1)) * SurveyCell + FVector2D(2.0 * Margin);
+		// The island's grid: its painting, its own land (not a neighbour's), the coast's distance, colors and heights;
+		// wider where LBA1's districts may grow land.
+		const bool bPads = bDistricts && Districts.HasIsland(Name);
+		const double Around = Margin + (bPads ? LBAPlanetDistricts::Margin : 0.0);
+		const FVector2D Origin = SurveyToMap(Island.Min.X, Island.Min.Y) - FVector2D(SurveyCell / 2.0 + Around);
+		const FVector2D Size = FVector2D(Island.Max - Island.Min + FIntPoint(1)) * SurveyCell + FVector2D(2.0 * Around);
 		const int32 SizeX = FMath::CeilToInt(Size.X / Cell) + 1;
 		const int32 SizeY = FMath::CeilToInt(Size.Y / Cell) + 1;
 		auto CellToMap = [&](int32 X, int32 Y) { return Origin + FVector2D(X, Y) * Cell; };
@@ -767,6 +782,49 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			}
 		}
 
+		// LBA1's districts: their pads in the ground, the coast and the shelf around them again.
+		TArray<bool> Pad;
+		TArray<FVector3f> PadColors;
+		TArray<LBAPlanetDistricts::FPlaced> Placed;
+		if (bPads)
+		{
+			LBAPlanetDistricts::FGround Ground;
+			Ground.Origin = Origin;
+			Ground.Cell = Cell;
+			Ground.SizeX = SizeX;
+			Ground.SizeY = SizeY;
+			Ground.Heights = Heights.Values;
+			Ground.Land = Land;
+			Placed = Districts.Lay(Name, Ground);
+			Heights.Values = MoveTemp(Ground.Heights);
+			Land = MoveTemp(Ground.Land);
+			Pad = MoveTemp(Ground.Pad);
+			PadColors = MoveTemp(Ground.PadColors);
+			for (int32 Index = 0; Index < Cells; ++Index)
+			{
+				Sea[Index] = !Land[Index];
+			}
+			Inland = DistanceOutOf(Land, SizeX, SizeY);
+			Offshore = DistanceOutOf(Sea, SizeX, SizeY);
+			Highest = 0.0;
+			for (int32 Index = 0; Index < Cells; ++Index)
+			{
+				Inland.Values[Index] *= float(Cell);
+				Offshore.Values[Index] *= float(Cell);
+				if (Land[Index])
+				{
+					Heights.Values[Index] = float(FMath::Max(double(Heights.Values[Index]), ShoreMin));
+					Highest = FMath::Max(Highest, double(Heights.Values[Index]));
+				}
+				else
+				{
+					const double Shelf = -FMath::Min(SkirtDepth, 30.0 + ShelfSlope * Offshore.Values[Index]);
+					Heights.Values[Index] = float(Ground.PadWater[Index] ? FMath::Min(Shelf, -PadSeaFloor) : Shelf);
+				}
+			}
+		}
+		auto IsPad = [&](int32 Index) { return !Pad.IsEmpty() && Pad[Index]; };
+
 		// The ground: grass or earth on the benches by the painting (patches of earth among the grass), painted sand,
 		// pale stone on the top bench where painted pale, sand on beaches, rock along cliff coasts and wherever it is steep.
 		const FGrid Patches = MakeNoise(SizeX, SizeY, 1200.0 / Cell, Seed + 5);
@@ -828,7 +886,7 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			const FVector Across(2.0 * Cell, 0.0, Heights.At(X + 1, Y) - Heights.At(X - 1, Y));
 			const FVector Along(0.0, 2.0 * Cell, Heights.At(X, Y + 1) - Heights.At(X, Y - 1));
 			const FVector Normal = (Across ^ Along).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
-			const FVector3f Color = Land[Index] ? GetGroundColor(GroundAt(X, Y)) * (1.f + 0.06f * Patches.Values[Index])
+			const FVector3f Color = IsPad(Index) ? PadColors[Index] : Land[Index] ? GetGroundColor(GroundAt(X, Y)) * (1.f + 0.06f * Patches.Values[Index])
 				: FMath::Lerp(SandColor, ShelfColor, float(FMath::Clamp(Offshore.Values[Index] / 800.0, 0.0, 1.0)));
 			const FLinearColor Linear = FLinearColor::FromSRGBColor(FColor(uint8(FMath::Clamp(Color.X, 0.f, 255.f)), uint8(FMath::Clamp(Color.Y, 0.f, 255.f)), uint8(FMath::Clamp(Color.Z, 0.f, 255.f))));
 			FLBAVertex Vertex;
@@ -889,6 +947,26 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s stub %s: %.0f m2 of land, %.1f m high, levels%s m, %.0f%% flat, %.0f%% of the coast beach, map (%.0f, %.0f) m, (%.0f, %.0f) in the home island's level, %d triangles"),
 			*Planet, *Name, Area / 10000.0, Highest / 100.0, *LevelText, 100.0 * FlatCells / FMath::Max(LandCells, 1), 100.0 * BeachCoast / FMath::Max(CoastCells, 1),
 			Pivot.X / 100.0, Pivot.Y / 100.0, InHome.X, InHome.Y, Triangles);
+		for (const LBAPlanetDistricts::FPlaced& District : Placed)
+		{
+			FString Scenes;
+			for (const int32 Scene : District.Scenes)
+			{
+				Scenes += FString::Printf(TEXT("%s%d"), Scenes.IsEmpty() ? TEXT("") : TEXT(", "), Scene);
+			}
+			const FString Text = FString::Printf(TEXT("LBA1's %s (scenes %s) on %s: %.0f m2 of land, turned %+.0f degrees, %.1f m from its holomap markers; its land %.0f%% on the painted land, its water %.0f%% on the sea. LBA1 frame (cm) to the map: %s"),
+				*District.Name, *Scenes, *Name, District.LandArea / 10000.0, District.Turn, District.FromMarkers / 100.0, 100.0 * District.LandOnLand, 100.0 * District.WaterOnSea,
+				*District.FrameToMap.ToHumanReadableString());
+			UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s district: %s"), *Planet, *Text);
+			const FVector2D AtCell = (District.Map - Origin) / Cell;
+			const double Ground = Heights.At(FMath::RoundToInt(AtCell.X), FMath::RoundToInt(AtCell.Y));
+			if (ANote* Note = Context.SpawnGeneratedActor<ANote>(World, FTransform(FVector(District.Map, Ground + 300.0)), FString::Printf(TEXT("District_%s_%s"), *Name, *FLBAImportContext::SanitizeName(District.Name)), TEXT("Stubs")))
+			{
+#if WITH_EDITORONLY_DATA
+				Note->Text = Text;
+#endif
+			}
+		}
 	}
 	Context.EndLevel(World);
 	return TSoftObjectPtr<UWorld>(FSoftObjectPath(Folder / LevelName + TEXT(".") + LevelName));

@@ -71,6 +71,13 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Source")
 	FDirectoryPath RemakeDirectory;
 
+	/**
+	 * Optional folder of Little Big Adventure 1's data (the GOG "tlba-classic" Common folder, with SCENE.HQR): its towns
+	 * are laid on the globe's stub islands as pads of ground (LBAPlanetDistricts). A known install is used when empty.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Source")
+	FDirectoryPath LBA1Directory;
+
 	/** Islands to import (file names such as CITABAU). Empty imports all of them. */
 	UPROPERTY(Config, EditAnywhere, Category = "Filters")
 	TArray<FString> IslandFilter;
