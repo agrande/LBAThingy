@@ -125,7 +125,7 @@ bool LBAMaterials::ResetInstanceIfOutdated(UMaterialInstanceConstant* Instance, 
 UMaterialInterface* FLBARenderingAssets::GetLook(ELBALookMode Look)
 {
 	// Bump when the defaults below change: the looks are then reset, user edits are otherwise kept.
-	constexpr int32 Version = 7;
+	constexpr int32 Version = 8;
 
 	UMaterialInterface*& Cached = Looks[uint8(Look)];
 	if (Cached)
@@ -170,8 +170,8 @@ UMaterialInterface* FLBARenderingAssets::GetLook(ELBALookMode Look)
 		Scalar(TEXT("HighlightTintAmount"), 0.15f);
 		Scalar(TEXT("DotPattern"), 0.f);
 		Scalar(TEXT("HeightFogAmount"), 1.f);
-		Scalar(TEXT("DitherAmount"), 0.7f);
-		Scalar(TEXT("DotSpacing"), 4.f);
+		Scalar(TEXT("DitherAmount"), 0.4f);
+		Scalar(TEXT("DotSpacing"), 3.f);
 		Scalar(TEXT("DotContrast"), 1.5f);
 		Scalar(TEXT("DotSizeVariability"), 0.5f);
 	}
