@@ -433,32 +433,43 @@ at all. Citadel's wind is a small hurricane around the island (`ALBAStorm`, see 
 `-LBA2Shots=wind` (on `L_CITADEL`) hovers hands-off at a few places (Lupin-Burg, Twinsen's house, the cliffs, the
 dome, the wall, far out at sea), tries to fly away and to climb to the ceiling, and logs the drift.
 
-**Airflow strokes.** A few short comic speed lines come off the Dinofly where the airflow breaks away from its body
-(`ULBAAirflowComponent`, reusable on any flyer). They start at hotspots (wingtips, wings, tail tip, feet, Twinsen's head,
-the Dinofly's head), only those on the body's sides and back for the way it goes through the air: the tail and the feet
-in forward flight, Twinsen's head in a dive, the feet in a climb, never a part the body pushes ahead (wingtips shed
-whichever way they swing, `MinShedding`). Each hotspot has how hard the flow breaks on it (`Accent`), how much air it
-drags along (`Wake`), how much its strokes ripple (`Turbulence`) and how much its own motion steers them (`Follow`,
-flapping wings). The body drags the air near it along, so a new stroke keeps up with it a while (`Wake`, fading over
-`WakeTime`) and fades in as it falls behind (`FadeInDistance`). A stroke is led by its head, which runs back along the
-path the body takes through the air (`Stream`), its tail following the same path: it grows, slides and shrinks into its
-head, and shows at a glance whether the Dinofly climbs, dives, goes forward or turns. The path follows
-the air: bent like the body's path (`Curvature`, capped at `MaxCurve` degrees), held back near the body by the air it
-drags along, rippling (`Ripple`), and now and then a stroke does a little cartoon loop (`LoopChance`, `LoopSize`), turned
-towards the camera (none when the flow runs towards or away from it). As long as the Dinofly moves at all, at least
-`MinStrokes` (2) are on screen (started from hotspots in view); the faster it flies, the more (mostly as the square of
-its air speed, like its energy), never more than `MaxStrokes` (6) on screen at once, and none when it stands still.
-Their look blends two styles by air speed (`Slow`, `Fast`: width, opacity, length, life, loop chance and size): small,
-faint, lingering and loopy when it barely moves, quickly fat, opaque and straight (`BoldnessBias` 3: a sixth of
-`FullSpeed` is already 40% of the way). The air is pushed down by the lift (strokes tilt with the downwash) and carried by the level's wind
-where the Dinofly is (`ULBAWindSubsystem`): flying into it gives more strokes blown back, drifting with it hardly any. They are white with a
-dark ink edge, unlit after motion blur (`Effects/M_LBA_Airflow`), and stand out from the rain. Look and physics are
-properties of the component (Dinofly > Airflow: color, width, stroke life and length, density, speeds, mass, wake,
-curvature, loops...); the drawing is the plugin's `Effects/NS_LBA_Airflow` (one ribbon per stroke, closed-form path in
-its Set Parameters expressions, rebuilt by `Tools/airflow_niagara.py` through the Unreal MCP server; path in Project
-Settings > Plugins > LBA2 > Airflow Trail). `lba.Airflow 0` hides them,
-`lba.Airflow.Opacity` and `lba.Airflow.Density` scale them, `lba.Airflow.Debug 1` logs air speeds, the hotspots and
-their stroke rates (2 also draws them).
+**Wind lines.** A few long, thin, faint comic lines show how fast the Dinofly goes through the air and which way
+(`ULBAAirflowComponent`, reusable on any flyer). Their settings are in Project Settings > Game > LBA2 Dinofly (Wind Lines,
+Wind Lines: Placement), and changes apply at once, even while playing in the editor.
+
+Every line lies along the Dinofly's motion through the air (its velocity minus the level's wind, `ULBAWindSubsystem`) and
+slides along itself, so that from the chase camera all the lines fan out from the point it flies towards: above the body in
+a climb, below it in a dive, away from its heading in a crosswind. The only things taking a line off that direction are the
+bend of the Dinofly's own path in a turn (`Curvature`, capped at `MaxCurve` degrees) and a slight bow towards its way
+(`BowAngle`), the lines closing in behind the body like its wake. Curls are possible (`HookChance`, `HookSize`, `HookTurn`)
+but off by default, since they point anywhere. Wing beats make no lines: they are averaged out of the body's vertical speed
+(`VerticalSmoothing`), which keeps them from swinging or bending the lines too.
+
+A line is led by its head, which runs back along that path (`Stream`), while the line stays partly with the body (`Carry`):
+it grows from nothing, slides (`Slide`) and shrinks into its head, with sharp ends and a brighter head (`TailOpacity`).
+
+Most lines (`ExtremityShare`) start on the extremities the air hits the most at that moment. An extremity's chance is its
+`Accent` times how much it faces the way the body goes (full ahead of the body, half on its sides, none behind it); the list
+is in `ALBADinofly`'s constructor. It must also be beside the body on screen (`MinSideOffset`), which from behind leaves the
+wings: seen from the chase camera above and behind, "backward" is "straight down the screen", so anything leaving the tail,
+the feet or the snout straight back looks like it falls off the body (an earlier version looked like bird droppings). The
+other lines start in the air close around the Dinofly's way (`InnerRadius`, `OuterRadius`, `StartAheadMin`, `StartAheadMax`),
+never in the plane through the camera and that way (`WedgeAngle`). Either way a line is placed only if, at its full length,
+it will be on screen, look long enough (`MinScreenLength`: lines seen end-on are dots), stay clear of the camera
+(`CameraClearance`) and not be hidden by the ground or the sea.
+
+As long as the Dinofly moves (`StillSpeed`, and `StillVerticalSpeed` above the bobbing of beats while hovering), at least `MinStrokes` (1) is on screen; the faster it flies, the more (mostly as
+the square of its air speed, like its energy), never more than `MaxStrokes` (4) at once, and none when it stands still.
+Their look blends two styles by air speed (`Slow`, `Fast`: width, opacity, length, curl chance and size): short and very
+faint when it barely moves, long and a little clearer at speed (`BoldnessBias`). They keep to thin lines on screen
+(`MinPixels`, `MaxScreenWidth`), white and unlit after motion blur (`Effects/M_LBA_Airflow`).
+
+The drawing is the plugin's `Effects/NS_LBA_Airflow` (one ribbon per line, closed-form path in its Set Parameters
+expressions, rebuilt by `Tools/airflow_niagara.py` through the Unreal MCP server; path in Project Settings > Plugins > LBA2
+> Airflow Trail). `lba.Airflow 0` hides them, `lba.Airflow.Opacity` and `lba.Airflow.Density` scale them,
+`lba.Airflow.Debug 1` logs the air speed and the line count (2 also draws each path). `-LBA2Shots=dinofly
+-LBA2ShotBurst=0.2` adds a shot every 0.2 s during the flying steps, since moving things are hard to judge from one still;
+`-LBA2ShotStep=30` runs them at 30 steps per second instead of 15.
 
 ### Travel menu
 

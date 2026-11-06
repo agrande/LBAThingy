@@ -13,6 +13,7 @@
 #include "HAL/IConsoleManager.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
+#include "LBAFlightMovementComponent.h"
 #include "LBAWindSubsystem.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
@@ -20,51 +21,50 @@
 namespace
 {
 	TAutoConsoleVariable<bool> CVarAirflow(TEXT("lba.Airflow"), true,
-		TEXT("Airflow strokes around flyers (the Dinofly)."));
+		TEXT("Wind lines around flyers (the Dinofly)."));
 	TAutoConsoleVariable<float> CVarAirflowOpacity(TEXT("lba.Airflow.Opacity"), 1.f,
-		TEXT("Scales the opacity of the airflow strokes."));
+		TEXT("Scales the opacity of the wind lines."));
 	TAutoConsoleVariable<float> CVarAirflowDensity(TEXT("lba.Airflow.Density"), 1.f,
-		TEXT("Scales how many airflow strokes appear."));
+		TEXT("Scales how many wind lines appear."));
 	TAutoConsoleVariable<int32> CVarAirflowDebug(TEXT("lba.Airflow.Debug"), 0,
-		TEXT("1 logs the airflow (air speeds, downwash, stroke rates), 2 also draws the body parts and their air velocity."));
+		TEXT("1 logs the airflow (air speed, wind, line rate), 2 also draws the lines' paths."));
 
-	constexpr double GravityAcceleration = 981.0;
+	/** Tries per line to place it where it shows; a line that finds no place starts on a later frame. */
+	constexpr int32 PlacementTries = 8;
+	/** How much tighter a curl gets by its end. */
+	constexpr float HookTightening = 0.45f;
 
 	namespace Param
 	{
 		const FName SpawnCount(TEXT("User.SpawnCount"));
 		const FName Points(TEXT("User.Points"));
-		const FName Extent(TEXT("User.Extent"));
-		const FName Spread(TEXT("User.Spread"));
-		const FName Perp1(TEXT("User.Perp1"));
-		const FName Perp2(TEXT("User.Perp2"));
-		const FName Rel(TEXT("User.Rel"));
+		const FName Base(TEXT("User.Base"));
+		const FName HeadVelocity(TEXT("User.HeadVelocity"));
 		const FName Bend(TEXT("User.Bend"));
-		const FName StrokeTime(TEXT("User.StrokeTime"));
-		const FName Life(TEXT("User.Life"));
-		const FName Drag(TEXT("User.Drag"));
 		const FName Drift(TEXT("User.Drift"));
-		const FName WakeTime(TEXT("User.WakeTime"));
-		const FName Turbulence(TEXT("User.Turbulence"));
+		const FName Across(TEXT("User.Across"));
+		const FName Life(TEXT("User.Life"));
+		const FName Lag(TEXT("User.Lag"));
+		const FName HookRadius(TEXT("User.HookRadius"));
+		const FName HookTime(TEXT("User.HookTime"));
+		const FName HookTurn(TEXT("User.HookTurn"));
 		const FName Visibility(TEXT("User.Visibility"));
-		const FName Seed(TEXT("User.Seed"));
-		const FName Color(TEXT("User.Color"));
 		const FName Width(TEXT("User.Width"));
+		const FName FadeIn(TEXT("User.FadeIn"));
+		const FName Color(TEXT("User.Color"));
+		const FName TailOpacity(TEXT("User.TailOpacity"));
 		const FName MinPixels(TEXT("User.MinPixels"));
 		const FName PixelAngle(TEXT("User.PixelAngle"));
+		const FName MaxAngle(TEXT("User.MaxAngle"));
 		const FName CameraPosition(TEXT("User.CameraPosition"));
 		const FName NearFade(TEXT("User.NearFade"));
-		const FName Stream(TEXT("User.Stream"));
-		const FName LoopChance(TEXT("User.LoopChance"));
-		const FName LoopSize(TEXT("User.LoopSize"));
-		const FName FadeIn(TEXT("User.FadeIn"));
 	}
 }
 
 ULBAAirflowComponent::ULBAAirflowComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	// After the owner moved and animated this frame (see CreateStrokes), before the strokes simulate.
+	// After the owner moved this frame (see CreateStrokes), before the lines simulate.
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 }
 
@@ -78,35 +78,22 @@ void ULBAAirflowComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 	Strokes.Reset();
-	SourceStates.Reset();
-	LiveStrokes.Reset();
+	LiveLines.Reset();
+	ExtremityLastLines.Reset();
 	PendingStrokes = 0.f;
 	bCreated = false;
 	Super::EndPlay(EndPlayReason);
-}
-
-USceneComponent* ULBAAirflowComponent::GetSourceParent() const
-{
-	AActor* Owner = GetOwner();
-	if (USkeletalMeshComponent* Mesh = Owner ? Owner->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
-	{
-		return Mesh;
-	}
-	return Owner ? Owner->GetRootComponent() : nullptr;
 }
 
 void ULBAAirflowComponent::CreateStrokes()
 {
 	bCreated = true;
 	UNiagaraSystem* Asset = System.IsNull() ? GetDefault<ULBA2Settings>()->AirflowTrail.LoadSynchronous() : System.LoadSynchronous();
-	USceneComponent* Parent = GetSourceParent();
-	if (!Asset || !Parent)
+	if (!Asset || !GetOwner()->GetRootComponent())
 	{
-		UE_LOG(LogLBA2, Warning, TEXT("%s: no airflow strokes (missing Niagara system)."), *GetPathName());
+		UE_LOG(LogLBA2, Warning, TEXT("%s: no wind lines (missing Niagara system)."), *GetPathName());
 		return;
 	}
-	// Read the bones once the owner has animated them.
-	AddTickPrerequisiteComponent(Parent);
 	if (const APawn* Pawn = Cast<APawn>(GetOwner()))
 	{
 		if (UPawnMovementComponent* Movement = Pawn->GetMovementComponent())
@@ -114,46 +101,50 @@ void ULBAAirflowComponent::CreateStrokes()
 			AddTickPrerequisiteComponent(Movement);
 		}
 	}
-	for (const FLBAAirflowSource& Source : Sources)
+	// Read the extremities once the owner has animated them.
+	const USkeletalMeshComponent* Mesh = GetOwner()->FindComponentByClass<USkeletalMeshComponent>();
+	if (Mesh)
 	{
-		for (const FName& Bone : { Source.Bone, Source.EndBone })
+		AddTickPrerequisiteComponent(const_cast<USkeletalMeshComponent*>(Mesh));
+	}
+	for (const FLBAAirflowExtremity& Extremity : Extremities)
+	{
+		if (!Mesh || !Mesh->DoesSocketExist(Extremity.Bone))
 		{
-			if (!Bone.IsNone() && !Parent->DoesSocketExist(Bone))
-			{
-				UE_LOG(LogLBA2, Warning, TEXT("%s: no bone or socket %s on %s for airflow strokes."), *GetPathName(), *Bone.ToString(), *Parent->GetName());
-			}
+			UE_LOG(LogLBA2, Warning, TEXT("%s: no bone or socket %s for wind lines."), *GetPathName(), *Extremity.Bone.ToString());
 		}
-		// One system instance per body part, placed at its middle every frame.
+	}
+	ExtremityLastLines.Init(-100.0, Extremities.Num());
+	// A slot per line that can be on screen; lines keep what they were given when they started, so a slot can start another
+	// one while its last one finishes.
+	for (int32 Slot = 0; Slot < FMath::Max(Look.MaxStrokes, 1); ++Slot)
+	{
 		UNiagaraComponent* Stroke = NewObject<UNiagaraComponent>(GetOwner());
 		Stroke->SetAsset(Asset);
 		Stroke->SetAutoDestroy(false);
 		Stroke->SetupAttachment(GetOwner()->GetRootComponent());
 		Stroke->bAutoActivate = false;
 		Stroke->RegisterComponent();
-		Stroke->SetVariableFloat(Param::Seed, FMath::FRand() * 100.f);
 		Stroke->AddTickPrerequisiteComponent(this);
 		Stroke->Activate(true);
 		Strokes.Add(Stroke);
 	}
-	SourceStates.SetNum(Strokes.Num());
 }
 
-bool ULBAAirflowComponent::IsOnScreen(const FLiveStroke& Live, double Now) const
+bool ULBAAirflowComponent::IsOnScreen(const FLine& Line, double Now) const
 {
-	const float Age = static_cast<float>(Now - Live.Birth);
-	if (Age >= Live.Life)
+	const float Age = static_cast<float>(Now - Line.Birth);
+	if (Age >= Line.Life)
 	{
 		return false;
 	}
-	// The head runs until the tail has caught up with it, the tail Lag behind; both drift with the air and are carried
-	// by the wake at first.
-	const float HeadTime = FMath::Min(Age, Live.Life - Live.Lag);
-	const float TailTime = FMath::Max(Age - Live.Lag, 0.f);
-	const float Wake = FMath::Max(WakeTime, 0.01f);
-	const FVector Base = Live.Origin + Live.Drift * Age + Live.Carry * Wake * (1.f - FMath::Exp(-Age / Wake));
+	// The head runs until the tail has caught up with it, the tail Lag behind; both drift with the air.
+	const float HeadTime = FMath::Min(Age, Line.Life - Line.Lag);
+	const float TailTime = FMath::Max(Age - Line.Lag, 0.f);
+	const FVector Base = Line.Base + Line.Drift * Age;
 	for (const float Time : { HeadTime, 0.5f * (HeadTime + TailTime), TailTime })
 	{
-		if (IsInView(Base + Live.HeadVelocity * Time))
+		if (IsInView(Base + Line.HeadVelocity * Time))
 		{
 			return true;
 		}
@@ -176,7 +167,7 @@ bool ULBAAirflowComponent::IsInView(const FVector& Location) const
 		&& Screen.X >= 0.0 && Screen.Y >= 0.0 && Screen.X <= SizeX && Screen.Y <= SizeY;
 }
 
-bool ULBAAirflowComponent::GetCamera(FVector& OutLocation, float& OutPixelAngle) const
+bool ULBAAirflowComponent::GetCamera(FVector& OutLocation, float& OutPixelAngle, float& OutViewportWidth) const
 {
 	const APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	if (!PC || !PC->PlayerCameraManager)
@@ -189,8 +180,9 @@ bool ULBAAirflowComponent::GetCamera(FVector& OutLocation, float& OutPixelAngle)
 	{
 		Viewport->GetViewportSize(ViewportSize);
 	}
+	OutViewportWidth = FMath::Max(ViewportSize.X, 1.0);
 	const float HalfFov = FMath::DegreesToRadians(PC->PlayerCameraManager->GetFOVAngle() * 0.5f);
-	OutPixelAngle = 2.f * FMath::Tan(HalfFov) / FMath::Max(ViewportSize.X, 1.0);
+	OutPixelAngle = 2.f * FMath::Tan(HalfFov) / OutViewportWidth;
 	return true;
 }
 
@@ -200,7 +192,6 @@ void ULBAAirflowComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	const AActor* Owner = GetOwner();
 	if (!bCreated)
 	{
-		// Not at BeginPlay: owners often set their skeletal mesh (hence the bones) in their own BeginPlay, after ours.
 		CreateStrokes();
 	}
 	if (!Owner || Strokes.IsEmpty() || DeltaTime <= 0.f)
@@ -212,205 +203,244 @@ void ULBAAirflowComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	LevelWind = bUseLevelWind && WindSubsystem ? WindSubsystem->GetWindAt(Owner->GetActorLocation()) : FVector::ZeroVector;
 	const FVector AirWind = Wind + LevelWind;
 
-	// The whole body's lift (m (a - g) across the path; all of it when hovering) gives the wake's downwash, which
-	// sinks the marked air: circulation = lift / (rho U b'), the pair sinks at circulation / (2 pi b').
-	const FVector Velocity = Owner->GetVelocity();
+	// The body's motion without the jolts of its wing beats, which only move it vertically: the lines' direction and
+	// bend should not change with each beat.
+	FVector Velocity = Owner->GetVelocity();
 	if (bHasLastVelocity)
 	{
+		Velocity.Z = FMath::Lerp(Velocity.Z, LastVelocity.Z, FMath::Exp(-DeltaTime / FMath::Max(Look.VerticalSmoothing, 0.001f)));
 		SmoothedAcceleration = FMath::VInterpTo(SmoothedAcceleration, (Velocity - LastVelocity) / DeltaTime, DeltaTime, 6.f);
 	}
 	LastVelocity = Velocity;
 	bHasLastVelocity = true;
 	const FVector AirVelocity = Velocity - AirWind;
-	const FVector Force = Mass * (SmoothedAcceleration + FVector(0.0, 0.0, GravityAcceleration)) / 100.0;
-	const double SpanM = Span / 100.0;
-	const double VortexSpacing = UE_DOUBLE_PI / 4.0 * SpanM;
-	const double DiskArea = UE_DOUBLE_PI * SpanM * SpanM / 4.0;
-	const double SpeedM = AirVelocity.Size() / 100.0;
-	const FVector PathDirection = AirVelocity.GetSafeNormal();
-	const double AlongPath = FVector::DotProduct(Force, PathDirection);
-	const double AcrossPath = (Force - AlongPath * PathDirection).Size();
-	const double HoverSpeed = FMath::Sqrt(Force.Size() / (2.0 * AirDensity * DiskArea));
-	const double HoverWeight = FMath::Square(HoverSpeed) / (FMath::Square(HoverSpeed) + FMath::Square(SpeedM));
-	const double LiftN = FMath::Sqrt(FMath::Square(AcrossPath) + HoverWeight * FMath::Square(AlongPath));
-	const double Induced = FMath::Sqrt(LiftN / (2.0 * AirDensity * DiskArea));
-	const double Circulation = LiftN / (AirDensity * FMath::Sqrt(SpeedM * SpeedM + Induced * Induced) * VortexSpacing);
-	const double Downwash = Circulation / (2.0 * UE_DOUBLE_PI * VortexSpacing) * 100.0 * DownwashScale;
-	const FVector Drift = AirWind - FVector(0.0, 0.0, Downwash);
+	const float AirSpeed = FMath::Max(AirVelocity.Size(), 1.0);
+	const FVector Flow = AirVelocity.Size() > 1.0 ? AirVelocity.GetSafeNormal() : Owner->GetActorForwardVector();
 
 	const bool bOn = bEmitting && CVarAirflow.GetValueOnGameThread();
 	const float DensityScale = FMath::Max(CVarAirflowDensity.GetValueOnGameThread(), 0.f);
 	const float OpacityScale = FMath::Max(CVarAirflowOpacity.GetValueOnGameThread(), 0.f);
-	const int32 Points = FMath::Clamp(PointsPerStroke, 3, 32);
-	const float StreamRate = FMath::Max(Stream, 0.05f);
 	FVector CameraLocation = Owner->GetActorLocation();
 	float PixelAngle = 0.001f;
-	GetCamera(CameraLocation, PixelAngle);
-	const USceneComponent* Parent = GetSourceParent();
+	float ViewportWidth = 1920.f;
+	GetCamera(CameraLocation, PixelAngle, ViewportWidth);
 	const int32 Debug = CVarAirflowDebug.GetValueOnGameThread();
 	const double Now = GetWorld()->GetTimeSeconds();
 
-	// The whole body's motion through the air (the wind's, not its own downwash) sets how many strokes there are, how
-	// bold, and which parts shed them. Standing still, even in the wind, leaves none. The rate grows mostly as the
-	// square of the air speed (dynamic pressure, energy), with a linear part so slow flight still shows its flow.
-	const float BodyAirSpeed = AirVelocity.Size();
-	const bool bMoving = Velocity.Size() > StillSpeed;
-	const float SpeedRatio = BodyAirSpeed / FMath::Max(RefSpeed, 1.f);
-	const float SpeedFactor = (0.35f * SpeedRatio + 0.65f * FMath::Square(SpeedRatio)) * (bMoving ? DensityScale : 0.f);
-	// Small, faint and loopy only when barely moving, quickly bold.
-	const float Boldness = 1.f - FMath::Pow(1.f - FMath::Clamp(BodyAirSpeed / FullSpeed, 0.f, 1.f), FMath::Max(BoldnessBias, 0.1f));
+	// The body's motion through the air (the wind's included) sets how many lines there are and how bold. Standing
+	// still, even in the wind, leaves none. The rate grows mostly as the square of the air speed (dynamic pressure,
+	// energy), with a linear part so slow flight still shows its flow.
+	const bool bMoving = Velocity.Size2D() > Look.StillSpeed || FMath::Abs(Velocity.Z) > Look.StillVerticalSpeed;
+	const float SpeedRatio = AirSpeed / FMath::Max(Look.RefSpeed, 1.f);
+	const float LineRate = Look.Density * (0.35f * SpeedRatio + 0.65f * FMath::Square(SpeedRatio)) * (bMoving ? DensityScale : 0.f);
+	// Very faint when barely moving, clearer with speed.
+	const float Boldness = 1.f - FMath::Pow(1.f - FMath::Clamp(AirSpeed / Look.FullSpeed, 0.f, 1.f), FMath::Max(Look.BoldnessBias, 0.1f));
 	const FLBAAirflowStyle Style = {
-		FMath::Lerp(Slow.Width, Fast.Width, Boldness),
-		FMath::Lerp(Slow.Opacity, Fast.Opacity, Boldness),
-		FMath::Lerp(Slow.Length, Fast.Length, Boldness),
-		FMath::Lerp(Slow.Life, Fast.Life, Boldness),
-		FMath::Lerp(Slow.LoopChance, Fast.LoopChance, Boldness),
-		FMath::Lerp(Slow.LoopSize, Fast.LoopSize, Boldness) };
-	const float Visibility = Style.Opacity * OpacityScale;
-	const float Life = StrokeLife * Style.Life;
-	// Seconds of path a stroke spans (its length over its air speed).
-	auto PathTimeOf = [this, &Style](const FVector& Rel)
-	{
-		return Style.Length * FMath::Clamp(MinStrokeLength / FMath::Max(Rel.Size(), 1.0), StrokeTime, 0.3f);
-	};
+		FMath::Lerp(Look.Slow.Width, Look.Fast.Width, Boldness),
+		FMath::Lerp(Look.Slow.Opacity, Look.Fast.Opacity, Boldness),
+		FMath::Lerp(Look.Slow.Length, Look.Fast.Length, Boldness),
+		FMath::Lerp(Look.Slow.HookChance, Look.Fast.HookChance, Boldness),
+		FMath::Lerp(Look.Slow.HookSize, Look.Fast.HookSize, Boldness) };
+
+	// The frame around the body's way through the air, and the side of that way the camera is on.
 	const FVector BodyCenter = Owner->GetActorLocation();
-	// The air around the wings moves down through them (the induced flow that holds the flyer up): when hovering, air
-	// rushes down past the body; in flight the flow tilts down a little.
-	const FVector LocalAir = AirWind - FVector(0.0, 0.0, Downwash);
-
-	struct FPart
+	FVector Perp1 = FVector::CrossProduct(Flow, FVector::UpVector).GetSafeNormal();
+	if (Perp1.IsNearlyZero())
 	{
-		FVector Start = FVector::ZeroVector;
-		FVector End = FVector::ZeroVector;
-		FVector Center = FVector::ZeroVector;
-		FVector Rel = FVector::ZeroVector;
-		FVector PartAcceleration = FVector::ZeroVector;
-		/** Velocity the wake gives its strokes at first. */
-		FVector Carry = FVector::ZeroVector;
-		float Trailing = 0.f;
-		/** How much it sheds, whatever the speed. */
-		float Weight = 0.f;
-		float Rate = 0.f;
-		int32 NumNew = 0;
-		/** Life of the strokes it starts this frame. */
-		float Life = 0.f;
-	};
-	TArray<FPart, TInlineAllocator<16>> Parts;
-	Parts.SetNum(Strokes.Num());
-	float TotalRate = 0.f;
-	for (int32 Index = 0; Index < Strokes.Num(); ++Index)
-	{
-		if (!Strokes[Index] || !Sources.IsValidIndex(Index))
-		{
-			continue;
-		}
-		const FLBAAirflowSource& Source = Sources[Index];
-		FPart& Part = Parts[Index];
-		auto PointOf = [Parent, Owner](FName Bone, const FVector& Offset)
-		{
-			const FTransform Frame = !Parent ? Owner->GetActorTransform()
-				: Bone.IsNone() ? Parent->GetComponentTransform() : Parent->GetSocketTransform(Bone);
-			return Frame.TransformPosition(Offset);
-		};
-		Part.Start = PointOf(Source.Bone, Source.Offset);
-		Part.End = Source.EndBone.IsNone() && Source.EndOffset.IsZero() ? Part.Start : PointOf(Source.EndBone.IsNone() ? Source.Bone : Source.EndBone, Source.EndOffset);
-		Part.Center = (Part.Start + Part.End) * 0.5;
-
-		// This part's own motion, flapping included: its velocity through the air and its acceleration (lightly
-		// smoothed, the animation moves in keyframed steps).
-		FSourceState& State = SourceStates[Index];
-		if (State.bValid)
-		{
-			const FVector NewVelocity = FMath::VInterpTo(State.Velocity, (Part.Center - State.LastCenter) / DeltaTime, DeltaTime, 20.f);
-			const FVector Acceleration = (NewVelocity - State.Velocity) / DeltaTime;
-			State.Acceleration = FMath::VInterpTo(State.Acceleration, Acceleration.GetClampedToMaxSize(6000.0), DeltaTime, 8.f);
-			State.Velocity = NewVelocity;
-		}
-		else
-		{
-			State.Velocity = Velocity;
-		}
-		State.LastCenter = Part.Center;
-		State.bValid = true;
-		// Strokes follow the whole body's flow, steered only partly by the part's own (flapping) motion.
-		const float Follow = FMath::Clamp(Source.Follow, 0.f, 1.f);
-		Part.Rel = Velocity - LocalAir + Follow * (State.Velocity - Velocity);
-		Part.PartAcceleration = SmoothedAcceleration + Follow * (State.Acceleration - SmoothedAcceleration);
-		// The body drags the air near it along: its strokes keep up with it a while, then are left behind.
-		Part.Carry = AirVelocity * FMath::Clamp(Source.Wake, 0.f, 0.95f);
-
-		// The flow breaks away from the body on its sides and at its back for the way it goes through the air, never
-		// on the parts it pushes ahead (their strokes would start ahead of the body).
-		Part.Trailing = FMath::Max(FMath::Clamp(0.5f - static_cast<float>(FVector::DotProduct((Part.Center - BodyCenter).GetSafeNormal(), PathDirection)), 0.f, 1.f), Source.MinShedding);
-		Part.Weight = Source.Accent * Part.Trailing;
-		Part.Rate = Density * Part.Weight * SpeedFactor;
-		TotalRate += Part.Rate;
+		Perp1 = Owner->GetActorRightVector();
 	}
+	const FVector Perp2 = FVector::CrossProduct(Perp1, Flow).GetSafeNormal();
+	const FVector ToCamera = CameraLocation - BodyCenter;
+	const FVector CameraSide = (ToCamera - FVector::DotProduct(ToCamera, Flow) * Flow).GetSafeNormal();
+	const double CosWedge = FMath::Cos(FMath::DegreesToRadians(Placement.WedgeAngle));
+	const FVector ScreenSideways = FVector::CrossProduct(CameraSide, Flow).GetSafeNormal();
 
-	// The strokes due, shared out among the parts by their rates, never more than MaxStrokes on screen at once (the
-	// ones the camera left behind no longer count) and no backlog while at the cap. While the body moves at all, at
-	// least MinStrokes are on screen: the missing ones start at once from hotspots in view, different ones if possible.
-	LiveStrokes.RemoveAll([this, Now](const FLiveStroke& Live) { return !IsOnScreen(Live, Now); });
-	auto Pick = [&Parts](TFunctionRef<float(const FPart&)> Chance)
+	// Where the extremities are, and how much the air hits them: most ahead of the body, half on its sides, none behind it.
+	// None close to the plane through the camera and the body's way: their lines would run down the screen along the body.
+	const USkeletalMeshComponent* Mesh = Owner->FindComponentByClass<USkeletalMeshComponent>();
+	TArray<FVector, TInlineAllocator<16>> ExtremityLocations;
+	TArray<float, TInlineAllocator<16>> ExtremityWeights;
+	ExtremityLocations.SetNum(Extremities.Num());
+	ExtremityWeights.SetNum(Extremities.Num());
+	for (int32 Index = 0; Index < Extremities.Num(); ++Index)
+	{
+		const FLBAAirflowExtremity& Extremity = Extremities[Index];
+		ExtremityLocations[Index] = Mesh ? Mesh->GetSocketTransform(Extremity.Bone).TransformPosition(Extremity.Offset) : BodyCenter;
+		const FVector FromBody = ExtremityLocations[Index] - BodyCenter;
+		const float Exposure = FMath::Clamp(0.5f + float(FVector::DotProduct(FromBody.GetSafeNormal(), Flow)), 0.f, 1.f);
+		const bool bBeside = ScreenSideways.IsNearlyZero() || FMath::Abs(FVector::DotProduct(FromBody, ScreenSideways)) >= Placement.MinSideOffset;
+		ExtremityWeights[Index] = Mesh && bBeside ? Extremity.Accent * Exposure : 0.f;
+	}
+	// An extremity for a new line (none just used it, it shows), by weight.
+	auto PickExtremity = [&]()
 	{
 		float Total = 0.f;
-		for (const FPart& Part : Parts)
+		auto Chance = [&](int32 Index)
 		{
-			Total += Chance(Part);
+			return ExtremityLastLines.IsValidIndex(Index) && Now - ExtremityLastLines[Index] >= Placement.ExtremityInterval && IsInView(ExtremityLocations[Index]) ? ExtremityWeights[Index] : 0.f;
+		};
+		for (int32 Index = 0; Index < Extremities.Num(); ++Index)
+		{
+			Total += Chance(Index);
 		}
 		float Left = FMath::FRand() * Total;
-		int32 Chosen = INDEX_NONE;
-		for (int32 Index = 0; Index < Parts.Num() && (Left > 0.f || Chosen == INDEX_NONE); ++Index)
+		for (int32 Index = 0; Index < Extremities.Num() && Total > 0.f; ++Index)
 		{
-			const float PartChance = Chance(Parts[Index]);
-			if (PartChance > 0.f)
+			Left -= Chance(Index);
+			if (Left <= 0.f && Chance(Index) > 0.f)
 			{
-				Chosen = Index;
-				Left -= PartChance;
+				return Index;
 			}
 		}
-		return Chosen;
+		return int32(INDEX_NONE);
 	};
-	auto StartStroke = [&](FPart& Part)
+
+	// A place for a new line: seen at its full length, from where the camera (following the body) will be by then, it
+	// must show, look long enough and not be hidden by the ground or the sea. All lines lie along the air's motion past the
+	// body and drift along it too, so that they all slide along themselves.
+	auto PlaceLine = [&](FLine& Line)
 	{
-		if (Part.NumNew++ == 0)
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		if (!PC)
 		{
-			Part.Life = Life * FMath::FRandRange(0.7f, 1.3f);
+			return false;
 		}
-		FLiveStroke& Live = LiveStrokes.AddDefaulted_GetRef();
-		Live.Origin = Part.Center;
-		Live.HeadVelocity = -StreamRate * Part.Rel;
-		Live.Drift = Drift;
-		Live.Carry = Part.Carry;
-		Live.Birth = Now;
-		Live.Life = Part.Life;
-		Live.Lag = FMath::Min(PathTimeOf(Part.Rel) / StreamRate, 0.5f * Part.Life);
+		const float Length = Style.Length * FMath::FRandRange(0.7f, 1.3f);
+		const float Lag = FMath::Clamp(Length / (FMath::Max(Look.Stream, 0.05f) * AirSpeed), Look.MinGrowTime, FMath::Max(Look.MaxGrowTime, Look.MinGrowTime));
+		const float HeadSpeed = Length / Lag;
+		const FVector CameraTravel = Velocity * Lag;
+		const FVector Way = -Flow;
+		const FVector Drift = AirWind + AirVelocity * Placement.Carry;
+		for (int32 Try = 0; Try < PlacementTries; ++Try)
+		{
+			FVector Base = FVector::ZeroVector;
+			const int32 Picked = FMath::FRand() < Placement.ExtremityShare ? PickExtremity() : int32(INDEX_NONE);
+			if (Picked != INDEX_NONE)
+			{
+				Base = ExtremityLocations[Picked];
+			}
+			else
+			{
+				const float Angle = FMath::FRandRange(0.f, UE_TWO_PI);
+				const FVector Offset = FMath::Cos(Angle) * Perp1 + FMath::Sin(Angle) * Perp2;
+				if (!CameraSide.IsNearlyZero() && FMath::Abs(FVector::DotProduct(Offset, CameraSide)) > CosWedge)
+				{
+					continue;
+				}
+				Base = BodyCenter + Offset * FMath::FRandRange(Placement.InnerRadius, FMath::Max(Placement.OuterRadius, Placement.InnerRadius)) + Flow * FMath::FRandRange(Placement.StartAheadMin, Placement.StartAheadMax);
+			}
+			const FVector HeadVelocity = Way * HeadSpeed;
+			const FVector Tail = Base + Drift * Lag;
+			const FVector Head = Tail + HeadVelocity * Lag;
+			const FVector Middle = 0.5 * (Head + Tail);
+			if (FVector::Dist(Middle, CameraLocation + CameraTravel) < Placement.CameraClearance)
+			{
+				continue;
+			}
+			FVector2D HeadScreen, TailScreen;
+			if (!IsInView(Middle - CameraTravel)
+				|| !PC->ProjectWorldLocationToScreen(Head - CameraTravel, HeadScreen)
+				|| !PC->ProjectWorldLocationToScreen(Tail - CameraTravel, TailScreen)
+				|| FVector2D::Distance(HeadScreen, TailScreen) < Placement.MinScreenLength * ViewportWidth)
+			{
+				continue;
+			}
+			float SeaZ = 0.f;
+			if (ULBAFlightMovementComponent::FindWaterSurface(GetWorld(), Middle, SeaZ) && Middle.Z < SeaZ)
+			{
+				continue;
+			}
+			FCollisionQueryParams Query(SCENE_QUERY_STAT(LBAAirflowLine), false, Owner);
+			if (GetWorld()->LineTraceTestByObjectType(CameraLocation + CameraTravel, Middle, FCollisionObjectQueryParams(ECC_WorldStatic), Query))
+			{
+				continue;
+			}
+
+			Line.Base = Base;
+			Line.HeadVelocity = HeadVelocity;
+			Line.Drift = Drift;
+			Line.Birth = Now;
+			if (Picked != INDEX_NONE)
+			{
+				ExtremityLastLines[Picked] = Now;
+			}
+			Line.Lag = Lag;
+			Line.Life = (2.f + Look.Slide) * Lag;
+			Line.Width = Style.Width * FMath::FRandRange(0.7f, 1.3f);
+			// Across the line and the view, so that bow and curl show, towards the body's way: all the lines close in behind
+			// the body, like its wake.
+			const FVector Cross = FVector::CrossProduct(Way, (CameraLocation + CameraTravel - Middle).GetSafeNormal());
+			Line.Across = Cross.IsNearlyZero() ? Perp1 : Cross.GetSafeNormal();
+			if (FVector::DotProduct(Line.Across, Base - BodyCenter) > 0.0)
+			{
+				Line.Across = -Line.Across;
+			}
+			// The head's run bends like the body's path (the head covers that path's time HeadSpeed / AirSpeed times
+			// as fast) and bows a little, at most MaxCurve over the run.
+			const float RunTime = (1.f + Look.Slide) * Lag;
+			const FVector PathAcceleration = SmoothedAcceleration - FVector::DotProduct(SmoothedAcceleration, Flow) * Flow;
+			const FVector PathBend = Look.Curvature * PathAcceleration * FMath::Square(HeadSpeed / AirSpeed);
+			const FVector Bow = Line.Across * FMath::DegreesToRadians(Look.BowAngle * FMath::FRandRange(0.5f, 1.5f)) * HeadSpeed / RunTime;
+			Line.Bend = (PathBend + Bow).GetClampedToMaxSize(FMath::DegreesToRadians(Look.MaxCurve) * HeadSpeed / RunTime);
+			// No curl seen edge on, where the line runs towards or away from the camera: it would look like a kink.
+			if (Cross.Size() > 0.35 && FMath::FRand() < Style.HookChance)
+			{
+				Line.HookRadius = Style.HookSize * Length * FMath::FRandRange(0.7f, 1.3f);
+				const float HookLength = FMath::DegreesToRadians(Look.HookTurn) * Line.HookRadius * (1.f - 0.5f * HookTightening);
+				Line.HookTime = FMath::Min(HookLength / HeadSpeed, 0.6f * RunTime);
+			}
+			return true;
+		}
+		return false;
+	};
+
+	// The lines due, never more than MaxStrokes on screen at once (the ones the camera left behind no longer count) and
+	// no backlog while at the cap. While the body moves at all, at least MinStrokes are on screen.
+	LiveLines.RemoveAll([this, Now](const FLine& Line) { return !IsOnScreen(Line, Now); });
+	TArray<int32, TInlineAllocator<16>> SpawnCounts;
+	SpawnCounts.SetNumZeroed(Strokes.Num());
+	const int32 Points = FMath::Clamp(Look.PointsPerStroke, 3, 64);
+	auto StartLine = [&]()
+	{
+		FLine Line;
+		const int32 Slot = NextSlot % Strokes.Num();
+		if (SpawnCounts[Slot] > 0 || !PlaceLine(Line))
+		{
+			return false;
+		}
+		NextSlot = (Slot + 1) % Strokes.Num();
+		SpawnCounts[Slot] = Points;
+		UNiagaraComponent* Stroke = Strokes[Slot];
+		Stroke->SetVariablePosition(Param::Base, Line.Base);
+		Stroke->SetVariableVec3(Param::HeadVelocity, Line.HeadVelocity);
+		Stroke->SetVariableVec3(Param::Bend, Line.Bend);
+		Stroke->SetVariableVec3(Param::Drift, Line.Drift);
+		Stroke->SetVariableVec3(Param::Across, Line.Across);
+		Stroke->SetVariableFloat(Param::Life, Line.Life);
+		Stroke->SetVariableFloat(Param::Lag, Line.Lag);
+		Stroke->SetVariableFloat(Param::HookRadius, Line.HookRadius);
+		Stroke->SetVariableFloat(Param::HookTime, Line.HookTime);
+		Stroke->SetVariableFloat(Param::Width, Line.Width);
+		Stroke->SetVariableFloat(Param::Visibility, Style.Opacity * OpacityScale);
+		Stroke->SetVariableFloat(Param::FadeIn, Look.FadeIn);
+#if ENABLE_DRAW_DEBUG
+		if (Debug >= 2)
+		{
+			DrawDebugLine(GetWorld(), Line.Base, Line.Base + Line.HeadVelocity * Line.Lag, FColor::Cyan, false, Line.Life);
+		}
+#endif
+		LiveLines.Add(Line);
+		return true;
 	};
 	if (bOn && bMoving)
 	{
-		const int32 Fewest = FMath::Min(MinStrokes, MaxStrokes);
-		while (LiveStrokes.Num() < Fewest)
+		const int32 Fewest = FMath::Min(Look.MinStrokes, Look.MaxStrokes);
+		while (LiveLines.Num() < Fewest && StartLine())
 		{
-			int32 Chosen = Pick([this](const FPart& Part) { return Part.NumNew == 0 && IsInView(Part.Center) ? Part.Weight : 0.f; });
-			if (Chosen == INDEX_NONE)
-			{
-				Chosen = Pick([this](const FPart& Part) { return IsInView(Part.Center) ? Part.Weight : 0.f; });
-			}
-			if (Chosen == INDEX_NONE)
-			{
-				break;
-			}
-			StartStroke(Parts[Chosen]);
 		}
-		PendingStrokes += TotalRate * DeltaTime;
-		while (PendingStrokes >= 1.f && LiveStrokes.Num() < MaxStrokes)
+		PendingStrokes += LineRate * DeltaTime;
+		while (PendingStrokes >= 1.f && LiveLines.Num() < Look.MaxStrokes && StartLine())
 		{
-			const int32 Chosen = Pick([](const FPart& Part) { return Part.Rate; });
-			if (Chosen == INDEX_NONE)
-			{
-				break;
-			}
-			StartStroke(Parts[Chosen]);
 			PendingStrokes -= 1.f;
 		}
 		PendingStrokes = FMath::Min(PendingStrokes, 1.f);
@@ -420,79 +450,30 @@ void ULBAAirflowComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		PendingStrokes = 0.f;
 	}
 
-	FString PartRates;
-	for (int32 Index = 0; Index < Parts.Num(); ++Index)
+	for (int32 Slot = 0; Slot < Strokes.Num(); ++Slot)
 	{
-		UNiagaraComponent* Stroke = Strokes[Index];
-		if (!Stroke || !Sources.IsValidIndex(Index))
+		UNiagaraComponent* Stroke = Strokes[Slot];
+		if (!Stroke)
 		{
 			continue;
 		}
-		const FLBAAirflowSource& Source = Sources[Index];
-		const FPart& Part = Parts[Index];
-		const FVector& Rel = Part.Rel;
-		const float PathTime = PathTimeOf(Rel);
-		// The path bends with the acceleration, at most MaxCurve over the whole run of a stroke's head: the path turns
-		// by about |bend| s / |Rel| at s seconds back, and the head runs back Stream x Life seconds of it.
-		const float RunTime = FMath::Max(StreamRate * Life, PathTime);
-		const float MaxBend = FMath::DegreesToRadians(MaxCurve) * Rel.Size() / RunTime;
-		const FVector PathBend = (Curvature * Part.PartAcceleration).GetClampedToMaxSize(MaxBend);
-
-		// The frame across the flow, for where strokes start around the part and which way they ripple.
-		const FVector Direction = Rel.Size() > 1.0 ? Rel.GetSafeNormal() : Owner->GetActorForwardVector();
-		FVector Perp1 = FVector::CrossProduct(Direction, FVector::UpVector).GetSafeNormal();
-		if (Perp1.IsNearlyZero())
-		{
-			Perp1 = Owner->GetActorRightVector();
-		}
-		const FVector Perp2 = FVector::CrossProduct(Perp1, Direction).GetSafeNormal();
-
-		Stroke->SetWorldLocation(Part.Center);
-		Stroke->SetVariableInt(Param::SpawnCount, Part.NumNew * Points);
+		Stroke->SetVariableInt(Param::SpawnCount, SpawnCounts[Slot]);
 		Stroke->SetVariableInt(Param::Points, Points);
-		Stroke->SetVariableVec3(Param::Extent, (Part.End - Part.Start) * 0.5);
-		Stroke->SetVariableFloat(Param::Spread, Source.Spread);
-		Stroke->SetVariableVec3(Param::Perp1, Perp1);
-		Stroke->SetVariableVec3(Param::Perp2, Perp2);
-		Stroke->SetVariableVec3(Param::Rel, Rel);
-		Stroke->SetVariableVec3(Param::Bend, PathBend);
-		Stroke->SetVariableFloat(Param::StrokeTime, PathTime);
-		Stroke->SetVariableFloat(Param::Life, Part.NumNew > 0 ? Part.Life : Life);
-		Stroke->SetVariableVec3(Param::Drag, Part.Carry);
-		Stroke->SetVariableVec3(Param::Drift, Drift);
-		Stroke->SetVariableFloat(Param::WakeTime, WakeTime);
-		Stroke->SetVariableFloat(Param::Turbulence, Source.Turbulence * Ripple);
-		Stroke->SetVariableFloat(Param::Visibility, Visibility);
-		Stroke->SetVariableLinearColor(Param::Color, Color);
-		Stroke->SetVariableFloat(Param::Width, Style.Width);
-		Stroke->SetVariableFloat(Param::MinPixels, MinPixels);
+		Stroke->SetVariableFloat(Param::HookTurn, FMath::DegreesToRadians(Look.HookTurn));
+		Stroke->SetVariableLinearColor(Param::Color, Look.Color);
+		Stroke->SetVariableFloat(Param::TailOpacity, Look.TailOpacity);
+		Stroke->SetVariableFloat(Param::MinPixels, Look.MinPixels);
 		Stroke->SetVariableFloat(Param::PixelAngle, PixelAngle);
+		Stroke->SetVariableFloat(Param::MaxAngle, Look.MaxScreenWidth * PixelAngle * ViewportWidth);
 		Stroke->SetVariablePosition(Param::CameraPosition, CameraLocation);
-		Stroke->SetVariableFloat(Param::NearFade, NearFade);
-		Stroke->SetVariableFloat(Param::Stream, StreamRate);
-		Stroke->SetVariableFloat(Param::LoopChance, FMath::Clamp(Style.LoopChance * Source.Accent, 0.f, 1.f));
-		Stroke->SetVariableFloat(Param::LoopSize, Style.LoopSize);
-		Stroke->SetVariableFloat(Param::FadeIn, FMath::Clamp(FadeInDistance / FMath::Max((AirVelocity - Part.Carry).Size(), 1.0), 0.03f, 0.25f));
-
-#if ENABLE_DRAW_DEBUG
-		if (Debug >= 1)
-		{
-			const FVector Local = Owner->GetActorTransform().InverseTransformPosition(Part.Center);
-			PartRates += FString::Printf(TEXT(" %s(%.0f %.0f %.0f)x%.2f=%.1f"), *Source.Bone.ToString(), Local.X, Local.Y, Local.Z, Part.Trailing, Part.Rate);
-		}
-		if (Debug >= 2)
-		{
-			DrawDebugLine(GetWorld(), Part.Start, Part.End, FColor::Yellow);
-			DrawDebugLine(GetWorld(), Part.Center, Part.Center + Rel * 0.05f, Part.Rate > 0.f ? FColor::Cyan : FColor::Red);
-		}
-#endif
+		Stroke->SetVariableFloat(Param::NearFade, Look.NearFade);
 	}
 
 #if ENABLE_DRAW_DEBUG
 	if (Debug >= 1 && GFrameCounter % 15 == 0)
 	{
-		UE_LOG(LogLBA2, Display, TEXT("Airflow %s: air speed %.1f m/s, wind %.1f m/s, lift %.0f N (%.2f g), downwash %.2f m/s, %.1f strokes/s, %d on screen, boldness %.2f, parts (actor space, trailing x rate):%s"),
-			*Owner->GetName(), SpeedM, AirWind.Size() / 100.0, LiftN, LiftN / (Mass * GravityAcceleration / 100.0), Downwash / 100.0, TotalRate, LiveStrokes.Num(), Boldness, *PartRates);
+		UE_LOG(LogLBA2, Display, TEXT("Airflow %s: air speed %.1f m/s, wind %.1f m/s, %.1f lines/s, %d on screen, boldness %.2f"),
+			*Owner->GetName(), AirSpeed / 100.f, AirWind.Size() / 100.0, LineRate, LiveLines.Num(), Boldness);
 	}
 #endif
 }

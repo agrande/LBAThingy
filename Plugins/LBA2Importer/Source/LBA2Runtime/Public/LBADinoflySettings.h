@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Engine/DeveloperSettings.h"
+#include "LBAAirflowComponent.h"
 #include "LBADinoflySettings.generated.h"
 
 /**
@@ -272,6 +273,16 @@ public:
 	/** Seconds between the death and the "You died" screen. */
 	UPROPERTY(Config, EditAnywhere, Category = "Pain", meta = (ClampMin = "0", Units = "s"))
 	float RetryDelay = 2.5f;
+
+	// Wind lines ---------------------------------------------------------------------------------------------------
+
+	/** The thin comic lines marking the air around the Dinofly (ULBAAirflowComponent): how they look and how many. */
+	UPROPERTY(Config, EditAnywhere, Category = "Wind Lines", meta = (ShowOnlyInnerProperties))
+	FLBAAirflowLook WindLines;
+
+	/** Where they start: on the body's extremities, or in the air around it. */
+	UPROPERTY(Config, EditAnywhere, Category = "Wind Lines: Placement", meta = (ShowOnlyInnerProperties))
+	FLBAAirflowPlacement WindLinePlacement;
 
 	// Derived (read only) ----------------------------------------------------------------------------------------
 

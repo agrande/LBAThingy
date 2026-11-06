@@ -142,44 +142,22 @@ ALBADinofly::ALBADinofly()
 	Flight = CreateDefaultSubobject<ULBAFlightMovementComponent>(TEXT("Flight"));
 	Flight->SetUpdatedComponent(Collision);
 
-	// Airflow strokes from the hotspots where the flow breaks away from the body. Body 166's skeleton (bone_N = vertex
-	// group N): bone_02 body, bone_03-07 neck to head, bone_08-11 and bone_12-15 legs, bone_16-18 right wing and
-	// bone_19-21 left wing (tips 280 out and 680 back from bone_18/21), bone_22-24 tail (tip 480 back), bone_25-26
-	// Twinsen. Offsets in bone space at the 0.125 world scale (LBA x, z, y).
+	// Wind lines from the extremities the air hits. Body 166's skeleton (bone_N = vertex
+	// group N): bone_07 head, bone_11 and bone_15 feet, bone_16-18 right wing and bone_19-21 left wing (tips 280 out and
+	// 680 back from bone_18/21), bone_24 tail (tip 480 back), bone_26 Twinsen's head. Offsets in bone space at the 0.125
+	// world scale (LBA x, z, y).
 	Airflow = CreateDefaultSubobject<ULBAAirflowComponent>(TEXT("Airflow"));
-	{
-		auto Hotspot = [](const TCHAR* Bone, const FVector& Offset, float Spread, float Accent, float Wake, float Turbulence, float Follow = 0.f, float MinShedding = 0.f)
-		{
-			FLBAAirflowSource Source;
-			Source.Bone = Bone;
-			Source.Offset = Offset;
-			Source.Spread = Spread;
-			Source.Accent = Accent;
-			Source.Wake = Wake;
-			Source.Turbulence = Turbulence;
-			Source.Follow = Follow;
-			Source.MinShedding = MinShedding;
-			return Source;
-		};
-		const FVector Zero = FVector::ZeroVector;
-		const FVector RightTip(35.0, -85.0, 0.0);
-		const FVector LeftTip(-35.0, -85.0, 0.0);
-		Airflow->Sources = {
-			// Wingtips, where the vortices start whichever way they swing, and the wings' middle (flapping steers their
-			// strokes).
-			Hotspot(TEXT("bone_18"), RightTip, 6.f, 1.3f, 0.4f, 10.f, 0.5f, 0.5f),
-			Hotspot(TEXT("bone_21"), LeftTip, 6.f, 1.3f, 0.4f, 10.f, 0.5f, 0.5f),
-			Hotspot(TEXT("bone_17"), Zero, 12.f, 0.6f, 0.45f, 5.f, 0.3f),
-			Hotspot(TEXT("bone_20"), Zero, 12.f, 0.6f, 0.45f, 5.f, 0.3f),
-			// The tail tip, the feet and the rider: blunt ends the flow tears off.
-			Hotspot(TEXT("bone_24"), FVector(0.0, -60.0, -2.5), 6.f, 1.2f, 0.5f, 12.f),
-			Hotspot(TEXT("bone_11"), Zero, 8.f, 0.8f, 0.5f, 8.f),
-			Hotspot(TEXT("bone_15"), Zero, 8.f, 0.8f, 0.5f, 8.f),
-			Hotspot(TEXT("bone_26"), Zero, 10.f, 0.8f, 0.5f, 8.f),
-			// The head, for climbs, dives and flying backwards.
-			Hotspot(TEXT("bone_07"), Zero, 10.f, 0.6f, 0.5f, 4.f),
-		};
-	}
+	Airflow->Extremities = {
+		{ TEXT("bone_18"), FVector(35.0, -85.0, 0.0), 1.3f },
+		{ TEXT("bone_21"), FVector(-35.0, -85.0, 0.0), 1.3f },
+		{ TEXT("bone_17"), FVector::ZeroVector, 0.6f },
+		{ TEXT("bone_20"), FVector::ZeroVector, 0.6f },
+		{ TEXT("bone_07"), FVector::ZeroVector, 1.2f },
+		{ TEXT("bone_26"), FVector::ZeroVector, 0.8f },
+		{ TEXT("bone_11"), FVector::ZeroVector, 0.8f },
+		{ TEXT("bone_15"), FVector::ZeroVector, 0.8f },
+		{ TEXT("bone_24"), FVector(0.0, -60.0, -2.5), 1.f },
+	};
 
 	HitPoints = CreateDefaultSubobject<ULBAHitPointsComponent>(TEXT("HitPoints"));
 
@@ -498,6 +476,8 @@ void ALBADinofly::Tick(float DeltaSeconds)
 	UpdateAnimation(DeltaSeconds);
 	UpdateProceduralWings(DeltaSeconds);
 	UpdateCamera(DeltaSeconds);
+	Airflow->Look = ULBADinoflySettings::Get().WindLines;
+	Airflow->Placement = ULBADinoflySettings::Get().WindLinePlacement;
 	// No wake on the ground or the water.
 	Airflow->SetEmitting(!Flight->IsLanded());
 	DrawDebug();

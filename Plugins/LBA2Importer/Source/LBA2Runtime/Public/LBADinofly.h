@@ -204,7 +204,7 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULBAHitPointsComponent> HitPoints;
 
-	/** Airflow strokes around the body (hotspots, look and physics in its details). */
+	/** Wind lines around the body (settings: Project Settings > Game > LBA2 Dinofly). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ULBAAirflowComponent> Airflow;
 

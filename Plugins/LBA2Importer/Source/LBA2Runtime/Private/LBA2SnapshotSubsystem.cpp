@@ -781,6 +781,27 @@ bool ULBA2SnapshotSubsystem::TickDinofly(UWorld* World, float DeltaTime)
 		}
 	}
 
+	// -LBA2ShotBurst=S adds a shot every S seconds during the fast flying steps, to see things that move in stills.
+	static float BurstInterval = -1.f;
+	if (BurstInterval < 0.f)
+	{
+		BurstInterval = 0.f;
+		FParse::Value(FCommandLine::Get(), TEXT("LBA2ShotBurst="), BurstInterval);
+	}
+	if (bStepStart)
+	{
+		NextBurst = Elapsed;
+		BurstIndex = 0;
+	}
+	if (BurstInterval > 0.f && Elapsed >= NextBurst
+		&& (FCString::Strcmp(Step.Name, TEXT("pump_climb")) == 0 || FCString::Strcmp(Step.Name, TEXT("forward_cruise")) == 0
+			|| FCString::Strcmp(Step.Name, TEXT("turn_right_cruise")) == 0 || FCString::Strcmp(Step.Name, TEXT("dive_long")) == 0
+			|| FCString::Strcmp(Step.Name, TEXT("fall_hands_off")) == 0))
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Burst_%02d_%s_%03d.png"), HeroStep, Step.Name, BurstIndex++), false, false);
+		NextBurst += BurstInterval;
+	}
+
 	if (Elapsed - HeroStepStart >= Step.Duration)
 	{
 		const FString File = ShotDirectory / FString::Printf(TEXT("Dinofly_%02d_%s.png"), HeroStep, Step.Name);
