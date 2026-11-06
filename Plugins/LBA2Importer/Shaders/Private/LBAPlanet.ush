@@ -24,6 +24,14 @@ float3 LBAPlanetBendOffset(float3 FromView, float3 View, float4 Bend)
 	{
 		return 0.0;
 	}
+#if !SHADOW_DEPTH_SHADER
+	// Overhead captures of the flat world: the water info texture must see the ground where it is, not sunk for wherever
+	// the camera was (its depths make the sea's waves die out at the shores, and stop it there).
+	if (IsOrthoProjection())
+	{
+		return 0.0;
+	}
+#endif
 	const float2 Along = FromView.xy / Distance;
 	const float Height = View.z + FromView.z - Bend.z;
 	// Past half way around, everything ends at the far side of the planet.

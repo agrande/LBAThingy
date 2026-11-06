@@ -71,6 +71,12 @@ namespace
 	constexpr int32 MaxLevelWaterResolution = 2048;
 	constexpr int32 MaxGlobeWaterResolution = 2048;
 
+	/**
+	 * Water info texels the globe sea's data goes on inside its coastlines. The coastline is less than a texel inside the
+	 * land there, and "no water" filtered into the texels around it would stop the sea short of the shore.
+	 */
+	constexpr double GlobeDilationTexels = 2.0;
+
 	/** Gerstner wave generator settings of a sea mood (cm, degrees). */
 	struct FWaves
 	{
@@ -333,10 +339,12 @@ namespace
 	/**
 	 * An ocean in Zone, its coastline left dry: filling the zone from Location, or only Cell when it is valid. Without a
 	 * coastline, a 2 m loop around Location (a point on land) is the only dry place. Location, Coastline and Cell are
-	 * in cm, in the world turned by Yaw (degrees), and so is the ocean.
+	 * in cm, in the world turned by Yaw (degrees), and so is the ocean. Its water info goes on Dilation (cm) inside the
+	 * coastline, under the ground.
 	 */
 	void SpawnOcean(FLBAImportContext& Context, UWorld* World, AWaterZone* Zone, const FVector2D& Location, const TArray<FVector2D>& Coastline,
-		const FBox2D& Cell, UMaterialInterface* Material, UWaterWavesAsset* WavesAsset, const FString& Label, const FName& Folder, double Yaw = 0.0)
+		const FBox2D& Cell, UMaterialInterface* Material, UWaterWavesAsset* WavesAsset, const FString& Label, const FName& Folder, double Yaw = 0.0,
+		double Dilation = 0.0)
 	{
 		// Water bodies build their render data (the meshes the water zone draws and renders into its water info) only
 		// when the application can render, and save it with the level. Import commandlets can't, so they would save an
@@ -376,9 +384,9 @@ namespace
 		Spline->UpdateSpline();
 		Spline->K2_SynchronizeAndBroadcastDataChange();
 		Body->SetWaterMaterial(Material);
-		// The water info texture holds water exactly up to the coastline (Unreal grows it 20 m inland by default), so the
-		// clipped water material stops there.
-		Body->ShapeDilation = 0.f;
+		// The water info texture holds water only as far as asked past the coastline (Unreal grows it 20 m inland by
+		// default, flooding low land), so the clipped water material stops there. Unreal offsets by half the property.
+		Body->ShapeDilation = float(2.0 * Dilation);
 		if (WavesAsset)
 		{
 			UWaterWavesAssetReference* Waves = NewObject<UWaterWavesAssetReference>(Ocean, TEXT("OceanWaterWaves"));
@@ -457,6 +465,8 @@ void LBAWater::SpawnGlobeSea(FLBAImportContext& Context, UWorld* World, const FL
 	{
 		return;
 	}
+	const double ZoneSize = Settings.Bounds.GetSize().GetMax();
+	const double Dilation = GlobeDilationTexels * ZoneSize / GetZoneResolution(ZoneSize, MaxGlobeWaterResolution);
 	for (const FLBAGlobeSeaSettings::FIsland& Island : Settings.Islands)
 	{
 		if (!Island.Cell.bIsValid)
@@ -470,7 +480,7 @@ void LBAWater::SpawnGlobeSea(FLBAImportContext& Context, UWorld* World, const FL
 			Coastline.Add(Point.GetRotated(-Settings.CellYaw));
 		}
 		SpawnOcean(Context, World, Zone, Island.Cell.Min + FVector2D(200.0), Coastline, Island.Cell, Settings.Material, Settings.Waves,
-			TEXT("Ocean_") + Island.Name, Folder, Settings.CellYaw);
+			TEXT("Ocean_") + Island.Name, Folder, Settings.CellYaw, Dilation);
 	}
 	Zone->MarkForRebuild(EWaterZoneRebuildFlags::All);
 	UE_LOG(LogLBA2, Display, TEXT("LBA2 globe sea: zone %.0f x %.0f m around (%.0f, %.0f) m, %d texels across, %d islands"),

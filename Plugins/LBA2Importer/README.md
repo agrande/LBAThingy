@@ -549,7 +549,9 @@ How it holds together (the world is flat and still; only the view is round):
   from the islands (out a quarter way around the planet: 1.5 to 1.7 km across for Twinsun, 0.8 m per
   water info texel: 2048 texels across, as the islands' levels at most; 4096 overran an 8 GB card's video memory) and an ocean per island, each covering its island's cell of the zone (straight cuts between the
   islands' land) and keeping its island's coastline dry, so low land inside the coasts stays dry (the desert's beaches
-  no longer leak). The oceans take the opened island's ocean material and waves. The water material (`M_LBA_Water`,
+  no longer leak). Their water info goes on two texels inside the coastlines (under the ground), so the coarser texels
+  don't stop the sea short of the shores. The water info's capture of the ground is orthographic, which the bend leaves
+  flat (`LBAPlanetBendOffset`): the shore depths, and so the waves dying out and the shallows, don't depend on the camera. The oceans take the opened island's ocean material and waves. The water material (`M_LBA_Water`,
   Unreal's ocean material clipped at the coast) bends like the generated masters, its normals turned with the bend.
   The zone has no far mesh (a few large flat tiles can't bend); beyond it, the planet's sea disc (`M_LBA_PlanetSea`,
   rings kept under the camera, bent by its material) lies 10 m lower, out of sight: far from the camera the water
