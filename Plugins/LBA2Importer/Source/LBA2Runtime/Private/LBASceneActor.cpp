@@ -38,6 +38,9 @@ ALBASceneActor::ALBASceneActor()
 	GetMesh()->SetRenderCustomDepth(true);
 	GetMesh()->SetCustomDepthStencilValue(LBA::MovingObjectStencil);
 	GetMesh()->SetLightingChannels(true, true, false);
+	// Animated only on screen, less often when small there.
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
+	GetMesh()->bEnableUpdateRateOptimizations = true;
 
 	CollisionBox = CreateDefaultSubobject<UBoxComponent>(TEXT("CollisionBox"));
 	CollisionBox->SetupAttachment(GetCapsuleComponent());
@@ -74,6 +77,13 @@ void ALBASceneActor::BeginPlay()
 	// Without collision a falling object would drop through the floor.
 	const bool bSolid = GetActorEnableCollision() && GetCapsuleComponent()->IsCollisionEnabled();
 	GetCharacterMovement()->SetMovementMode(bFallable && bSolid ? MOVE_Walking : MOVE_None);
+	UpdateTicking();
+	if (!IsHidden() && GetMesh()->GetSkeletalMeshAsset())
+	{
+		// Posed once: off screen it isn't animated, and would come into view in its reference pose.
+		GetMesh()->TickAnimation(0.f, false);
+		GetMesh()->RefreshBoneTransforms();
+	}
 
 	if (IsEnemy())
 	{
@@ -83,6 +93,28 @@ void ALBASceneActor::BeginPlay()
 		HitPoints->OnDeath.AddDynamic(this, &ALBASceneActor::HandleDeath);
 		HitPoints->RegisterComponent();
 	}
+}
+
+void ALBASceneActor::SetActorHiddenInGame(bool bNewHidden)
+{
+	Super::SetActorHiddenInGame(bNewHidden);
+	UpdateTicking();
+}
+
+void ALBASceneActor::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+	UpdateTicking();
+}
+
+void ALBASceneActor::UpdateTicking()
+{
+	if (!HasActorBegunPlay() && !IsActorBeginningPlay())
+	{
+		return;
+	}
+	GetMesh()->SetComponentTickEnabled(!IsHidden());
+	GetCharacterMovement()->SetComponentTickEnabled(!IsHidden() && GetCharacterMovement()->MovementMode != MOVE_None);
 }
 
 bool ALBASceneActor::IsGameplayStandIn() const

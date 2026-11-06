@@ -97,6 +97,8 @@ public:
 	float GetOriginHeight() const { return OriginHeight; }
 
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void SetActorHiddenInGame(bool bNewHidden) override;
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -114,6 +116,12 @@ private:
 	void ApplyBodyLights(const FLBAEntityBody* Body);
 
 	void PlayStartAnimation();
+
+	/**
+	 * Hidden objects don't tick, nor does the movement of objects that don't move (MOVE_None): a planet has a few hundred
+	 * scene objects, most standing still.
+	 */
+	void UpdateTicking();
 
 	UFUNCTION()
 	void HandleDeath();
