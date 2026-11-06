@@ -54,18 +54,24 @@ namespace
 	// 0.8-0.94 (walls under eaves 0.94, plants 0.8).
 	TAutoConsoleVariable<float> CVarGlobeUnoccludedSkyLight(TEXT("lba.Globe.UnoccludedSkyLight"), 0.85f,
 		TEXT("Without Lumen, the sky light's intensity relative to the planet's: nothing shadows it but screen space AO, so it is turned down to give the light Lumen gave."));
-	// Measured on Citabau against Lumen: the far sea matches at 0.75 (horizon (110, 185, 229) against (105, 178, 222)).
-	TAutoConsoleVariable<float> CVarGlobeSeaSkyBelow(TEXT("lba.Globe.SeaSkyBelow"), 0.75f,
+	// Lower than the 0.75 that matched Lumen on the far sea: the haze makes the sky it reflects much paler near the horizon.
+	TAutoConsoleVariable<float> CVarGlobeSeaSkyBelow(TEXT("lba.Globe.SeaSkyBelow"), 0.3f,
 		TEXT("Without Lumen, how much of the sky the sea reflects below the flat horizon (the sky light is black there): 0 none."));
 	TAutoConsoleVariable<int32> CVarGlobeShowClouds(TEXT("lba.Globe.ShowClouds"), 0,
 		TEXT("1: the opened island's clouds (Unreal's cloud material only forms them kilometers up: a far wallpaper around so small a planet)."));
-	// Measured against the flat Citabau level with its clouds: pier (119,132,132) against (123,129,125), meadow (58,95,63)
+	// Measured against the flat Citabau level with its clouds: pier (122,129,128) against (123,129,125), meadow (61,92,60)
 	// against (58,90,57).
 	TAutoConsoleVariable<float> CVarGlobeClearSkyGain(TEXT("lba.Globe.ClearSkyGain"), 1.6f,
 		TEXT("Without clouds, how much brighter the sky is: their share of the land's light (the sky light captures the sky) comes from it instead."));
 	/** Without clouds the sky light is all sky blue: these give the land what their white gave it (colors can't exceed 1). */
 	const FLinearColor ClearSkyLightColor(1.f, 0.9f, 0.7f);
-	constexpr float ClearSkyLightGain = 1.15f;
+	constexpr float ClearSkyLightGain = 0.84f;
+	TAutoConsoleVariable<float> CVarGlobeHaze(TEXT("lba.Globe.Haze"), 30.f,
+		TEXT("The haze that pales the sky towards the sea's horizon: how much it scatters at sea level (per km, the atmosphere's Mie scattering scale). 0: none."));
+	TAutoConsoleVariable<float> CVarGlobeHazeHeight(TEXT("lba.Globe.HazeHeight"), 10.f,
+		TEXT("How high the haze goes (m): its density falls by e over this height, so it also sets how far up the sky the pale band reaches."));
+	TAutoConsoleVariable<float> CVarGlobeHazeGlow(TEXT("lba.Globe.HazeGlow"), 0.3f,
+		TEXT("How much the haze gathers around the sun (the atmosphere's Mie anisotropy): 0 evenly around the horizon."));
 	TAutoConsoleVariable<int32> CVarGlobeShowFog(TEXT("lba.Globe.ShowFog"), 0,
 		TEXT("1: the opened island's height fog. It is made for a flat world: below the flat horizon the sky fills with it, and the bend sinks far surfaces deep into it."));
 	TAutoConsoleVariable<int32> CVarGlobeSun(TEXT("lba.Globe.Sun"), 1,
@@ -391,6 +397,16 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 				SkyAtmosphere->TransformMode = ESkyAtmosphereTransformMode::PlanetCenterAtComponentTransform;
 				SkyAtmosphere->SetBottomRadius(float(Radius / 100000.0));
 				SkyAtmosphere->SetAtmosphereHeight(Asset->AtmosphereHeight);
+				// As much air straight up as in the 20 km atmosphere the sky's colors were tuned with: its density hardly
+				// changes over so low a height.
+				const float AirDistribution = SkyAtmosphere->RayleighExponentialDistribution;
+				const auto AirAbove = [AirDistribution](float Height) { return AirDistribution * (1.f - FMath::Exp(-Height / AirDistribution)); };
+				SkyAtmosphere->SetRayleighScatteringScale(SkyAtmosphere->RayleighScatteringScale * AirAbove(20.f) / AirAbove(Asset->AtmosphereHeight));
+				// The haze gets the sky's tint undone (and some more of green and blue, which the grade pushes), so that it ends up pale.
+				const float SkyMin = FMath::Max(SkyAtmosphere->SkyLuminanceFactor.GetMin(), 1e-3f);
+				const FLinearColor Tint = SkyAtmosphere->SkyLuminanceFactor;
+				SkyAtmosphere->SetMieScattering(FLinearColor(SkyMin / FMath::Max(Tint.R, SkyMin), 0.6f * SkyMin / FMath::Max(Tint.G, SkyMin), 0.7f * SkyMin / FMath::Max(Tint.B, SkyMin)));
+				SkyAtmosphere->SetMieAbsorptionScale(0.f);
 				SkyAtmosphere->SetWorldLocation(FVector(0.0, 0.0, SeaLevel - Radius));
 				SkyAtmosphere->MarkRenderStateDirty();
 				Atmosphere = SkyAtmosphere;
@@ -693,6 +709,21 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 	if (USkyAtmosphereComponent* SkyAtmosphere = Atmosphere.Get())
 	{
 		SkyAtmosphere->SetWorldLocation(FVector(View.X, View.Y, SeaLevel - Radius));
+		if (Sky)
+		{
+			// It captures the sky from where it stands: on the atmosphere's planet, near the sea whatever the camera's height,
+			// so that the land's light doesn't change in flight. Far from the camera it would be outside the low atmosphere.
+			Sky->SetWorldLocation(FVector(View.X, View.Y, SeaLevel + 500.0));
+		}
+		const float Haze = CVarGlobeHaze.GetValueOnGameThread();
+		const float HazeHeight = FMath::Max(CVarGlobeHazeHeight.GetValueOnGameThread(), 1.f) / 1000.f;
+		const float HazeGlow = CVarGlobeHazeGlow.GetValueOnGameThread();
+		if (SkyAtmosphere->MieScatteringScale != Haze || SkyAtmosphere->MieExponentialDistribution != HazeHeight || SkyAtmosphere->MieAnisotropy != HazeGlow)
+		{
+			SkyAtmosphere->SetMieScatteringScale(Haze);
+			SkyAtmosphere->SetMieExponentialDistribution(HazeHeight);
+			SkyAtmosphere->SetMieAnisotropy(HazeGlow);
+		}
 	}
 	UpdateSun(bCameraCut);
 

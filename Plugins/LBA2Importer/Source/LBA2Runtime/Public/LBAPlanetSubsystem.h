@@ -51,6 +51,7 @@ class UVolumetricCloudComponent;
  *   lba.Globe.Sun 0           the opened island's fixed sun (to compare)
  *   lba.Globe.ShowClouds 1    the opened island's clouds (to compare)
  *   lba.Globe.ShowFog 1       the opened island's height fog (to compare)
+ *   lba.Globe.Haze 0          no haze paling the sky towards the sea's horizon
  *
  * The bent view is a true sphere with the camera on top, so the sun (a directional light, far away) is where it is seen
  * from the camera's place on the planet: the opened island's sun and character lights turn as the camera travels, lit

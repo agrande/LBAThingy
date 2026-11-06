@@ -158,9 +158,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sea")
 	TSoftObjectPtr<UMaterialParameterCollection> MaterialParameters;
 
-	/** The atmosphere's height above the sea (km). */
+	/**
+	 * The atmosphere's height above the sea (km). Low for the planet's size, or a view crosses as much air towards the
+	 * horizon as straight up, and the sky doesn't pale there.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sky", meta = (ClampMin = "0.1"))
-	float AtmosphereHeight = 20.f;
+	float AtmosphereHeight = 0.5f;
 
 	/**
 	 * The clouds' layer, above the sea (km); 0 keeps the island level's (Unreal's default, 5 km up and 10 km thick).
