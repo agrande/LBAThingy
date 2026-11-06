@@ -13,8 +13,10 @@ class ULevel;
 class ULevelStreaming;
 class ULevelStreamingDynamic;
 class UDirectionalLightComponent;
+class UExponentialHeightFogComponent;
 class USkyAtmosphereComponent;
 class USkyLightComponent;
+class UVolumetricCloudComponent;
 
 /**
  * Globe mode (prototype): an island level opened on its planet (ULBAPlanetAsset). The world is flat and still: the
@@ -47,6 +49,8 @@ class USkyLightComponent;
  *   lba.Globe.Stubs 0         no stub islands for the next level opened
  *   lba.Globe.BentCulling 0   the renderer's own culling, by the flat world (LBAPlanetCulling.h)
  *   lba.Globe.Sun 0           the opened island's fixed sun (to compare)
+ *   lba.Globe.ShowClouds 1    the opened island's clouds (to compare)
+ *   lba.Globe.ShowFog 1       the opened island's height fog (to compare)
  *
  * The bent view is a true sphere with the camera on top, so the sun (a directional light, far away) is where it is seen
  * from the camera's place on the planet: the opened island's sun and character lights turn as the camera travels, lit
@@ -106,6 +110,8 @@ private:
 	void LoadIslands();
 	/** Turns the sun and the character lights to where the sun is seen from the view's place on the planet. */
 	void UpdateSun(bool bCameraCut);
+	/** The opened island has clouds, and they are off (lba.Globe.ShowClouds): the sky has to make up for them. */
+	bool IsSkyClear() const;
 	void DrawDebug() const;
 
 	UPROPERTY(Transient)
@@ -120,6 +126,9 @@ private:
 	/** The other islands' streamed levels, by island. */
 	TArray<TWeakObjectPtr<ULevelStreamingDynamic>> IslandStreams;
 	TWeakObjectPtr<USkyAtmosphereComponent> Atmosphere;
+	/** The opened island's clouds and height fog, which don't suit a small round world (lba.Globe.ShowClouds, ShowFog). */
+	TWeakObjectPtr<UVolumetricCloudComponent> SkyClouds;
+	TWeakObjectPtr<UExponentialHeightFogComponent> HeightFog;
 	/**
 	 * The opened island's sky light, and whether it casts shadows in its level: without Lumen (lba.Globe.Lumen) they
 	 * would be distance field AO, which like Lumen sees the flat world and darkens the bent one.
@@ -128,6 +137,7 @@ private:
 	bool bSkyLightShadows = true;
 	/** Its intensity on the planet (its level's times FLBAPlanetIsland::SkyLightGain), as with Lumen. */
 	float SkyLightIntensity = 1.f;
+	FLinearColor SkyLightColor = FLinearColor::White;
 	/** The opened island's sun and character lights, and what its level gives them. */
 	TWeakObjectPtr<UDirectionalLightComponent> SunLight;
 	TWeakObjectPtr<UDirectionalLightComponent> CharacterLight;

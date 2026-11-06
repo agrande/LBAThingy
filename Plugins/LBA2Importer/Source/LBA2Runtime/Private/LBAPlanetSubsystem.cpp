@@ -57,6 +57,17 @@ namespace
 	// Measured on Citabau against Lumen: the far sea matches at 0.75 (horizon (110, 185, 229) against (105, 178, 222)).
 	TAutoConsoleVariable<float> CVarGlobeSeaSkyBelow(TEXT("lba.Globe.SeaSkyBelow"), 0.75f,
 		TEXT("Without Lumen, how much of the sky the sea reflects below the flat horizon (the sky light is black there): 0 none."));
+	TAutoConsoleVariable<int32> CVarGlobeShowClouds(TEXT("lba.Globe.ShowClouds"), 0,
+		TEXT("1: the opened island's clouds (Unreal's cloud material only forms them kilometers up: a far wallpaper around so small a planet)."));
+	// Measured against the flat Citabau level with its clouds: pier (119,132,132) against (123,129,125), meadow (58,95,63)
+	// against (58,90,57).
+	TAutoConsoleVariable<float> CVarGlobeClearSkyGain(TEXT("lba.Globe.ClearSkyGain"), 1.6f,
+		TEXT("Without clouds, how much brighter the sky is: their share of the land's light (the sky light captures the sky) comes from it instead."));
+	/** Without clouds the sky light is all sky blue: these give the land what their white gave it (colors can't exceed 1). */
+	const FLinearColor ClearSkyLightColor(1.f, 0.9f, 0.7f);
+	constexpr float ClearSkyLightGain = 1.15f;
+	TAutoConsoleVariable<int32> CVarGlobeShowFog(TEXT("lba.Globe.ShowFog"), 0,
+		TEXT("1: the opened island's height fog. It is made for a flat world: below the flat horizon the sky fills with it, and the bend sinks far surfaces deep into it."));
 	TAutoConsoleVariable<int32> CVarGlobeSun(TEXT("lba.Globe.Sun"), 1,
 		TEXT("1: the sun is where it is seen from the camera's place on the planet; 0: the opened island's fixed sun (to compare)."));
 	// Over the sea: above the pole Desert's dunes go flat (84 degrees), this low they keep their relief. On the side that
@@ -412,6 +423,11 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 					Clouds->SetLayerBottomAltitude(Asset->CloudBottom);
 					Clouds->SetLayerHeight(Asset->CloudHeight);
 				}
+				SkyClouds = Clouds;
+			}
+			else if (UExponentialHeightFogComponent* Fog = Cast<UExponentialHeightFogComponent>(Component))
+			{
+				HeightFog = Fog;
 			}
 			else if (USkyLightComponent* Sky = Cast<USkyLightComponent>(Component))
 			{
@@ -420,6 +436,7 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 				SkyLight = Sky;
 				bSkyLightShadows = Sky->CastShadows;
 				SkyLightIntensity = Sky->Intensity;
+				SkyLightColor = FLinearColor(Sky->LightColor);
 			}
 		}
 	}
@@ -650,10 +667,24 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 	{
 		Sky->SetCastShadows(bLumen && bSkyLightShadows);
 	}
-	const float SkyIntensity = SkyLightIntensity * (bLumen ? 1.f : CVarGlobeUnoccludedSkyLight.GetValueOnGameThread());
+	const bool bClearSky = IsSkyClear();
+	const float SkyIntensity = SkyLightIntensity * (bLumen ? 1.f : CVarGlobeUnoccludedSkyLight.GetValueOnGameThread()) * (bClearSky ? ClearSkyLightGain : 1.f);
 	if (Sky && Sky->Intensity != SkyIntensity)
 	{
 		Sky->SetIntensity(SkyIntensity);
+	}
+	if (UVolumetricCloudComponent* Clouds = SkyClouds.Get())
+	{
+		Clouds->SetVisibility(!bClearSky);
+		if (Sky)
+		{
+			Sky->SetLightColor(bClearSky ? ClearSkyLightColor * SkyLightColor : SkyLightColor);
+		}
+	}
+	if (UExponentialHeightFogComponent* Fog = HeightFog.Get())
+	{
+		// The palette shading follows (ULBALookSubsystem::SyncHeightFog).
+		Fog->SetVisibility(CVarGlobeShowFog.GetValueOnGameThread() != 0);
 	}
 
 	// The sea disc and the atmosphere's planet under the camera.
@@ -684,6 +715,11 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 		Instance->SetVectorParameterValue(TEXT("PlanetSkyBelow"), FLinearColor(SkyBelow, SkyBelow, SkyBelow, 0.f));
 	}
 	PreviousSea = Sea;
+}
+
+bool ULBAPlanetSubsystem::IsSkyClear() const
+{
+	return SkyClouds.IsValid() && CVarGlobeShowClouds.GetValueOnGameThread() == 0;
 }
 
 void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
@@ -737,7 +773,8 @@ void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
 	if (USkyAtmosphereComponent* SkyAtmosphere = Atmosphere.Get())
 	{
 		// Rebuilds the atmosphere's and the sun's render state, so not for changes too small to see.
-		const FLinearColor Factor = LevelSkyFactor / FMath::Max(SunScale, 0.01f);
+		const float ClearSkyGain = IsSkyClear() ? CVarGlobeClearSkyGain.GetValueOnGameThread() : 1.f;
+		const FLinearColor Factor = LevelSkyFactor * ClearSkyGain / FMath::Max(SunScale, 0.01f);
 		if (!Factor.Equals(SkyFactor, 0.01f * Factor.GetMax()))
 		{
 			SkyFactor = Factor;
