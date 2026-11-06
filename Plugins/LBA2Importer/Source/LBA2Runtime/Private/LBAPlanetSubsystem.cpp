@@ -57,6 +57,21 @@ namespace
 	// Measured on Citabau against Lumen: the far sea matches at 0.75 (horizon (110, 185, 229) against (105, 178, 222)).
 	TAutoConsoleVariable<float> CVarGlobeSeaSkyBelow(TEXT("lba.Globe.SeaSkyBelow"), 0.75f,
 		TEXT("Without Lumen, how much of the sky the sea reflects below the flat horizon (the sky light is black there): 0 none."));
+	TAutoConsoleVariable<int32> CVarGlobeSun(TEXT("lba.Globe.Sun"), 1,
+		TEXT("1: the sun is where it is seen from the camera's place on the planet; 0: the opened island's fixed sun (to compare)."));
+	// Over the sea: above the pole Desert's dunes go flat (84 degrees), this low they keep their relief. On the side that
+	// keeps Citadel's shadows near their direction in its level. Elevation at their centers (coasts): Citadel 37 (25-50,
+	// 31 in its level, its direction 2 degrees off), Desert 48 (34-65, 37 in its level).
+	TAutoConsoleVariable<float> CVarGlobeSunColatitude(TEXT("lba.Globe.SunColatitude"), 45.f,
+		TEXT("Where the sun stands overhead on the planet: its angle from the pole (degrees)."));
+	TAutoConsoleVariable<float> CVarGlobeSunLongitude(TEXT("lba.Globe.SunLongitude"), -60.f,
+		TEXT("Where the sun stands overhead on the planet: its longitude (degrees, the planet map's angle)."));
+	TAutoConsoleVariable<float> CVarGlobeSunMinElevation(TEXT("lba.Globe.SunMinElevation"), 20.f,
+		TEXT("The sun never gets lower than this (degrees), however far it is: the far side of the belt stays lit."));
+	TAutoConsoleVariable<float> CVarGlobeSunGroundLight(TEXT("lba.Globe.SunGroundLight"), 1.f,
+		TEXT("How much the sun's intensity makes up for its elevation: 1 keeps lit flat ground as bright as in the opened island's level, 0 leaves the intensity."));
+	TAutoConsoleVariable<float> CVarGlobeSunSmoothing(TEXT("lba.Globe.SunSmoothing"), 0.5f,
+		TEXT("How slowly the sun follows the camera (seconds)."));
 	TAutoConsoleVariable<int32> CVarGlobeBelt(TEXT("lba.Globe.Belt"), 1,
 		TEXT("0: the planet's belt (Twinsun's Hamalayi mountains) isn't streamed in (for the next level opened)."));
 	TAutoConsoleVariable<int32> CVarGlobeStubs(TEXT("lba.Globe.Stubs"), 1,
@@ -368,6 +383,27 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 				SkyAtmosphere->SetWorldLocation(FVector(0.0, 0.0, SeaLevel - Radius));
 				SkyAtmosphere->MarkRenderStateDirty();
 				Atmosphere = SkyAtmosphere;
+				LevelSkyFactor = SkyAtmosphere->SkyLuminanceFactor;
+				SkyFactor = LevelSkyFactor;
+			}
+			else if (UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Component))
+			{
+				if (Light->IsUsedAsAtmosphereSunLight())
+				{
+					SunLight = Light;
+					LevelSunRotation = Light->GetComponentRotation();
+					LevelSunIntensity = Light->Intensity;
+					LevelCloudScale = Light->CloudScatteredLuminanceScale;
+				}
+				else if (Light->CastShadows)
+				{
+					CharacterLight = Light;
+					LevelCharacterIntensity = Light->Intensity;
+				}
+				else
+				{
+					CharacterFill = Light;
+				}
 			}
 			else if (UVolumetricCloudComponent* Clouds = Cast<UVolumetricCloudComponent>(Component))
 			{
@@ -627,6 +663,7 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 	{
 		SkyAtmosphere->SetWorldLocation(FVector(View.X, View.Y, SeaLevel - Radius));
 	}
+	UpdateSun(bCameraCut);
 
 	UMaterialParameterCollection* Collection = Asset->MaterialParameters.Get();
 	UMaterialParameterCollectionInstance* Instance = Collection ? GetWorld()->GetParameterCollectionInstance(Collection) : nullptr;
@@ -647,6 +684,68 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 		Instance->SetVectorParameterValue(TEXT("PlanetSkyBelow"), FLinearColor(SkyBelow, SkyBelow, SkyBelow, 0.f));
 	}
 	PreviousSea = Sea;
+}
+
+void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
+{
+	UDirectionalLightComponent* Sun = SunLight.Get();
+	if (!Sun)
+	{
+		return;
+	}
+	FRotator Rotation = LevelSunRotation;
+	float SunScale = 1.f;
+	if (CVarGlobeSun.GetValueOnGameThread() != 0)
+	{
+		const FVector2D Viewed(View.X, View.Y);
+		const float Smoothing = CVarGlobeSunSmoothing.GetValueOnGameThread();
+		const bool bSnap = !bHasSunView || bCameraCut || FVector2D::Distance(Viewed, SunView) > ViewJump || Smoothing <= 0.f;
+		SunView = bSnap ? Viewed : FMath::Lerp(SunView, Viewed, 1.0 - FMath::Exp(-GetWorld()->GetDeltaSeconds() / Smoothing));
+		bHasSunView = true;
+
+		// Where it stands overhead, on the flat map: from there the sun sinks with the angle around the planet.
+		const double FromPole = Radius * FMath::DegreesToRadians(CVarGlobeSunColatitude.GetValueOnGameThread());
+		const double Lon = FMath::DegreesToRadians(CVarGlobeSunLongitude.GetValueOnGameThread());
+		const FVector Overhead = GetMapToWorld().TransformPosition(FVector(FMath::Cos(Lon) * FromPole, FMath::Sin(Lon) * FromPole, 0.0));
+		const FVector2D ToOverhead = FVector2D(Overhead.X, Overhead.Y) - SunView;
+		const double MaxAngle = FMath::DegreesToRadians(90.0 - FMath::Clamp(CVarGlobeSunMinElevation.GetValueOnGameThread(), 1.f, 89.f));
+		const double Angle = FMath::Min(ToOverhead.Size() / Radius, MaxAngle);
+		const FVector2D Along = ToOverhead.GetSafeNormal();
+		const FVector ToSun(Along.X * FMath::Sin(Angle), Along.Y * FMath::Sin(Angle), FMath::Cos(Angle));
+		Rotation = (-ToSun).Rotation();
+
+		const double LevelSine = -LevelSunRotation.Vector().Z;
+		// Only ever down: a sun lower than the level's, turned up, burns the walls facing it (the belt's went white).
+		SunScale = float(FMath::Min(FMath::Pow(FMath::Max(LevelSine, 0.01) / ToSun.Z, double(CVarGlobeSunGroundLight.GetValueOnGameThread())), 1.0));
+	}
+	else
+	{
+		bHasSunView = false;
+	}
+	Sun->SetWorldRotation(Rotation);
+	Sun->SetIntensity(LevelSunIntensity * SunScale);
+	if (UDirectionalLightComponent* Key = CharacterLight.Get())
+	{
+		// The key light is what the sun lacks to light characters as in the original: together they stay the same.
+		Key->SetWorldRotation(Rotation);
+		Key->SetIntensity(FMath::Max(LevelCharacterIntensity + LevelSunIntensity * (1.f - SunScale), 0.f));
+	}
+	if (UDirectionalLightComponent* Fill = CharacterFill.Get())
+	{
+		Fill->SetWorldRotation(FRotator(Rotation.Pitch, Rotation.Yaw + 180.0, 0.0));
+	}
+	if (USkyAtmosphereComponent* SkyAtmosphere = Atmosphere.Get())
+	{
+		// Rebuilds the atmosphere's and the sun's render state, so not for changes too small to see.
+		const FLinearColor Factor = LevelSkyFactor / FMath::Max(SunScale, 0.01f);
+		if (!Factor.Equals(SkyFactor, 0.01f * Factor.GetMax()))
+		{
+			SkyFactor = Factor;
+			SkyAtmosphere->SetSkyLuminanceFactor(Factor);
+			Sun->CloudScatteredLuminanceScale = LevelCloudScale / FMath::Max(SunScale, 0.01f);
+			Sun->MarkRenderStateDirty();
+		}
+	}
 }
 
 void ULBAPlanetSubsystem::DrawDebug() const

@@ -12,6 +12,7 @@ class APawn;
 class ULevel;
 class ULevelStreaming;
 class ULevelStreamingDynamic;
+class UDirectionalLightComponent;
 class USkyAtmosphereComponent;
 class USkyLightComponent;
 
@@ -45,6 +46,11 @@ class USkyLightComponent;
  *   lba.Globe.Belt 0          no belt for the next level opened
  *   lba.Globe.Stubs 0         no stub islands for the next level opened
  *   lba.Globe.BentCulling 0   the renderer's own culling, by the flat world (LBAPlanetCulling.h)
+ *   lba.Globe.Sun 0           the opened island's fixed sun (to compare)
+ *
+ * The bent view is a true sphere with the camera on top, so the sun (a directional light, far away) is where it is seen
+ * from the camera's place on the planet: the opened island's sun and character lights turn as the camera travels, lit
+ * flat ground staying as bright as in its level (UpdateSun; lba.Globe.Sun*).
  */
 UCLASS()
 class LBA2RUNTIME_API ULBAPlanetSubsystem : public UTickableWorldSubsystem
@@ -98,6 +104,8 @@ private:
 	int32 FindIsland(const ULevel* Level) const;
 	/** Streams in the planet's other islands. */
 	void LoadIslands();
+	/** Turns the sun and the character lights to where the sun is seen from the view's place on the planet. */
+	void UpdateSun(bool bCameraCut);
 	void DrawDebug() const;
 
 	UPROPERTY(Transient)
@@ -120,6 +128,20 @@ private:
 	bool bSkyLightShadows = true;
 	/** Its intensity on the planet (its level's times FLBAPlanetIsland::SkyLightGain), as with Lumen. */
 	float SkyLightIntensity = 1.f;
+	/** The opened island's sun and character lights, and what its level gives them. */
+	TWeakObjectPtr<UDirectionalLightComponent> SunLight;
+	TWeakObjectPtr<UDirectionalLightComponent> CharacterLight;
+	TWeakObjectPtr<UDirectionalLightComponent> CharacterFill;
+	FRotator LevelSunRotation = FRotator::ZeroRotator;
+	float LevelSunIntensity = 0.f;
+	float LevelCharacterIntensity = 0.f;
+	FLinearColor LevelCloudScale = FLinearColor::White;
+	FLinearColor LevelSkyFactor = FLinearColor::White;
+	/** The sky's factor in use: it (and the clouds' scale) makes up for the sun's intensity, so the sky stays as it is. */
+	FLinearColor SkyFactor = FLinearColor::White;
+	/** The place the sun is seen from: the view, smoothed so that the camera swinging around Twinsen doesn't move it. */
+	FVector2D SunView = FVector2D::ZeroVector;
+	bool bHasSunView = false;
 	/** The opened island's sea level (Water plugin oceans) is the sea (lba.Globe.Sea); the sea disc lies under it. */
 	bool bWaterSea = false;
 	TWeakObjectPtr<ULevelStreaming> SeaStream;
