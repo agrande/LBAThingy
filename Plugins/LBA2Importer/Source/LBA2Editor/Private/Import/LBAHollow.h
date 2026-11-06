@@ -63,20 +63,19 @@ private:
  *           reach lets the roof follow the ground (a cave); a long one keeps one level over the highest floor (a hall).
  * Supports  a column of the hollow without floor whose drawn top (invisible collision aside) comes within Reach cells of
  *           the roof holds it: the roof comes down onto it (a pillar, a rock wall between galleries). Lower things (rims,
- *           parapets, furniture) stand under the roof, and so do railings and their posts, however high: it springs over
- *           them.
+ *           railings, parapets, furniture) stand under the roof.
  * Ledges    where the ground ends over nothing behind a railing: going out from the hollow past railings and posts on its
  *           edge (FSettings::RailingLayouts, PillarLayouts; LedgeLook columns at most), the original drew nothing, or the
- *           grid ends. The railings join the hollow; they hold nothing. (A rock rim is a wall the original cut down, a
+ *           grid ends. The railings join the hollow; they hold nothing. So do railings beside the hollow no step out
+ *           reaches (a ledge's corner post, a fence between two floors). (A rock rim is a wall the original cut down, a
  *           bare edge the end of the world: no ledge.)
  * Canyon    past the ledges the cave goes on: the empty columns within CanyonWidth of a ledge (past the grid's edge
  *           too) are under the roof, and the canyon's floor drops from the foot of the ledge (the bottom of what the
  *           original drew under its edge) CanyonDepth cells and climbs back up to the roof's spring at its far side.
  *           It falls into darkness with the depth under the ledge.
  * Pillars   a pillar layout (FSettings::PillarLayouts) standing free in the hollow, PillarMin cells over its ground at
- *           least, PillarSize columns across at most, PillarLedgeClear columns away from any ledge, and no fence's post
- *           (a railing within FencePostReach columns or under it, which it rises over by FencePostRise cells at most: the
- *           Temple of Bu's urns on the corners of its walkways): the roof comes down onto its top in a fan.
+ *           least, PillarSize columns across at most, PillarLedgeClear columns away from any ledge (there it is a post):
+ *           the roof comes down onto its top in a fan.
  * Arches    two pillars at most ArcadeSpan columns apart, with no pillar nearer both of them and the hollow's air between
  *           them, carry an arch from top to top; the roof rises from it on both sides.
  * Roof      a vault (FLBAVault) over the hollow's columns but the supports, and the canyon, from the spring; under the
@@ -142,10 +141,6 @@ public:
 	static constexpr int32 PillarMin = Headroom + 1;
 	static constexpr int32 PillarSize = 2;
 	static constexpr int32 PillarLedgeClear = 2;
-	/** How high a fence's post rises over its railing at most, in cells (one post: an urn on a curb). */
-	static constexpr int32 FencePostRise = 8;
-	/** How far from its post a railing may stop, in columns. */
-	static constexpr int32 FencePostReach = 2;
 	static constexpr float ArcadeSpan = 12.f;
 	/** How high an arch rises toward the crown over the pillars' tops (0: flat, 1: up to the crown). */
 	static constexpr float ArchRise = 0.6f;
