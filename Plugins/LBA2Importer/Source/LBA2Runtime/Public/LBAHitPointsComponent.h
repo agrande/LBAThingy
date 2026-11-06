@@ -34,10 +34,10 @@ public:
 
 	/** Radius of a star (cm), and the width of its lines (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hit Points|Stars")
-	float StarSize = 35.f;
+	float StarSize = 11.7f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hit Points|Stars")
-	float StarLineWidth = 3.f;
+	float StarLineWidth = 1.f;
 
 	/** Launch speed (cm/s, upward and outward), gravity (cm/s^2), spin (degrees/s) and life (s) of the stars. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hit Points|Stars")

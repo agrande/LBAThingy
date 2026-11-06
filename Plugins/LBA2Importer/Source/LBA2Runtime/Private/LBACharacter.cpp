@@ -153,7 +153,7 @@ ALBACharacter::ALBACharacter()
 	HitPoints = CreateDefaultSubobject<ULBAHitPointsComponent>(TEXT("HitPoints"));
 	HitPoints->MaxLife = 50.f;
 	HitPoints->DamagePerStar = 5.f;
-	HitPoints->StarSize = 22.f;
+	HitPoints->StarSize = 7.3f;
 }
 
 void ALBACharacter::BeginPlay()
