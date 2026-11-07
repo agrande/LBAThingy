@@ -10,6 +10,7 @@
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBAPlanetDistricts.h"
+#include "Import/LBAPlanetGround.h"
 #include "Import/LBAPlanetTowns.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
@@ -67,20 +68,27 @@ namespace LBAPlanetStubsPrivate
 	constexpr double Roll = 200.0;
 	/** Noise above this leaves bare earth among the grass (Citadel's benches: 40 % earth, 30 % grass). */
 	constexpr float EarthPatches = 0.3f;
-	/** Ground steeper than this (degrees) is bare rock. */
-	constexpr double RockSlope = 32.0;
+	/** Shares of a ground kind per vertex are blurred over this many cells: a pixel's kind follows them (LBAStubGround.ush). */
+	constexpr double KindSmoothing = 1.0;
+	/** A coast's and a bench's edge wander (the noise's strength; about a third of it is typical): no perfect contour rings. */
+	constexpr float CoastWobble = 0.3f;
+	constexpr double CliffFluting = 240.0;
+	constexpr double CliffChipping = 90.0;
+	/**
+	 * Vertices move this far (cells) so cliffs don't follow the grid, except on coasts and around the towns' pads. Under a
+	 * quarter of a cell: from there a cell's triangle can fold over, and on a cliff a folded one is a hole from the side.
+	 */
+	constexpr double VertexJitter = 0.2;
+	/** The vertices along a coast take heights from how far the land's field is past its threshold, times this (cm): the sea meets the ground between them, on the field's smooth line. */
+	constexpr double CoastHeightPerField = 600.0;
+	constexpr double CoastSeaDepth = 30.0;
 	/** Under the sea: the shelf falls this steeply from the coast, down to the skirt's depth. */
 	constexpr double ShelfSlope = 0.6;
 	constexpr double SkirtDepth = 800.0;
 	/** A district's water (LBAPlanetDistricts) is carved at least this deep. */
 	constexpr double PadSeaFloor = 120.0;
 
-	/** The ground's colors: LBA2's own (sRGB, median of each kind on Citadel, Otringal and the desert). */
-	const FVector3f RockColor(136.f, 126.f, 128.f);
-	const FVector3f SandColor(220.f, 192.f, 120.f);
-	const FVector3f GrassColor(120.f, 140.f, 96.f);
-	const FVector3f EarthColor(124.f, 86.f, 58.f);
-	const FVector3f PaleColor(206.f, 202.f, 192.f);
+	/** Under the sea the ground fades from sand to this, the pale shallows of the holomap's rim (sRGB). */
 	const FVector3f ShelfColor(150.f, 190.f, 170.f);
 
 	/** LBA1's holomap arrows (degrees on this planet's frame), for the islands' names. */
@@ -414,18 +422,6 @@ namespace LBAPlanetStubsPrivate
 		Pale,
 	};
 
-	FVector3f GetGroundColor(EGround Ground)
-	{
-		switch (Ground)
-		{
-		case EGround::Sand: return SandColor;
-		case EGround::Grass: return GrassColor;
-		case EGround::Rock: return RockColor;
-		case EGround::Pale: return PaleColor;
-		default: return EarthColor;
-		}
-	}
-
 	/** A painted island found by the survey: its cells' label, count and box. */
 	struct FFound
 	{
@@ -526,8 +522,9 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		}
 	}
 
-	UMaterialInterface* Material = Context.GetMaterials().GetMaster(ELBAMaterial::Color);
-	const FName Slot = FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Color);
+	UMaterialInterface* ColorMaterial = Context.GetMaterials().GetMaster(ELBAMaterial::Color);
+	const FName ColorSlot = FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Color);
+	const FName GroundSlot = FLBAMaterialLibrary::GetSlotName(ELBAMaterial::StubGround);
 	const FString LevelName = FString::Printf(TEXT("L_%s_Stubs"), *Planet);
 	UWorld* World = Context.BeginLevel(Folder, LevelName);
 	if (!World)
@@ -541,9 +538,15 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 	{
 		Context.Warn(FString::Printf(TEXT("Planet %s: no LBA1 towns on the stub islands, LBA1's data isn't found (the importer's LBA1 Directory)"), *Planet));
 	}
+	UMaterialInterface* GroundMaterial = LBAPlanetGround::Build(Context, bDistricts ? &Districts.GetData() : nullptr, Folder);
+	if (!GroundMaterial)
+	{
+		Context.Warn(FString::Printf(TEXT("Planet %s: no ground textures for the stub islands, the game's island files can't be read"), *Planet));
+		Context.EndLevel(World);
+		return nullptr;
+	}
 	const int32 Home = FMath::Max(Asset->FindIslandIndex(Asset->HomeIsland), 0);
 	const FTransform MapToHome = Asset->Islands.IsValidIndex(Home) ? Asset->Islands[Home].GetLevelToMap(Radius).Inverse() : FTransform::Identity;
-	int32 Islets = 0;
 	for (const FFound& Island : Found)
 	{
 		if (Island.bPlaced || Island.Cells * SurveyCell * SurveyCell < MinArea)
@@ -567,7 +570,9 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		}
 		if (Name.IsEmpty())
 		{
-			Name = FString::Printf(TEXT("Islet_%d"), ++Islets);
+			// Painted land no arrow names: the holomap's copies of the placed islands' own islets (the dome's rock, the
+			// desert's cave islet), which those islands already have.
+			continue;
 		}
 
 		// The island's grid: its painting, its own land (not a neighbour's), the coast's distance, colors and heights;
@@ -606,7 +611,11 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		Blur(Green, 3.5);
 		Blur(Blue, 3.5);
 		const int32 Cells = SizeX * SizeY;
+		const int32 Seed = int32(FCrc::StrCrc32(*Name));
+		const FGrid CoastNoise = MakeNoise(SizeX, SizeY, 500.0 / Cell, Seed + 7);
 		TArray<bool> Land, Sea;
+		FGrid LandField;
+		LandField.Init(SizeX, SizeY);
 		Land.SetNumUninitialized(Cells);
 		Sea.SetNumUninitialized(Cells);
 		FGrid Hint, Sand, Greens, Browns, Pale;
@@ -617,7 +626,8 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		int32 LandCells = 0;
 		for (int32 Index = 0; Index < Cells; ++Index)
 		{
-			Land[Index] = Soft.Values[Index] * Own.Values[Index] > 0.5f;
+			LandField.Values[Index] = Soft.Values[Index] * Own.Values[Index] - 0.5f - CoastWobble * CoastNoise.Values[Index];
+			Land[Index] = LandField.Values[Index] > 0.f;
 			Sea[Index] = !Land[Index];
 			LandCells += Land[Index] ? 1 : 0;
 			const FPaintedKinds Kinds = ReadPainting(FVector3f(Red.Values[Index], Green.Values[Index], Blue.Values[Index]));
@@ -640,7 +650,6 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			Offshore.Values[Index] *= float(Cell);
 		}
 		const double Area = LandCells * Cell * Cell;
-		const int32 Seed = int32(FCrc::StrCrc32(*Name));
 
 		// The wanted height: off the shore within CoastRise, then up with the painting (judged against the island's own
 		// colors: its lowest low, its ridges high) and broad noise for hill masses, reaching full height half its reach in.
@@ -743,8 +752,11 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			const double Up = FMath::Clamp(Inland.Values[Index] / 300.0, 0.0, 1.0);
 			Heights.Values[Index] = float(Shore + (Beach[Index] ? 25.0 * Up - 10.0 * (1.0 - Up) : 0.0));
 		}
+		int32 BenchSeed = Seed + 10;
 		for (const FBench& Bench : Benches)
 		{
+			const FGrid Fluting = MakeNoise(SizeX, SizeY, 300.0 / Cell, BenchSeed++);
+			const FGrid Chipping = MakeNoise(SizeX, SizeY, 160.0 / Cell, BenchSeed++);
 			TArray<bool> Outside;
 			Outside.SetNumUninitialized(Cells);
 			for (int32 Index = 0; Index < Cells; ++Index)
@@ -765,7 +777,9 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			{
 				const double Ramp = FMath::SmoothStep(RampFrom - 0.08, RampFrom + 0.08, double(RampNoise.Values[Index]));
 				const double Width = FMath::Lerp(CliffWidth, RampWidth, Ramp);
-				Heights.Values[Index] += float(Bench.Rise * FMath::Clamp(Edge.Values[Index] / Width, 0.0, 1.0));
+				// Cliffs wander along the bench's edge, in columns like Citadel's; ramps stay smooth to be walked.
+				const double Wander = (1.0 - Ramp) * (CliffFluting * Fluting.Values[Index] + CliffChipping * Chipping.Values[Index]);
+				Heights.Values[Index] += float(Bench.Rise * FMath::Clamp((Edge.Values[Index] + Wander) / Width, 0.0, 1.0));
 			}
 		}
 		double Highest = 0.0;
@@ -826,8 +840,26 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		}
 		auto IsPad = [&](int32 Index) { return !Pad.IsEmpty() && Pad[Index]; };
 
+		// Land and sea differ by a cell at best: along the coasts the height says where between the vertices the sea meets
+		// the ground, or the coast is a staircase. Away from the pads (their coast is LBA1's, straight).
+		const TArray<bool> NearPad = Pad.IsEmpty() ? TArray<bool>() : Grow(Grow(Pad, SizeX, SizeY, true), SizeX, SizeY, true);
+		TArray<bool> OnCoast;
+		OnCoast.Init(false, Cells);
+		for (int32 Index = 0; Index < Cells; ++Index)
+		{
+			const bool bNearPad = !NearPad.IsEmpty() && NearPad[Index];
+			if (bNearPad || (Land[Index] ? Inland.Values[Index] : Offshore.Values[Index]) > 1.5 * Cell)
+			{
+				continue;
+			}
+			OnCoast[Index] = true;
+			const double Height = CoastHeightPerField * LandField.Values[Index];
+			Heights.Values[Index] = float(Land[Index] ? FMath::Clamp(Height, 2.0, double(Heights.Values[Index])) : FMath::Max(Height, -CoastSeaDepth));
+		}
+
 		// The ground: grass or earth on the benches by the painting (patches of earth among the grass), painted sand,
-		// pale stone on the top bench where painted pale, sand on beaches, rock along cliff coasts and wherever it is steep.
+		// pale stone on the top bench where painted pale, sand on beaches, rock along cliff coasts; the material makes
+		// whatever is steep rock, pixel by pixel.
 		const FGrid Patches = MakeNoise(SizeX, SizeY, 1200.0 / Cell, Seed + 5);
 		const TArray<bool>* TopBench = Benches.IsEmpty() ? nullptr : &Benches.Last().Region;
 		auto Slope = [&](int32 X, int32 Y)
@@ -856,10 +888,6 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			{
 				Ground = EGround::Rock;
 			}
-			if (Slope(X, Y) > RockSlope)
-			{
-				Ground = EGround::Rock;
-			}
 			return Ground;
 		};
 		int32 FlatCells = 0;
@@ -877,29 +905,74 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			}
 		}
 
-		// Colors: the ground's, a little lighter or darker by the patches' noise; under the sea sand fading to the shelf's
-		// pale shallows (like the holomap's lighter rim).
+		// Each vertex's shares of the ground's kinds (rock is what's left).
+		FGrid GrassShare, EarthShare, SandShare, PaleShare;
+		for (FGrid* Grid : { &GrassShare, &EarthShare, &SandShare, &PaleShare })
+		{
+			Grid->Init(SizeX, SizeY);
+		}
+		for (int32 Y = 0; Y < SizeY; ++Y)
+		{
+			for (int32 X = 0; X < SizeX; ++X)
+			{
+				const EGround Ground = GroundAt(X, Y);
+				GrassShare(X, Y) = Ground == EGround::Grass ? 1.f : 0.f;
+				EarthShare(X, Y) = Ground == EGround::Earth ? 1.f : 0.f;
+				SandShare(X, Y) = Ground == EGround::Sand ? 1.f : 0.f;
+				PaleShare(X, Y) = Ground == EGround::Pale ? 1.f : 0.f;
+			}
+		}
+		for (FGrid* Grid : { &GrassShare, &EarthShare, &SandShare, &PaleShare })
+		{
+			Blur(*Grid, KindSmoothing);
+		}
+
+		// The vertices move, except along the coasts and around the pads (the towns' bricks sit on them).
+		FRandomStream Jitter(Seed + 8);
+		TArray<FVector2D> Moves;
+		Moves.SetNumUninitialized(Cells);
+		for (int32 Index = 0; Index < Cells; ++Index)
+		{
+			const FVector2D Move(Jitter.FRandRange(-VertexJitter, VertexJitter), Jitter.FRandRange(-VertexJitter, VertexJitter));
+			const bool bFixed = OnCoast[Index] || (!NearPad.IsEmpty() && NearPad[Index]);
+			Moves[Index] = bFixed ? FVector2D::ZeroVector : Move * Cell;
+		}
+
 		const FVector Pivot(Center, 0.0);
 		auto VertexAt = [&](int32 X, int32 Y)
 		{
-			const int32 Index = Y * SizeX + X;
-			const FVector2D Map = CellToMap(X, Y);
 			const FVector Across(2.0 * Cell, 0.0, Heights.At(X + 1, Y) - Heights.At(X - 1, Y));
 			const FVector Along(0.0, 2.0 * Cell, Heights.At(X, Y + 1) - Heights.At(X, Y - 1));
-			const FVector Normal = (Across ^ Along).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
-			const FVector3f Color = IsPad(Index) ? PadColors[Index] : Land[Index] ? GetGroundColor(GroundAt(X, Y)) * (1.f + 0.06f * Patches.Values[Index])
-				: FMath::Lerp(SandColor, ShelfColor, float(FMath::Clamp(Offshore.Values[Index] / 800.0, 0.0, 1.0)));
-			const FLinearColor Linear = FLinearColor::FromSRGBColor(FColor(uint8(FMath::Clamp(Color.X, 0.f, 255.f)), uint8(FMath::Clamp(Color.Y, 0.f, 255.f)), uint8(FMath::Clamp(Color.Z, 0.f, 255.f))));
 			FLBAVertex Vertex;
-			Vertex.Position = FVector3f(FVector(Map, Heights(X, Y)) - Pivot);
-			Vertex.Normal = FVector3f(Normal);
+			Vertex.Position = FVector3f(FVector(CellToMap(X, Y) + Moves[Y * SizeX + X], Heights(X, Y)) - Pivot);
+			Vertex.Normal = FVector3f((Across ^ Along).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector));
+			return Vertex;
+		};
+		// The ground's vertices carry their shares, as the bytes the material reads (mesh builds encode vertex colors' RGB as sRGB).
+		auto GroundVertexAt = [&](int32 X, int32 Y)
+		{
+			FLBAVertex Vertex = VertexAt(X, Y);
+			const FLinearColor Shares = FLinearColor::FromSRGBColor(FColor(uint8(255.f * GrassShare(X, Y) + 0.5f), uint8(255.f * EarthShare(X, Y) + 0.5f), uint8(255.f * SandShare(X, Y) + 0.5f)));
+			Vertex.Color = FVector4f(Shares.R, Shares.G, Shares.B, PaleShare(X, Y));
+			return Vertex;
+		};
+		// The rest is plain color: the pads (LBA1's own ground under its bricks) and, under the sea, sand fading to the
+		// shelf's pale shallows.
+		auto ColorVertexAt = [&](int32 X, int32 Y)
+		{
+			const int32 Index = Y * SizeX + X;
+			FLBAVertex Vertex = VertexAt(X, Y);
+			const FVector3f Color = IsPad(Index) ? PadColors[Index]
+				: FMath::Lerp(LBAPlanetGround::SandColor, ShelfColor, float(FMath::Clamp(Offshore.Values[Index] / 800.0, 0.0, 1.0)));
+			const FLinearColor Linear = FLinearColor::FromSRGBColor(FColor(uint8(FMath::Clamp(Color.X, 0.f, 255.f)), uint8(FMath::Clamp(Color.Y, 0.f, 255.f)), uint8(FMath::Clamp(Color.Z, 0.f, 255.f))));
 			Vertex.Color = FVector4f(Linear.R, Linear.G, Linear.B, 0.5f);
 			return Vertex;
 		};
 
 		// The mesh: every cell that rises off the skirt's floor.
 		FLBAMeshBuilder Builder;
-		const int32 Section = Builder.GetSection(Slot, Material);
+		const int32 GroundSection = Builder.GetSection(GroundSlot, GroundMaterial);
+		const int32 ColorSection = Builder.GetSection(ColorSlot, ColorMaterial);
 		for (int32 Y = 0; Y + 1 < SizeY; ++Y)
 		{
 			for (int32 X = 0; X + 1 < SizeX; ++X)
@@ -909,10 +982,15 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				{
 					continue;
 				}
-				const FLBAVertex A = VertexAt(X, Y);
-				const FLBAVertex B = VertexAt(X + 1, Y);
-				const FLBAVertex C = VertexAt(X, Y + 1);
-				const FLBAVertex D = VertexAt(X + 1, Y + 1);
+				const int32 Corners[4] = { Y * SizeX + X, Y * SizeX + X + 1, (Y + 1) * SizeX + X, (Y + 1) * SizeX + X + 1 };
+				const bool bAnyPad = IsPad(Corners[0]) || IsPad(Corners[1]) || IsPad(Corners[2]) || IsPad(Corners[3]);
+				const bool bAnyLand = Land[Corners[0]] || Land[Corners[1]] || Land[Corners[2]] || Land[Corners[3]];
+				const bool bGround = bAnyLand && !bAnyPad;
+				const FLBAVertex A = bGround ? GroundVertexAt(X, Y) : ColorVertexAt(X, Y);
+				const FLBAVertex B = bGround ? GroundVertexAt(X + 1, Y) : ColorVertexAt(X + 1, Y);
+				const FLBAVertex C = bGround ? GroundVertexAt(X, Y + 1) : ColorVertexAt(X, Y + 1);
+				const FLBAVertex D = bGround ? GroundVertexAt(X + 1, Y + 1) : ColorVertexAt(X + 1, Y + 1);
+				const int32 Section = bGround ? GroundSection : ColorSection;
 				Builder.AddTriangleFacing(Section, A, B, D, FVector3f::UpVector);
 				Builder.AddTriangleFacing(Section, A, D, C, FVector3f::UpVector);
 			}

@@ -19,11 +19,13 @@ class UWorld;
  * on LBA2's own islands (Tools/terrain_stats.py, prototyped in Tools/stub_grammar.py): a low shore, a few flat benches
  * at levels meters apart, each where a wanted height (the painting read by hue: olive lowland, brown ridges, pale
  * stone highest; broad noise for hill masses) passes halfway to it, cliffs between benches and along headlands, ramps
- * on some edges, beaches in bays, rolling ground; a shelf under the sea around it. Vertex colored with LBA2's own
- * ground colors (rock, sand, grass, earth, pale stone; M_LBA_Color), collision from its triangles: boats run aground,
- * Twinsen walks on it.
+ * on some edges, beaches in bays, rolling ground; a shelf under the sea around it. Its vertices carry how much of each
+ * kind of ground is around them (grass, earth, sand, pale stone, the rest rock) for M_LBA_StubGround's textures
+ * (LBAPlanetGround); the shelf and LBA1's pads are plain colors (M_LBA_Color). Collision from its triangles: boats run
+ * aground, Twinsen walks on it.
  *
- * Names: LBA1's holomap arrows (tlba-classic RESS.HQR entry 8, text 201, 203, 204) over the painting; others Islet_N.
+ * Names: LBA1's holomap arrows (tlba-classic RESS.HQR entry 8, text 201, 203, 204) over the painting; land no arrow
+ * names is left out (the holomap's copies of the placed islands' own islets).
  *
  * Output under the planet's folder: SM_LBA_Stub_<PLANET>_<NAME> and L_<PLANET>_Stubs, their actors laid on the map
  * (pole at the origin), tagged ULBAPlanetAsset::StubTag; the planet subsystem streams it in like the belt.

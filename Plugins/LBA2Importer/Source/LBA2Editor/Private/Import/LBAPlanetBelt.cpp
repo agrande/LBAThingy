@@ -73,8 +73,8 @@ namespace LBAPlanetBeltPrivate
 	constexpr double EdgeSmoothing = 2.0;
 	/** The wall and the levels over it drift up and down along the belt by this (features ~100 m): terraces at many heights. */
 	constexpr double LevelDrift = 250.0;
-	/** Mesh points move this share of a cell off the grid (hashed), so cliffs don't follow its columns. */
-	constexpr double Jitter = 0.3;
+	/** Mesh points move this share of a cell off the grid (hashed), so cliffs don't follow its columns. Under a quarter: from there a cell's triangle can fold over, a hole in a cliff from the side. */
+	constexpr double Jitter = 0.2;
 	/** Noise on the wanted height (features ~10 m) and rolling ground over the benches (~14 m). */
 	constexpr double Detail = 250.0;
 	constexpr double Roll = 60.0;

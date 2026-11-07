@@ -624,18 +624,29 @@ How it holds together (the world is flat and still; only the view is round):
   with the belt): the islands the holomap paints but the game never visits, copied from its painting as a first
   prototype of the rest of the hemisphere. LBA2's holomap texture is LBA1's repainted (same islands, same places;
   only Citadel and the desert were redrawn, plus two islets), so LBA1's arrows name them: Principal (32,600 m2 of
-  land, 4 times Citadel's), Rebellion (15,700), Proxima (8,500), Islet_1 south-west of Citadel, Islet_2 east of the
-  desert. The painted land, smoothed, is the coast. The ground follows a grammar measured on LBA2's own islands
+  land, 4 times Citadel's), Rebellion (15,700), Proxima (8,500). The painted islets no arrow names (south-west of
+  Citadel, east of the desert) are left out: they copy islets those two islands already have. The painted land,
+  smoothed, is the coast. The ground follows a grammar measured on LBA2's own islands
   (`Tools/terrain_stats.py` over every .ILE, prototyped in `Tools/stub_grammar.py`): a low shore at 0.4 m, flat
   benches at a few levels (2.8 m, then 2.5 to 6 m apart, up to 0.15 sqrt(land m2): 25 m on Principal), each where a
   wanted height passes halfway to it (the painting read by hue: olive lowland, brown ridges, pale stone highest; plus
   broad noise for hill masses), cliffs 1.4 m wide between benches and along headlands, ramps 9 m wide on a quarter of
   the edges, beaches in bays (10 m of sand before the first bench), rolling ground over it all; a pale shelf under the
   sea around them. Measured like LBA2's: about a third of the land flat (LBA2 20-40 %), most of the coast cliffs
-  (Citadel 60 %), a tenth beaches (Citadel 10 %). Vertex colored with LBA2's own ground colors (rock on cliffs, the
-  coast's rim and steep ground, sand on beaches, grass or earth on benches as painted, pale stone on a pale-painted top
-  bench); collision from their triangles. Painted land under a placed island is left out. `lba.Globe.Stubs 0` leaves
-  them out.
+  (Citadel 60 %), a tenth beaches (Citadel 10 %). Cliffs wander along their bench's edge in columns like Citadel's,
+  vertices move up to 0.2 m (under a quarter of a cell, or a triangle can fold over and show as a hole in a cliff from
+  the side; not along coasts or around the towns' pads), and a coast's vertices take their heights
+  from the painted field, so the sea meets the ground on a smooth line. Ground (`LBAPlanetGround`,
+  `M_LBA_StubGround`, `Shaders/Private/LBAStubGround.ush`): each vertex says how much of each kind is around it (rock
+  on the coast's rim, sand on beaches, grass or earth on benches as painted, pale stone on a pale-painted top bench),
+  and each pixel picks one kind with noise, so kinds meet in hard, irregular edges; steeper than about 32 degrees it is
+  rock whatever the vertices say. A kind is a tiling texture laid from above, which streaks on cliffs as Citadel's
+  does: Citabau's rock, grass and pale stone at Citadel's 25 texels per meter, LBA1's earth (its evenly lit bricks,
+  unprojected from iso) and the desert's sand with their patterns on the Citabau palette ramp of LBA2's color for that
+  kind. Measured in the same light, top views: earth (71, 51, 15) against Citadel's (75, 54, 17), grass (73, 105, 65)
+  against (88, 113, 77). No cost: 154.0 fps on the globe test, 152.9 before. The pads and the shelf under the sea stay
+  plain vertex colors. Collision from their triangles. Painted land under a placed island is left out.
+  `lba.Globe.Stubs 0` leaves them out.
 - **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
   (HOLOMAP.HQR, ARROW.BIN: two angles that turn the arrow onto the globe as HOLOGLOB.CPP does, not latitude and
   longitude themselves) and is turned as it is painted on the holomap's globe (a heading in the planets table), else

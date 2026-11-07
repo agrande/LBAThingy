@@ -41,6 +41,8 @@ enum class ELBAMaterial : uint8
 	Glow,
 	/** Opaque texture * vertex color whose texels with alpha glow (lit windows): emissive = texel * alpha * GlowStrength. */
 	TexturedGlow,
+	/** Globe mode's stub islands: the ground's kinds from vertex shares and noise, a tiling texture each (LBAStubGround.ush). */
+	StubGround,
 	Count
 };
 

@@ -14,15 +14,18 @@
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionDivide.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
+#include "Materials/MaterialExpressionLocalPosition.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionPreviousFrameSwitch.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSkyLightEnvMapSample.h"
 #include "Materials/MaterialExpressionSubtract.h"
+#include "Materials/MaterialExpressionTextureObjectParameter.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionTime.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionVertexColor.h"
+#include "Materials/MaterialExpressionVertexNormalWS.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialParameterCollection.h"
@@ -42,6 +45,7 @@ namespace
 		TEXT("M_LBA_TexturedTranslucent"),
 		TEXT("M_LBA_Glow"),
 		TEXT("M_LBA_TexturedGlow"),
+		TEXT("M_LBA_StubGround"),
 	};
 	static_assert(UE_ARRAY_COUNT(MasterNames) == uint8(ELBAMaterial::Count), "Keep MasterNames in sync");
 
@@ -335,6 +339,7 @@ FName FLBAMaterialLibrary::GetSlotName(ELBAMaterial Kind)
 	case ELBAMaterial::Water: return TEXT("Water");
 	case ELBAMaterial::Brick: return TEXT("Bricks");
 	case ELBAMaterial::Glow: return TEXT("Glow");
+	case ELBAMaterial::StubGround: return TEXT("StubGround");
 	default: return TEXT("Textured");
 	}
 }
@@ -532,6 +537,42 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 		G.Out(G.Multiply(Tex, TEXT("RGB"), Albedo, TEXT(""), 0), TEXT(""), MP_BaseColor);
 		G.Out(G.Multiply(Tex, TEXT("A"), G.Scalar(TEXT("Opacity"), 0.6f, 300), TEXT(""), 200), TEXT(""), MP_Opacity);
 		G.Surface(0.2f, 0.5f);
+		break;
+	}
+	case ELBAMaterial::StubGround:
+	{
+		UMaterialExpressionCustom* Ground = G.Add<UMaterialExpressionCustom>(0);
+		Ground->Description = TEXT("LBA stub ground");
+		Ground->OutputType = CMOT_Float3;
+		Ground->IncludeFilePaths = { TEXT("/Plugin/LBA2Importer/Private/LBAStubGround.ush") };
+		Ground->Inputs.Reset();
+		auto Input = [&](const TCHAR* InputName, UMaterialExpression* From, int32 Output = 0)
+		{
+			FCustomInput& Added = Ground->Inputs.AddDefaulted_GetRef();
+			Added.InputName = InputName;
+			Added.Input.Connect(Output, From);
+		};
+		// Before the bend: the textures stay on the ground wherever the camera is.
+		UMaterialExpressionLocalPosition* Local = G.Add<UMaterialExpressionLocalPosition>(100);
+		Local->IncludedOffsets = EPositionIncludedOffsets::ExcludeOffsets;
+		Input(TEXT("Local"), Local);
+		Input(TEXT("Normal"), G.Add<UMaterialExpressionVertexNormalWS>(200));
+		UMaterialExpressionVertexColor* VC = G.Add<UMaterialExpressionVertexColor>(300);
+		Input(TEXT("WeightsRGB"), VC);
+		Input(TEXT("WeightA"), VC, 4);
+		int32 Y = 400;
+		for (const TCHAR* TileKind : { TEXT("Grass"), TEXT("Earth"), TEXT("Rock"), TEXT("Sand"), TEXT("Pale") })
+		{
+			UMaterialExpressionTextureObjectParameter* Texture = G.Add<UMaterialExpressionTextureObjectParameter>(Y);
+			Texture->ParameterName = TileKind;
+			Texture->Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
+			Texture->SamplerType = SAMPLERTYPE_Color;
+			Input(TileKind, Texture);
+			Y += 100;
+		}
+		Ground->Code = TEXT("return LBAStubGroundColor(Local.xy, Normal.z, WeightsRGB, WeightA, Grass, GrassSampler, Earth, EarthSampler, Rock, RockSampler, Sand, SandSampler, Pale, PaleSampler);");
+		G.Out(Ground, TEXT(""), MP_BaseColor);
+		G.Surface(1.f, 0.f);
 		break;
 	}
 	case ELBAMaterial::Invisible:

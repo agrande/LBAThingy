@@ -1,0 +1,89 @@
+// The stub islands' ground (M_LBA_StubGround): which kind of ground a pixel is, and that kind's tiling texture.
+//
+// A vertex says how much of each kind is around it (Weights: R grass, G earth, B sand, A pale stone, the rest rock). A
+// pixel takes the kind scoring highest once noise is added, so kinds meet in hard, irregular edges: no blending, the
+// pixel stays a palette color like the original's ground. Ground steeper than about 32 degrees is rock whatever the
+// vertices say, which keeps grass from dripping down cliffs.
+//
+// The textures are laid from above, as the original lays its ground: on a cliff they stretch into vertical streaks,
+// which is how Citadel's cliffs look.
+
+#pragma once
+
+// Tile sizes (cm). LBA1's earth is 6 cells of 64 cm across; LBA2's tiles are at Citadel's 25 texels per meter (64 or 32 texels).
+#define LBA_STUB_TILE_EARTH 384.0
+#define LBA_STUB_TILE_LARGE 256.0
+#define LBA_STUB_TILE_GRASS 128.0
+// How far noise moves an edge, against the weights (blurred over about two meters).
+#define LBA_STUB_EDGE_NOISE 0.35
+// Up of the normal under which the ground is rock (cos 32 degrees), give or take the noise.
+#define LBA_STUB_ROCK_UP 0.848
+#define LBA_STUB_ROCK_UP_NOISE 0.05
+// The textures' grid wanders this far (cm) over a few meters: their repeats stop lining up.
+#define LBA_STUB_WANDER 45.0
+// Large patches of light and dark on grass, earth and sand (a share of their brightness): the palette makes them blotches.
+#define LBA_STUB_PATCHES 0.14
+
+float LBAStubHash(float2 Cell)
+{
+	float3 P = frac(float3(Cell.xyx) * 0.1031);
+	P += dot(P, P.yzx + 33.33);
+	return frac((P.x + P.y) * P.z);
+}
+
+// Value noise, -1 to 1 (mostly within +-0.6).
+float LBAStubNoise(float2 P)
+{
+	const float2 Cell = floor(P);
+	float2 F = P - Cell;
+	F = F * F * (3.0 - 2.0 * F);
+	return 2.0 * lerp(lerp(LBAStubHash(Cell), LBAStubHash(Cell + float2(1, 0)), F.x),
+		lerp(LBAStubHash(Cell + float2(0, 1)), LBAStubHash(Cell + float2(1, 1)), F.x), F.y) - 1.0;
+}
+
+// A tile's coordinates, shifted at random per repeat: a small tile doesn't weave a visible lattice from afar, and a leafy
+// pattern hides the seams. (Mirroring instead draws symmetric motifs, worse than the lattice.)
+float2 LBAStubScatteredUV(float2 At, float Tile)
+{
+	const float2 UV = At / Tile;
+	const float2 Repeat = floor(UV);
+	return UV + float2(LBAStubHash(Repeat + 7.0), LBAStubHash(Repeat + 19.0));
+}
+
+// Local: the mesh's position (cm, before any bend). Up: the normal's Z.
+float3 LBAStubGroundColor(float2 Local, float Up, float3 WeightsRGB, float WeightA,
+	Texture2D Grass, SamplerState GrassSampler, Texture2D Earth, SamplerState EarthSampler, Texture2D Rock, SamplerState RockSampler,
+	Texture2D Sand, SamplerState SandSampler, Texture2D Pale, SamplerState PaleSampler)
+{
+	const float A = 0.65 * LBAStubNoise(Local / 90.0) + 0.35 * LBAStubNoise(Local / 28.0 + 17.0);
+	const float B = 0.65 * LBAStubNoise(Local / 70.0 + 41.0) + 0.35 * LBAStubNoise(Local / 23.0 + 5.0);
+	const float ScoreGrass = WeightsRGB.r + LBA_STUB_EDGE_NOISE * A;
+	const float ScoreEarth = WeightsRGB.g - LBA_STUB_EDGE_NOISE * A;
+	const float ScoreSand = WeightsRGB.b + LBA_STUB_EDGE_NOISE * B;
+	const float ScorePale = WeightA - LBA_STUB_EDGE_NOISE * B;
+	const float ScoreRock = 1.0 - WeightsRGB.r - WeightsRGB.g - WeightsRGB.b - WeightA;
+
+	// One set of derivatives for whichever texture is picked: no seams where kinds meet.
+	const float2 DX = ddx(Local);
+	const float2 DY = ddy(Local);
+	const float2 At = Local + LBA_STUB_WANDER * float2(LBAStubNoise(Local / 310.0 + 3.0), LBAStubNoise(Local / 270.0 + 29.0));
+	const float Patches = 1.0 + LBA_STUB_PATCHES * (0.6 * LBAStubNoise(Local / 640.0 + 11.0) + 0.4 * LBAStubNoise(Local / 230.0 + 53.0));
+	const float Top = max(max(ScoreGrass, ScoreEarth), max(ScoreSand, ScorePale));
+	if (Up < LBA_STUB_ROCK_UP + LBA_STUB_ROCK_UP_NOISE * A || ScoreRock >= Top)
+	{
+		return Rock.SampleGrad(RockSampler, At / LBA_STUB_TILE_LARGE, DX / LBA_STUB_TILE_LARGE, DY / LBA_STUB_TILE_LARGE).rgb;
+	}
+	if (ScoreGrass >= Top)
+	{
+		return Patches * Grass.SampleGrad(GrassSampler, LBAStubScatteredUV(At, LBA_STUB_TILE_GRASS), DX / LBA_STUB_TILE_GRASS, DY / LBA_STUB_TILE_GRASS).rgb;
+	}
+	if (ScoreEarth >= Top)
+	{
+		return Patches * Earth.SampleGrad(EarthSampler, At / LBA_STUB_TILE_EARTH, DX / LBA_STUB_TILE_EARTH, DY / LBA_STUB_TILE_EARTH).rgb;
+	}
+	if (ScoreSand >= Top)
+	{
+		return Patches * Sand.SampleGrad(SandSampler, At / LBA_STUB_TILE_LARGE, DX / LBA_STUB_TILE_LARGE, DY / LBA_STUB_TILE_LARGE).rgb;
+	}
+	return Pale.SampleGrad(PaleSampler, At / LBA_STUB_TILE_LARGE, DX / LBA_STUB_TILE_LARGE, DY / LBA_STUB_TILE_LARGE).rgb;
+}
