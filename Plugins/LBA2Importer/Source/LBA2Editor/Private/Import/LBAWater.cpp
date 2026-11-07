@@ -11,9 +11,12 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialAttributeDefinitionMap.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionFunctionInput.h"
 #include "Materials/MaterialExpressionGetMaterialAttributes.h"
 #include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionSetMaterialAttributes.h"
+#include "Materials/MaterialExpressionWorldPosition.h"
+#include "Materials/MaterialFunction.h"
 #include "Materials/MaterialFunctionInterface.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "UObject/MetaData.h"
@@ -133,9 +136,60 @@ namespace
 
 	/**
 	 * Bump to regenerate the clipped water materials (e.g. after an engine upgrade changed the Water plugin's).
-	 * v2: globe mode's bend. v3: and the sky below the flat horizon (LBAPlanetSeaSkyBelow).
+	 * v2: globe mode's bend. v3: and the sky below the flat horizon (LBAPlanetSeaSkyBelow). v6: bent where the water's
+	 * own offset puts it, the depth mask reading the water info at the flat world's position.
 	 */
-	constexpr int32 ClippedWaterVersion = 3;
+	constexpr int32 ClippedWaterVersion = 6;
+
+	/**
+	 * The Water plugin's depth mask (WaterOpacityMaskFromDepth) copied with a Position input: where it reads the water
+	 * info texture, the pixel's world position when left unconnected. In globe mode it must be the flat world's: the
+	 * water mesh under land is lifted to 2.56 m under the ground (the plugin's height mapping) and pokes out of steep
+	 * cliffs between its vertices, which only the mask hides; the bent position is meters off from 150 m on. Null if the
+	 * function changed.
+	 */
+	UMaterialFunction* CopyDepthMaskWithPosition(FLBAImportContext& Context, const FString& Folder, UMaterialFunctionInterface* Source)
+	{
+		UMaterialFunction* Function = Context.DuplicateAsset(Cast<UMaterialFunction>(Source), Folder, TEXT("MF_LBA_WaterOpacityMaskFromDepth"));
+		if (!Function)
+		{
+			return nullptr;
+		}
+		// Duplicated materials rename their editor-only data after themselves, functions don't: loaded, the copy would
+		// find none ("missing editor-only data") and its callers would not compile.
+		if (UMaterialFunctionEditorOnlyData* EditorOnly = Function->GetEditorOnlyData())
+		{
+			EditorOnly->Rename(*(Function->GetName() + TEXT("EditorOnlyData")), nullptr, REN_NonTransactional | REN_DontCreateRedirectors);
+		}
+		UMaterialExpressionMaterialFunctionCall* BodyData = nullptr;
+		int32 PositionIndex = INDEX_NONE;
+		for (UMaterialExpression* Expression : Function->GetExpressions())
+		{
+			UMaterialExpressionMaterialFunctionCall* Call = Cast<UMaterialExpressionMaterialFunctionCall>(Expression);
+			if (Call && Call->MaterialFunction && Call->MaterialFunction->GetName() == TEXT("WaterBodyData"))
+			{
+				BodyData = Call;
+				PositionIndex = Call->FunctionInputs.IndexOfByPredicate([](const FFunctionExpressionInput& Input) { return Input.Input.InputName == TEXT("Position"); });
+			}
+		}
+		if (!BodyData || PositionIndex == INDEX_NONE || BodyData->FunctionInputs[PositionIndex].Input.Expression)
+		{
+			return nullptr;
+		}
+		UMaterialExpressionFunctionInput* Position = Cast<UMaterialExpressionFunctionInput>(UMaterialEditingLibrary::CreateMaterialExpressionInFunction(Function,
+			UMaterialExpressionFunctionInput::StaticClass(), BodyData->MaterialExpressionEditorX - 400, BodyData->MaterialExpressionEditorY));
+		Position->InputName = TEXT("Position");
+		Position->Description = TEXT("Where the water info is read (world). Unconnected: the pixel's world position.");
+		Position->InputType = FunctionInput_Vector3;
+		Position->SortPriority = 2;
+		Position->bUsePreviewValueAsDefault = true;
+		Position->ConditionallyGenerateId(true);
+		Position->Preview.Connect(0, UMaterialEditingLibrary::CreateMaterialExpressionInFunction(Function, UMaterialExpressionWorldPosition::StaticClass(),
+			Position->MaterialExpressionEditorX - 250, Position->MaterialExpressionEditorY));
+		BodyData->FunctionInputs[PositionIndex].Input.Connect(0, Position);
+		UMaterialEditingLibrary::UpdateMaterialFunction(Function, nullptr);
+		return Function;
+	}
 
 	/**
 	 * Unreal's ocean material, clipped where its water zone has no water (inside the coastline). Unreal's only turns
@@ -192,6 +246,23 @@ namespace
 			return SourceOcean;
 		}
 
+		// The depth mask reads the water info where the pixel is in the flat world.
+		UMaterialFunctionInterface* PluginMask = DepthMask->MaterialFunction;
+		UMaterialFunction* FlatMask = CopyDepthMaskWithPosition(Context, Folder, PluginMask);
+		if (!FlatMask || !DepthMask->SetMaterialFunctionEx(PluginMask, FlatMask))
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("LBA2 water: the Water plugin's depth mask changed, globe mode's sea may show through cliffs from afar"));
+		}
+		else
+		{
+			const int32 PositionIndex = DepthMask->FunctionInputs.IndexOfByPredicate([](const FFunctionExpressionInput& Input) { return Input.Input.InputName == TEXT("Position"); });
+			if (PositionIndex != INDEX_NONE)
+			{
+				DepthMask->FunctionInputs[PositionIndex].Input.Connect(0, LBAMaterials::MakePlanetFlatPosition(Material, Planet));
+			}
+			MaskOutput = DepthMask->FunctionOutputs.IndexOfByPredicate([](const FFunctionExpressionOutput& Output) { return Output.Output.OutputName == TEXT("Mask"); });
+		}
+
 		UMaterialExpressionSetMaterialAttributes* Clip = NewObject<UMaterialExpressionSetMaterialAttributes>(Material);
 		Clip->Inputs[0].Connect(Graph->MaterialAttributes.OutputIndex, Graph->MaterialAttributes.Expression);
 		Clip->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_OpacityMask));
@@ -205,7 +276,10 @@ namespace
 		Material->GetExpressionCollection().AddExpression(Own);
 		UMaterialExpressionAdd* Offset = Cast<UMaterialExpressionAdd>(UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionAdd::StaticClass(), -250, 1000));
 		Offset->A.Connect(OwnOffset, Own);
-		Offset->B.Connect(0, LBAMaterials::MakePlanetBend(Material, Planet));
+		// Bent where the waves and the height mapping put the vertex: under land the mesh is lifted to 2.56 m under the
+		// ground, and bent as if at sea level it stood meters out of the cliffs seen from afar (it doesn't tilt away
+		// with them).
+		Offset->B.Connect(0, LBAMaterials::MakePlanetBend(Material, Planet, Own, OwnOffset));
 		Clip->AttributeSetTypes.Add(FMaterialAttributeDefinitionMap::GetID(MP_WorldPositionOffset));
 		Clip->Inputs.AddDefaulted_GetRef().Connect(0, Offset);
 		UMaterialExpression* BentNormal = LBAMaterials::MakePlanetBentNormal(Material, Planet, Own, OwnNormal);

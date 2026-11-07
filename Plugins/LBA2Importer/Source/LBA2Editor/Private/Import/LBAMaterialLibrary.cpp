@@ -283,7 +283,39 @@ UMaterialExpression* LBAMaterials::MakePlanetSeaSkyBelow(UMaterial* Material, UM
 	return Light;
 }
 
-UMaterialExpression* LBAMaterials::MakePlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet)
+UMaterialExpression* LBAMaterials::MakePlanetFlatPosition(UMaterial* Material, UMaterialParameterCollection* Planet)
+{
+	// Relative to the camera (subtracted in double precision), unbent with the camera at the origin, then moved back.
+	UMaterialExpression* Pixel = AddExpression(Material, UMaterialExpressionWorldPosition::StaticClass(), -1200, 2200);
+	UMaterialExpression* View = AddPlanetParameter(Material, Planet, TEXT("PlanetView"), 2300);
+	UMaterialExpressionComponentMask* XYZ = Cast<UMaterialExpressionComponentMask>(AddExpression(Material, UMaterialExpressionComponentMask::StaticClass(), -1000, 2300));
+	XYZ->R = XYZ->G = XYZ->B = true;
+	XYZ->A = false;
+	XYZ->Input.Connect(0, View);
+	UMaterialExpressionSubtract* FromView = Cast<UMaterialExpressionSubtract>(AddExpression(Material, UMaterialExpressionSubtract::StaticClass(), -850, 2200));
+	FromView->A.Connect(0, Pixel);
+	FromView->B.Connect(0, XYZ);
+	UMaterialExpression* Flat = AddPlanetCustom(Material, TEXT(
+		"#if !SHADOW_DEPTH_SHADER\n"
+		"if (IsOrthoProjection())\n"
+		"{\n"
+		"\treturn FromView;\n"
+		"}\n"
+		"#endif\n"
+		"FLBAPlanetView P;\n"
+		"P.Bend = Bend;\n"
+		"P.View = float3(0.0, 0.0, Camera.z);\n"
+		"const float3 Unbent = LBAPlanetUnbend(P, float3(FromView.xy, FromView.z + Camera.z));\n"
+		"return float3(Unbent.xy, Unbent.z - Camera.z);"),
+		{ { TEXT("FromView"), FromView }, { TEXT("Camera"), View }, { TEXT("Bend"), AddPlanetParameter(Material, Planet, TEXT("PlanetBend"), 2400) } },
+		-650, 2200);
+	UMaterialExpressionAdd* World = Cast<UMaterialExpressionAdd>(AddExpression(Material, UMaterialExpressionAdd::StaticClass(), -450, 2200));
+	World->A.Connect(0, Flat);
+	World->B.Connect(0, XYZ);
+	return World;
+}
+
+UMaterialExpression* LBAMaterials::MakePlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet, UMaterialExpression* Offset, int32 OffsetOutput)
 {
 	auto Add = [Material](UClass* Class, int32 X, int32 Y)
 	{
@@ -294,6 +326,14 @@ UMaterialExpression* LBAMaterials::MakePlanetBend(UMaterial* Material, UMaterial
 		return AddPlanetParameter(Material, Planet, Name, Y);
 	};
 	UMaterialExpression* Vertex = Add(UMaterialExpressionWorldPosition::StaticClass(), -1200, 900);
+	if (Offset)
+	{
+		// Bent where the material's own offset puts the vertex: its height above the sea sets how far it tilts away.
+		UMaterialExpressionAdd* Moved = Cast<UMaterialExpressionAdd>(Add(UMaterialExpressionAdd::StaticClass(), -1050, 900));
+		Moved->A.Connect(0, Vertex);
+		Moved->B.Connect(OffsetOutput, Offset);
+		Vertex = Moved;
+	}
 	UMaterialExpression* Bend = Parameter(TEXT("PlanetBend"), 1000);
 	// The vertex relative to a camera, subtracted in double precision, then bent for that camera. In the last frame's
 	// branch the world position is the vertex's last frame's.

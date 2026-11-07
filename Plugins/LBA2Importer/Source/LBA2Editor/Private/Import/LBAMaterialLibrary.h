@@ -69,8 +69,12 @@ namespace LBAMaterials
 	 * Shaders/Private/LBAPlanet.ush), last frame's camera for motion vectors. Nothing moves without a planet.
 	 */
 	void AddPlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet);
-	/** The bend's world position offset (current and last frame), for materials that add it to their own. */
-	UMaterialExpression* MakePlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet);
+	/**
+	 * The bend's world position offset (current and last frame), for materials that add it to their own: Offset (output
+	 * OffsetOutput) when given, the bend then taken where it moves the vertex.
+	 */
+	UMaterialExpression* MakePlanetBend(UMaterial* Material, UMaterialParameterCollection* Planet, UMaterialExpression* Offset = nullptr,
+		int32 OffsetOutput = 0);
 	/**
 	 * A normal (world space, or tangent space where the tangent basis is the world's, like the Water plugin's meshes)
 	 * output of Normal turned with the bend's tilt at the pixel (LBAPlanetBendVector).
@@ -82,6 +86,12 @@ namespace LBAMaterials
 	 */
 	UMaterialExpression* MakePlanetSeaSkyBelow(UMaterial* Material, UMaterialParameterCollection* Planet, UMaterialExpression* Normal,
 		UMaterialExpression* Roughness, int32 RoughnessOutput);
+	/**
+	 * The pixel's world position in the flat world, the bend undone (LBAPlanetUnbend): where it is on the island levels'
+	 * maps, e.g. in their water info textures. The world position as it is without a planet, and in views the bend
+	 * leaves flat (orthographic ones but shadows).
+	 */
+	UMaterialExpression* MakePlanetFlatPosition(UMaterial* Material, UMaterialParameterCollection* Planet);
 }
 
 class FLBAMaterialLibrary
