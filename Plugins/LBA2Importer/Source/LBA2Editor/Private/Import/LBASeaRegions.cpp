@@ -159,12 +159,21 @@ UTexture2D* LBASeaRegions::BuildAtlas(FLBAImportContext& Context, const FString&
 			Summary += FString::Printf(TEXT(" %d->%d"), Index, Remaps.Last()[Index]);
 		}
 	}
-	// Turquoise: the sea's main tone (about 40 % of its texels) turns to the oasis water's, its darker and lighter tones
-	// stay blue. The pattern stays and the water goes about a third of the way to the oasis's color. All its colors to
-	// the oasis's teals went too strong, and a blend toward the oasis's colors snapped the darker blues to its greens.
+	// Turquoise: the sea's main tone turns to the oasis water's and the next lighter one (palette banks go dark to light)
+	// to the oasis's next lighter teal, its darker and lightest tones stay blue: about 70 % of its texels, the pattern
+	// kept. The main tone alone (40 %) was a third of the way to the oasis's color, too faint from above; all its colors
+	// to the oasis's teals went too strong, and a blend toward the oasis's colors snapped the darker blues to its greens.
 	const int32 Oasis = Nearest(Palette, FVector3f(OasisWater.R, OasisWater.G, OasisWater.B));
-	Remaps.Add_GetRef(Identity())[MostCommon] = uint8(Oasis);
-	Summary += FString::Printf(TEXT("; turquoise: %d->%d (%.0f %% of the texels)"), MostCommon, Oasis, 100.f * Counts[MostCommon] / float(SeaSize * SeaSize));
+	TArray<uint8>& Turquoise = Remaps.Add_GetRef(Identity());
+	Turquoise[MostCommon] = uint8(Oasis);
+	int32 Turned = Counts[MostCommon];
+	if (MostCommon % 16 < 15 && Oasis % 16 < 15 && Counts[MostCommon + 1] > 0)
+	{
+		Turquoise[MostCommon + 1] = uint8(Oasis + 1);
+		Turned += Counts[MostCommon + 1];
+	}
+	Summary += FString::Printf(TEXT("; turquoise: %d->%d %d->%d (%.0f %% of the texels)"), MostCommon, Turquoise[MostCommon], MostCommon + 1,
+		Turquoise[FMath::Min(MostCommon + 1, 255)], 100.f * Turned / float(SeaSize * SeaSize));
 
 	UTexture2D* Texture = Context.CreatePaletteTexture(Folder, FString::Printf(TEXT("T_%s_SeaRegions"), *Island), SeaSize, SeaSize * Remaps.Num(),
 		[&](int32 X, int32 Y) { return Remaps[Y / SeaSize][SeaPage[(Y % SeaSize) * PageWidth + X]]; }, false, true);
