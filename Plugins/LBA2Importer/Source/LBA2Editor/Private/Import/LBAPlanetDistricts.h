@@ -14,7 +14,8 @@
  *            stub's land and its water on its sea, near the markers and heading 0; largest first, off the ones before.
  *
  * Its pad: its land under LBA1's bricks (their lowest, or the streets' level among the top bricks where that is lower: under
- * a roof), its water carved into the sea, the stub's ground eased into it over 6 m, its colors the ground's top bricks'.
+ * a roof), its water carved into the sea. Along the pad's edge the ground comes up to the streets' top, and the stub's ground
+ * eases into that gently and unevenly: a town has no rectangular outline. Its kinds of ground are the top bricks'.
  * Land the stub's painting lacks under a pad is grown, as LBA2 grew the desert around the Temple of Bu.
  *
  * Its town (L4): the bricks of its scenes in its frame, as LBA1 joins them (its scenes' sea levels differ: Principal's
@@ -30,6 +31,14 @@ namespace LBAPlanetDistricts
 	/** How far (cm) a stub's grid reaches past its painted land when districts are laid on it: room for land they grow. */
 	constexpr double Margin = 6000.0;
 
+	/** How much of each kind of ground (M_LBA_StubGround's) a flat tile of LBA1's is, 0 to 1. */
+	struct FGroundShares
+	{
+		float Grass = 0.f;
+		float Earth = 0.f;
+		float Dark = 0.f;
+	};
+
 	/** A stub's ground on its grid (cm, X and Y along the map's), as LBAPlanetStubs grows it. */
 	struct FGround
 	{
@@ -40,10 +49,12 @@ namespace LBAPlanetDistricts
 		TArray<float> Heights;
 		TArray<bool> Land;
 
-		/** Set by Lay: the pads' land and carved water, and their ground colors (sRGB). Heights and Land are changed. */
+		/** Set by Lay: the pads' land and carved water. Heights and Land are changed. */
 		TArray<bool> Pad;
 		TArray<bool> PadWater;
-		TArray<FVector3f> PadColors;
+		/** Set by Lay: where a pad decides the kinds of ground (itself and the land just off its natural ground), and those. */
+		TArray<bool> Kinded;
+		TArray<FGroundShares> Kinds;
 	};
 
 	/** A district as laid on its stub. */
@@ -102,10 +113,17 @@ namespace LBAPlanetDistricts
 		/** LBA1's data, for the towns' bricks (after Load). */
 		const LBA1::FData& GetData() const { return *Data; }
 
+		/**
+		 * A brick that is ground: a flat tile of grass, earth or a mix of both, or dark ground, drawn as terrain instead of as a
+		 * brick (LBAPlanetTowns). Null for anything else, paving included: its courses follow the street, and the bricks draw them.
+		 */
+		const FGroundShares* GetGroundShares(int32 Brick) const;
+
 	private:
 		struct FDistrict;
 		TUniquePtr<LBA1::FData> Data;
 		FString Directory;
+		mutable TMap<int32, TOptional<FGroundShares>> GroundBricks;
 		TArray<TUniquePtr<FDistrict>> Districts;
 	};
 }

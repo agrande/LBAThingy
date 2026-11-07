@@ -799,7 +799,8 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 
 		// LBA1's districts: their pads in the ground, the coast and the shelf around them again.
 		TArray<bool> Pad;
-		TArray<FVector3f> PadColors;
+		TArray<bool> Kinded;
+		TArray<LBAPlanetDistricts::FGroundShares> Kinds;
 		TArray<LBAPlanetDistricts::FPlaced> Placed;
 		if (bPads)
 		{
@@ -814,7 +815,8 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			Heights.Values = MoveTemp(Ground.Heights);
 			Land = MoveTemp(Ground.Land);
 			Pad = MoveTemp(Ground.Pad);
-			PadColors = MoveTemp(Ground.PadColors);
+			Kinded = MoveTemp(Ground.Kinded);
+			Kinds = MoveTemp(Ground.Kinds);
 			for (int32 Index = 0; Index < Cells; ++Index)
 			{
 				Sea[Index] = !Land[Index];
@@ -838,8 +840,6 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				}
 			}
 		}
-		auto IsPad = [&](int32 Index) { return !Pad.IsEmpty() && Pad[Index]; };
-
 		// Land and sea differ by a cell at best: along the coasts the height says where between the vertices the sea meets
 		// the ground, or the coast is a staircase. Away from the pads (their coast is LBA1's, straight).
 		const TArray<bool> NearPad = Pad.IsEmpty() ? TArray<bool>() : Grow(Grow(Pad, SizeX, SizeY, true), SizeX, SizeY, true);
@@ -906,8 +906,8 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		}
 
 		// Each vertex's shares of the ground's kinds (rock is what's left).
-		FGrid GrassShare, EarthShare, SandShare, PaleShare;
-		for (FGrid* Grid : { &GrassShare, &EarthShare, &SandShare, &PaleShare })
+		FGrid GrassShare, EarthShare, SandShare, PaleShare, DarkShare;
+		for (FGrid* Grid : { &GrassShare, &EarthShare, &SandShare, &PaleShare, &DarkShare })
 		{
 			Grid->Init(SizeX, SizeY);
 		}
@@ -915,6 +915,14 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		{
 			for (int32 X = 0; X < SizeX; ++X)
 			{
+				if (!Kinded.IsEmpty() && Kinded[Y * SizeX + X])
+				{
+					const LBAPlanetDistricts::FGroundShares& Shares = Kinds[Y * SizeX + X];
+					GrassShare(X, Y) = Shares.Grass;
+					EarthShare(X, Y) = Shares.Earth;
+					DarkShare(X, Y) = Shares.Dark;
+					continue;
+				}
 				const EGround Ground = GroundAt(X, Y);
 				GrassShare(X, Y) = Ground == EGround::Grass ? 1.f : 0.f;
 				EarthShare(X, Y) = Ground == EGround::Earth ? 1.f : 0.f;
@@ -922,7 +930,7 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				PaleShare(X, Y) = Ground == EGround::Pale ? 1.f : 0.f;
 			}
 		}
-		for (FGrid* Grid : { &GrassShare, &EarthShare, &SandShare, &PaleShare })
+		for (FGrid* Grid : { &GrassShare, &EarthShare, &SandShare, &PaleShare, &DarkShare })
 		{
 			Blur(*Grid, KindSmoothing);
 		}
@@ -954,16 +962,15 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			FLBAVertex Vertex = VertexAt(X, Y);
 			const FLinearColor Shares = FLinearColor::FromSRGBColor(FColor(uint8(255.f * GrassShare(X, Y) + 0.5f), uint8(255.f * EarthShare(X, Y) + 0.5f), uint8(255.f * SandShare(X, Y) + 0.5f)));
 			Vertex.Color = FVector4f(Shares.R, Shares.G, Shares.B, PaleShare(X, Y));
+			Vertex.UV = FVector2f(DarkShare(X, Y), 0.f);
 			return Vertex;
 		};
-		// The rest is plain color: the pads (LBA1's own ground under its bricks) and, under the sea, sand fading to the
-		// shelf's pale shallows.
+		// The rest is plain color: under the sea, sand fading to the shelf's pale shallows.
 		auto ColorVertexAt = [&](int32 X, int32 Y)
 		{
 			const int32 Index = Y * SizeX + X;
 			FLBAVertex Vertex = VertexAt(X, Y);
-			const FVector3f Color = IsPad(Index) ? PadColors[Index]
-				: FMath::Lerp(LBAPlanetGround::SandColor, ShelfColor, float(FMath::Clamp(Offshore.Values[Index] / 800.0, 0.0, 1.0)));
+			const FVector3f Color = FMath::Lerp(LBAPlanetGround::SandColor, ShelfColor, float(FMath::Clamp(Offshore.Values[Index] / 800.0, 0.0, 1.0)));
 			const FLinearColor Linear = FLinearColor::FromSRGBColor(FColor(uint8(FMath::Clamp(Color.X, 0.f, 255.f)), uint8(FMath::Clamp(Color.Y, 0.f, 255.f)), uint8(FMath::Clamp(Color.Z, 0.f, 255.f))));
 			Vertex.Color = FVector4f(Linear.R, Linear.G, Linear.B, 0.5f);
 			return Vertex;
@@ -983,9 +990,7 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 					continue;
 				}
 				const int32 Corners[4] = { Y * SizeX + X, Y * SizeX + X + 1, (Y + 1) * SizeX + X, (Y + 1) * SizeX + X + 1 };
-				const bool bAnyPad = IsPad(Corners[0]) || IsPad(Corners[1]) || IsPad(Corners[2]) || IsPad(Corners[3]);
-				const bool bAnyLand = Land[Corners[0]] || Land[Corners[1]] || Land[Corners[2]] || Land[Corners[3]];
-				const bool bGround = bAnyLand && !bAnyPad;
+				const bool bGround = Land[Corners[0]] || Land[Corners[1]] || Land[Corners[2]] || Land[Corners[3]];
 				const FLBAVertex A = bGround ? GroundVertexAt(X, Y) : ColorVertexAt(X, Y);
 				const FLBAVertex B = bGround ? GroundVertexAt(X + 1, Y) : ColorVertexAt(X + 1, Y);
 				const FLBAVertex C = bGround ? GroundVertexAt(X, Y + 1) : ColorVertexAt(X, Y + 1);
@@ -995,6 +1000,9 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				Builder.AddTriangleFacing(Section, A, D, C, FVector3f::UpVector);
 			}
 		}
+		// LBA1's ground over its pads, on LBA1's cells, in the same textures from the same pivot: where it meets the ground
+		// around it, nothing shows.
+		LBAPlanetTowns::EmitGround(Districts, Placed, Pivot, Builder, GroundSection);
 		const int32 Triangles = Builder.NumTriangles();
 		FMeshDescription Description;
 		TArray<UMaterialInterface*> Materials;

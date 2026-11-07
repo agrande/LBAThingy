@@ -1,6 +1,6 @@
 // The stub islands' ground (M_LBA_StubGround): which kind of ground a pixel is, and that kind's tiling texture.
 //
-// A vertex says how much of each kind is around it (Weights: R grass, G earth, B sand, A pale stone, the rest rock). A
+// A vertex says how much of each kind is around it (Weights: R grass, G earth, B sand, A pale stone, its UV's x dark ground, the rest rock). A
 // pixel takes the kind scoring highest once noise is added, so kinds meet in hard, irregular edges: no blending, the
 // pixel stays a palette color like the original's ground. Ground steeper than about 32 degrees is rock whatever the
 // vertices say, which keeps grass from dripping down cliffs.
@@ -10,7 +10,7 @@
 
 #pragma once
 
-// Tile sizes (cm). LBA1's earth is 6 cells of 64 cm across; LBA2's tiles are at Citadel's 25 texels per meter (64 or 32 texels).
+// Tile sizes (cm). LBA1's earth and dark ground are 6 cells of 64 cm across; LBA2's tiles are at Citadel's 25 texels per meter (64 or 32 texels).
 #define LBA_STUB_TILE_EARTH 384.0
 #define LBA_STUB_TILE_LARGE 256.0
 #define LBA_STUB_TILE_GRASS 128.0
@@ -51,9 +51,9 @@ float2 LBAStubScatteredUV(float2 At, float Tile)
 }
 
 // Local: the mesh's position (cm, before any bend). Up: the normal's Z.
-float3 LBAStubGroundColor(float2 Local, float Up, float3 WeightsRGB, float WeightA,
+float3 LBAStubGroundColor(float2 Local, float Up, float3 WeightsRGB, float WeightA, float WeightDark,
 	Texture2D Grass, SamplerState GrassSampler, Texture2D Earth, SamplerState EarthSampler, Texture2D Rock, SamplerState RockSampler,
-	Texture2D Sand, SamplerState SandSampler, Texture2D Pale, SamplerState PaleSampler)
+	Texture2D Sand, SamplerState SandSampler, Texture2D Pale, SamplerState PaleSampler, Texture2D Dark, SamplerState DarkSampler)
 {
 	const float A = 0.65 * LBAStubNoise(Local / 90.0) + 0.35 * LBAStubNoise(Local / 28.0 + 17.0);
 	const float B = 0.65 * LBAStubNoise(Local / 70.0 + 41.0) + 0.35 * LBAStubNoise(Local / 23.0 + 5.0);
@@ -61,14 +61,15 @@ float3 LBAStubGroundColor(float2 Local, float Up, float3 WeightsRGB, float Weigh
 	const float ScoreEarth = WeightsRGB.g - LBA_STUB_EDGE_NOISE * A;
 	const float ScoreSand = WeightsRGB.b + LBA_STUB_EDGE_NOISE * B;
 	const float ScorePale = WeightA - LBA_STUB_EDGE_NOISE * B;
-	const float ScoreRock = 1.0 - WeightsRGB.r - WeightsRGB.g - WeightsRGB.b - WeightA;
+	const float ScoreDark = WeightDark + LBA_STUB_EDGE_NOISE * B;
+	const float ScoreRock = 1.0 - WeightsRGB.r - WeightsRGB.g - WeightsRGB.b - WeightA - WeightDark;
 
 	// One set of derivatives for whichever texture is picked: no seams where kinds meet.
 	const float2 DX = ddx(Local);
 	const float2 DY = ddy(Local);
 	const float2 At = Local + LBA_STUB_WANDER * float2(LBAStubNoise(Local / 310.0 + 3.0), LBAStubNoise(Local / 270.0 + 29.0));
 	const float Patches = 1.0 + LBA_STUB_PATCHES * (0.6 * LBAStubNoise(Local / 640.0 + 11.0) + 0.4 * LBAStubNoise(Local / 230.0 + 53.0));
-	const float Top = max(max(ScoreGrass, ScoreEarth), max(ScoreSand, ScorePale));
+	const float Top = max(max(max(ScoreGrass, ScoreEarth), max(ScoreSand, ScorePale)), ScoreDark);
 	if (Up < LBA_STUB_ROCK_UP + LBA_STUB_ROCK_UP_NOISE * A || ScoreRock >= Top)
 	{
 		return Rock.SampleGrad(RockSampler, At / LBA_STUB_TILE_LARGE, DX / LBA_STUB_TILE_LARGE, DY / LBA_STUB_TILE_LARGE).rgb;
@@ -84,6 +85,10 @@ float3 LBAStubGroundColor(float2 Local, float Up, float3 WeightsRGB, float Weigh
 	if (ScoreSand >= Top)
 	{
 		return Patches * Sand.SampleGrad(SandSampler, At / LBA_STUB_TILE_LARGE, DX / LBA_STUB_TILE_LARGE, DY / LBA_STUB_TILE_LARGE).rgb;
+	}
+	if (ScoreDark >= Top)
+	{
+		return Patches * Dark.SampleGrad(DarkSampler, At / LBA_STUB_TILE_EARTH, DX / LBA_STUB_TILE_EARTH, DY / LBA_STUB_TILE_EARTH).rgb;
 	}
 	return Pale.SampleGrad(PaleSampler, At / LBA_STUB_TILE_LARGE, DX / LBA_STUB_TILE_LARGE, DY / LBA_STUB_TILE_LARGE).rgb;
 }

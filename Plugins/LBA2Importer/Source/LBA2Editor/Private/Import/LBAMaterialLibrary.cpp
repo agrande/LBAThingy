@@ -23,6 +23,7 @@
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionSkyLightEnvMapSample.h"
 #include "Materials/MaterialExpressionSubtract.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureObjectParameter.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionTime.h"
@@ -367,8 +368,8 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 	// v4: vertex colors decoded from sRGB. v5: duller sea. v6: cloud clearance.
 	// v7: no specular on palette surfaces (the original has none, and it would read as light in the palette shading).
 	// v8: unshaded sea, like the original's. v9: textured glow (lit windows). v10: bent in globe mode.
-	// v11: bricks shaded by the vertex alpha when BakedShading is on (a hollow's canyons).
-	constexpr int32 Version = 11;
+	// v11: bricks shaded by the vertex alpha when BakedShading is on (a hollow's canyons). v12: the stub ground's dark ground.
+	constexpr int32 Version = 12;
 
 	FLBARenderingAssets& Rendering = Context.GetRendering();
 	UMaterialParameterCollection* Planet = Rendering.GetPlanetParameters();
@@ -609,8 +610,9 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 		UMaterialExpressionVertexColor* VC = G.Add<UMaterialExpressionVertexColor>(300);
 		Input(TEXT("WeightsRGB"), VC);
 		Input(TEXT("WeightA"), VC, 4);
+		Input(TEXT("WeightsUV"), G.Add<UMaterialExpressionTextureCoordinate>(350));
 		int32 Y = 400;
-		for (const TCHAR* TileKind : { TEXT("Grass"), TEXT("Earth"), TEXT("Rock"), TEXT("Sand"), TEXT("Pale") })
+		for (const TCHAR* TileKind : { TEXT("Grass"), TEXT("Earth"), TEXT("Rock"), TEXT("Sand"), TEXT("Pale"), TEXT("Dark") })
 		{
 			UMaterialExpressionTextureObjectParameter* Texture = G.Add<UMaterialExpressionTextureObjectParameter>(Y);
 			Texture->ParameterName = TileKind;
@@ -619,7 +621,7 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 			Input(TileKind, Texture);
 			Y += 100;
 		}
-		Ground->Code = TEXT("return LBAStubGroundColor(Local.xy, Normal.z, WeightsRGB, WeightA, Grass, GrassSampler, Earth, EarthSampler, Rock, RockSampler, Sand, SandSampler, Pale, PaleSampler);");
+		Ground->Code = TEXT("return LBAStubGroundColor(Local.xy, Normal.z, WeightsRGB, WeightA, WeightsUV.x, Grass, GrassSampler, Earth, EarthSampler, Rock, RockSampler, Sand, SandSampler, Pale, PaleSampler, Dark, DarkSampler);");
 		G.Out(Ground, TEXT(""), MP_BaseColor);
 		G.Surface(1.f, 0.f);
 		break;

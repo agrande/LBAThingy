@@ -18,7 +18,7 @@ for what isn't replaced yet.
 |---|---|---|
 | 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
 | 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
-| 2 | The color system, and town ground becoming terrain | not started; palette rule awaiting the user's OK |
+| 2 | The color system, and town ground becoming terrain | built, not committed; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
 | 3 | Kit: recurring pieces and simple houses as models | not started |
 | 4 | Trees, rocks and paths | not started |
 | 5 | Rune stones on real islets | not started |
@@ -120,7 +120,7 @@ Known limits: sand's tile can still be faintly seen from high up. Earth patches 
 
 ## Phase 2: the color system and town ground
 
-### The palette rule (proposed, awaiting the user's OK)
+### The palette rule (the user's OK: 2026-11-07, "LBA2 ramp")
 
 A tile is a **pattern** from LBA1 plus a **ramp** from LBA2.
 
@@ -164,6 +164,31 @@ The result: no rectangular town outlines (a town's edge was mostly ground column
 
 Keep the bricks' collision until each ground kind is proven walkable.
 
+### What was built (2026-11-07), and where it left the plan above
+
+- **Colors:** `LBAPlanetGround::MakeTownPalette` moves LBA1's palette to Citabau's ramp for ramp, each color to the step as bright.
+  Plants 2 -> ramp 7, earth 8 -> ramp 1; the others to the ramp nearest at equal brightness: 3->2, 4->12, 5->4, 6->5, 7->8, 9->6,
+  10->10, 11->11, 12->7, 13->14, 14->4, 15->3. No table per island was needed.
+- **The table's steps changed for bricks:** brick art is drawn already shaded, while terrain is lit (a tile renders at about 0.55
+  of its value). So the plan's steps (grass 10, earth 11) are right for lit terrain textures only; on bricks the middle goes to the
+  original's on-screen values, grass step 8 and earth step 7.
+- **Per brick family became per pixel:** ramp 11 is plants' shadows and also stone. Ramp 11 pixels within 3 pixels of a plant's move
+  with the plant, which also handles moss on stone without any family table.
+- **Ground went on a mesh, not a mask:** a mask laid in the map's frame needs exact street heights on a 1 m grid, and districts are
+  turned. Quads on LBA1's own cells, in the stub's mesh with the same material and pivot, keep exact heights, and the ground around
+  them comes up flush, so the seam doesn't show.
+- **Classification is automatic:** flat tile (top diamond at least 90 % covered, at most 60 pixels outside) by its ramps, grass/earth
+  shares from the mix, so transition tiles (910-939) give fractional kinds. Only dark ground is a range (964-972).
+- **Paving stayed bricks**, recolored: its courses must follow the streets. The kerbs (840-843) and other paving variants too.
+- **A new kind:** dark ground, carried in the vertices' UV x.
+- **Measured** (same light, median sRGB): town earth (69,47,8) against Citabau's (71,53,17); town grass (78,104,59) against (82,111,67).
+- **Pitfall:** a master material's graph only rebuilds when `Version` in `LBAMaterialLibrary.cpp` goes up. Forgetting it leaves the old
+  Custom node calling the new `.ush`, the compile fails and the default material is used, unbent: the land floats, flat grey.
+
+Known limits: earth patches inside towns keep some of LBA1's crenellated edges. Rune stones' grass slabs stand out until Phase 5. Terraced
+plant bricks and palisades still look blocky until Phase 3. Earth renders darker than the original's (88,60,32) on the whole planet, on
+Citabau too: not a stub island matter. The bricks' collision is still what Twinsen walks on in towns.
+
 ## Phase 3: the kit
 
 1. **Table:** `Tools/lba1_kit.json`, from piece key (size and bricks) to an action:
@@ -200,7 +225,7 @@ main islands), so the slabs sit inside real land with a coast.
 
 ## Checks after each phase
 
-- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after (2026-11-07).
+- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2 (2026-11-07).
 - **Tests:** `LBA2.Enclosure` 157 tests pass; `-LBA2Shots=belt` holds Twinsen at 3.7 m (2026-11-07).
 - **Street level:** `shots.ps1 -Map /Game/LBA2/Planets/L_TWINSUN -Poses hero -Extra "-LBA2HeroAt=6286,56485,0"`
 - **Comparison:** the same camera poses as `Saved/LookDev/lba1_review/a` and `b`, side by side.
@@ -219,7 +244,8 @@ Actor positions come from dumping `L_TWINSUN_Stubs` with a headless python scrip
 - Harbour from the west: `4208,50069,2200,-14,49.2`
 - Principal from above: `7644,66135,24000,-89,139.2`
 - Hills behind the harbour: `9938,64349,1500,-12,139.2`
-- Water Tower: `16439,66521,2400,-12,139.2`
+- Water Tower: `16439,66521,2400,-12,139.2`; nearer `9815,65514,2600,-12,139.2`, from above `7545,67474,5000,-89,139.2`
+- Rebellion harbour: from above `63186,72729,7000,-89,139.2`, low `65456,70769,1500,-12,139.2`
 - Proxim City from the south: `62128,30690,1800,-14,139.2`
 - Citadel, for reference: `26000,26500,2600,-11,50`
 

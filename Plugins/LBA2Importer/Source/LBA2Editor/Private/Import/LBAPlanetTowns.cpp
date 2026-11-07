@@ -6,10 +6,12 @@
 #include "Engine/Texture2D.h"
 #include "Formats/LBA1.h"
 #include "Formats/LBAIso.h"
+#include "Formats/LBAXpl.h"
 #include "Import/LBABrickMesh.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBAPlanetGround.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
 #include "LBATypes.h"
@@ -18,6 +20,76 @@ namespace LBAPlanetTownsPrivate
 {
 	/** The districts' frame: LBA1's units in cm (/ 8, as LBA2's). */
 	constexpr float Scale = 0.125f;
+	/** Its cells (cm) across and up. */
+	constexpr double CellCm = LBA1::CellSize * Scale;
+	constexpr double StepCm = LBA1::CellHeight * Scale;
+	/** How far (cells) a town's kinds of ground soften into each other. */
+	constexpr int32 KindsSoften = 3;
+}
+
+void LBAPlanetTowns::EmitGround(const LBAPlanetDistricts::FDistricts& Districts, TConstArrayView<LBAPlanetDistricts::FPlaced> Placed, const FVector& Pivot, FLBAMeshBuilder& Builder, int32 Section)
+{
+	using namespace LBAPlanetTownsPrivate;
+	for (const LBAPlanetDistricts::FPlaced& District : Placed)
+	{
+		LBAPlanetDistricts::FTown Town;
+		if (!Districts.MakeTown(District, Town))
+		{
+			continue;
+		}
+		const LBA1::FData& Data = Districts.GetData();
+		auto SharesAt = [&](int32 X, int32 Y, int32 Z) -> const LBAPlanetDistricts::FGroundShares*
+		{
+			return X >= 0 && Z >= 0 && Y >= 0 && X < Town.Size.X && Y < Town.Size.Y && Z < Town.Size.Z ? Districts.GetGroundShares(Town.Bricks[Town.Index(X, Y, Z)]) : nullptr;
+		};
+		// A corner's kinds: the ground bricks at its level within KindsSoften cells, the nearer the more. Their outlines lose LBA1's
+		// staircases, and the material's noise makes them irregular.
+		auto CornerAt = [&](int32 X, int32 Y, int32 Z)
+		{
+			float Grass = 0.f, Earth = 0.f, Dark = 0.f, Weights = 0.f;
+			for (int32 DZ = -KindsSoften; DZ < KindsSoften; ++DZ)
+			{
+				for (int32 DX = -KindsSoften; DX < KindsSoften; ++DX)
+				{
+					if (const LBAPlanetDistricts::FGroundShares* Shares = SharesAt(X + DX, Y, Z + DZ))
+					{
+						const float Weight = float(FMath::Square(KindsSoften) - FMath::Square(DX + 0.5f) * 0.5f - FMath::Square(DZ + 0.5f) * 0.5f);
+						Grass += Weight * Shares->Grass;
+						Earth += Weight * Shares->Earth;
+						Dark += Weight * Shares->Dark;
+						Weights += Weight;
+					}
+				}
+			}
+			FLBAVertex Vertex;
+			const FVector Frame = Town.GetOrigin() + FVector(X * CellCm, Z * CellCm, (Y + 1) * StepCm);
+			Vertex.Position = FVector3f(District.FrameToMap.TransformPosition(Frame) - Pivot);
+			Vertex.Normal = FVector3f::UpVector;
+			const FLinearColor Linear = FLinearColor::FromSRGBColor(FColor(uint8(255.f * Grass / Weights + 0.5f), uint8(255.f * Earth / Weights + 0.5f), 0));
+			Vertex.Color = FVector4f(Linear.R, Linear.G, 0.f, 0.f);
+			Vertex.UV = FVector2f(Dark / Weights, 0.f);
+			return Vertex;
+		};
+		for (int32 Z = 0; Z < Town.Size.Z; ++Z)
+		{
+			for (int32 X = 0; X < Town.Size.X; ++X)
+			{
+				for (int32 Y = 0; Y < Town.Size.Y; ++Y)
+				{
+					if (!SharesAt(X, Y, Z) || (Y + 1 < Town.Size.Y && Town.Bricks[Town.Index(X, Y + 1, Z)] != 0 && !Data.IsBlankBrick(Town.Bricks[Town.Index(X, Y + 1, Z)])))
+					{
+						continue;
+					}
+					const FLBAVertex A = CornerAt(X, Y, Z);
+					const FLBAVertex B = CornerAt(X + 1, Y, Z);
+					const FLBAVertex C = CornerAt(X, Y, Z + 1);
+					const FLBAVertex D = CornerAt(X + 1, Y, Z + 1);
+					Builder.AddTriangleFacing(Section, A, B, D, FVector3f::UpVector);
+					Builder.AddTriangleFacing(Section, A, D, C, FVector3f::UpVector);
+				}
+			}
+		}
+	}
 }
 
 int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FString& Folder, const FString& Island, const LBAPlanetDistricts::FDistricts& Districts,
@@ -57,7 +129,18 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 	Bricks.Sort();
 	FLBAIsoImporter::FAtlas Atlas;
 	TArray<FColor> Pixels;
-	LBABrickMesh::MakeAtlas(Bricks, [&Data](int32 Brick, FLBABrickSprite& Sprite) { return Data.LoadBrick(Brick, Sprite); }, Data.GetPalette(), Atlas, Pixels);
+	// LBA1's colors moved to the home island's palette (LBAPlanetGround): by ramp, and plants' shadows with their plants.
+	const FLBAXpl* HomeXpl = Context.GetXpl(FLBAXpl::GetEntryForIsland(TEXT("CITABAU")));
+	const TArray<FColor> Palette = HomeXpl ? LBAPlanetGround::MakeTownPalette(Data.GetPalette(), HomeXpl->Palette) : Data.GetPalette();
+	LBABrickMesh::MakeAtlas(Bricks, [&Data](int32 Brick, FLBABrickSprite& Sprite)
+	{
+		if (!Data.LoadBrick(Brick, Sprite))
+		{
+			return false;
+		}
+		LBAPlanetGround::MovePlantShadows(Sprite);
+		return true;
+	}, Palette, Atlas, Pixels);
 	Atlas.Texture = Context.CreateTexture(TownFolder, FString::Printf(TEXT("T_LBA1_%s_Bricks"), *Island), Atlas.Width, Atlas.Height, Pixels, false);
 	Atlas.Material = Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Atlas.Texture, TownFolder);
 	Atlas.FillMaterial = Context.GetMaterials().GetMaster(ELBAMaterial::Color);
@@ -75,11 +158,16 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		UStaticMesh* Collision = nullptr;
 	};
 	TArray<FPiece> Pieces;
-	auto CellsOf = [](const LBAPlanetDistricts::FTown& Town)
+	auto CellsOf = [&Data](const LBAPlanetDistricts::FTown& Town)
 	{
 		LBABrickMesh::FCells Cells;
 		Cells.Size = Town.Size;
-		Cells.Brick = [&Town](int32 X, int32 Y, int32 Z) { return Town.Bricks[Town.Index(X, Y, Z)]; };
+		// A blank brick is only collision: the faces around it are seen.
+		Cells.Brick = [&Town, &Data](int32 X, int32 Y, int32 Z)
+		{
+			const int32 Brick = Town.Bricks[Town.Index(X, Y, Z)];
+			return Brick != 0 && !Data.IsBlankBrick(Brick) ? Brick : 0;
+		};
 		Cells.Shape = [&Town](int32 X, int32 Y, int32 Z) { return int32(Town.Shapes[Town.Index(X, Y, Z)]); };
 		return Cells;
 	};
@@ -117,7 +205,10 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		FLBAMeshBuilder Builder;
 		const int32 Scene = Piece.Scene;
 		LBABrickMesh::EmitVisual(CellsOf(Town), Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material), Scale,
-			Context.GetProjectSettings().BackFaces, [&Town, Scene](const FIntVector& Cell, int32) { return Town.Scenes[Cell.Z * Town.Size.X + Cell.X] == Scene; });
+			Context.GetProjectSettings().BackFaces, [&Town, &Districts, Scene](const FIntVector& Cell, int32)
+			{
+				return Town.Scenes[Cell.Z * Town.Size.X + Cell.X] == Scene && !Districts.GetGroundShares(Town.Bricks[Town.Index(Cell.X, Cell.Y, Cell.Z)]);
+			});
 		if (Builder.IsEmpty())
 		{
 			continue;

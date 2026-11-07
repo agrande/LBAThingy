@@ -40,6 +40,9 @@ namespace LBAPlanetGroundPrivate
 	constexpr int32 EarthBricks = 553;
 	constexpr int32 RowCells = 3;
 	constexpr int32 RowsDeep = 2;
+	/** LBA1's dark ground, a 3 x 3 layout, evenly lit. */
+	constexpr int32 DarkBricks = 964;
+	constexpr int32 DarkRowsDeep = 3;
 	/** The composed tile, a whole number of those. Its world size is in LBAStubGround.ush. */
 	constexpr int32 TileCells = 6;
 	constexpr int32 TileSize = 256;
@@ -47,13 +50,32 @@ namespace LBAPlanetGroundPrivate
 	constexpr int32 HalfWidth = 24;
 	constexpr int32 HalfHeight = 12;
 
+	/** LBA1's palette ramps: its plants, their shadows (also its blue-grey stone) and its earth. */
+	constexpr int32 PlantRamp = 2;
+	constexpr int32 PlantShadowRamp = 11;
+	constexpr int32 EarthRamp = 8;
+	/**
+	 * Those ramps' place in the home palette, and the steps the tile's middle goes to: the original's ground as seen on screen
+	 * (sunny_47: grass 100,112,72, earth 88,60,32), brick art being drawn already shaded.
+	 */
+	constexpr int32 HomePlantRamp = 7;
+	constexpr int32 HomePlantStep = 8;
+	constexpr int32 HomeEarthRamp = 1;
+	constexpr int32 HomeEarthStep = 7;
+	/** The middle of LBA1's tiles of those (brightness), and how much of their contrast stays on the home ramp. */
+	constexpr float PlantMiddle = 75.f;
+	constexpr float PlantContrast = 0.6f;
+	constexpr float EarthMiddle = 95.f;
+	/** A plant's shadows are the shadow ramp's pixels this close to its own (pixels): further off, it's stone with moss on it. */
+	constexpr int32 PlantShadowReach = 3;
+
 	float Luma(const FColor& Color)
 	{
 		return 0.299f * Color.R + 0.587f * Color.G + 0.114f * Color.B;
 	}
 
 	/** Brightness of LBA1's ground, its rows of bricks from FirstBrick composed as the game draws them. */
-	bool ComposeBricks(const LBA1::FData& Data, int32 FirstBrick, TArray<float>& OutLuma)
+	bool ComposeBricks(const LBA1::FData& Data, int32 FirstBrick, int32 Deep, TArray<float>& OutLuma)
 	{
 		// Copies all around the middle tile, drawn back to front: each brick overlaps its neighbours by a pixel.
 		constexpr int32 Min = -TileCells;
@@ -76,7 +98,7 @@ namespace LBAPlanetGroundPrivate
 				}
 				const int32 LX = ((X % TileCells) + TileCells) % TileCells;
 				const int32 LZ = ((Z % TileCells) + TileCells) % TileCells;
-				const int32 Brick = FirstBrick + (LZ % RowsDeep) * RowCells + LX % RowCells;
+				const int32 Brick = FirstBrick + (LZ % Deep) * RowCells + LX % RowCells;
 				FLBABrickSprite* Sprite = Sprites.Find(Brick);
 				if (!Sprite)
 				{
@@ -225,11 +247,18 @@ UMaterialInterface* LBAPlanetGround::Build(FLBAImportContext& Context, const LBA
 	};
 	// LBA1's earth when it's there (Citabau's bare ground otherwise, four copies: LBA1's tile is the larger), on LBA2's ramp.
 	TArray<float> EarthBright;
-	if (!LBA1Data || !ComposeBricks(*LBA1Data, EarthBricks, EarthBright))
+	if (!LBA1Data || !ComposeBricks(*LBA1Data, EarthBricks, RowsDeep, EarthBright))
 	{
 		EarthBright = ToLuma(CropTile(CitabauPage, CitabauEarth, 4), Home);
 	}
 	UTexture2D* Earth = Make(TEXT("Earth"), OnRamp(MoveTemp(EarthBright), Home, EarthColor));
+	// LBA1's dark ground (Citabau's rock on its ramp when there's no LBA1: no town uses it then).
+	TArray<float> DarkBright;
+	if (!LBA1Data || !ComposeBricks(*LBA1Data, DarkBricks, DarkRowsDeep, DarkBright))
+	{
+		DarkBright = ToLuma(CropTile(CitabauPage, CitabauRock), Home);
+	}
+	UTexture2D* Dark = Make(TEXT("Dark"), OnRamp(MoveTemp(DarkBright), Home, DarkColor));
 	UTexture2D* Grass = Make(TEXT("Grass"), ToColors(CropTile(CitabauPage, CitabauGrass), Home));
 	UTexture2D* Rock = Make(TEXT("Rock"), ToColors(CropTile(CitabauPage, CitabauRock), Home));
 	UTexture2D* Pale = Make(TEXT("Pale"), ToColors(CropTile(CitabauPage, CitabauPale), Home));
@@ -246,7 +275,132 @@ UMaterialInterface* LBAPlanetGround::Build(FLBAImportContext& Context, const LBA
 	UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(Instance, TEXT("Rock"), Rock);
 	UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(Instance, TEXT("Sand"), Sand);
 	UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(Instance, TEXT("Pale"), Pale);
+	UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(Instance, TEXT("Dark"), Dark);
 	UMaterialEditingLibrary::UpdateMaterialInstance(Instance);
 	Context.MarkForSave(Instance);
 	return Instance;
+}
+
+TArray<FColor> LBAPlanetGround::MakeTownPalette(const TArray<FColor>& LBA1Palette, const TArray<FColor>& Home)
+{
+	using namespace LBAPlanetGroundPrivate;
+	constexpr int32 Steps = 16;
+	auto Weighted = [](const FColor& A, const FColor& B)
+	{
+		return 0.3f * FMath::Square(float(A.R) - B.R) + 0.59f * FMath::Square(float(A.G) - B.G) + 0.11f * FMath::Square(float(A.B) - B.B);
+	};
+	auto StepAsBright = [&Home](int32 Ramp, float Goal)
+	{
+		int32 Best = 0;
+		float BestDistance = TNumericLimits<float>::Max();
+		for (int32 Step = 0; Step < Steps; ++Step)
+		{
+			const float Distance = FMath::Abs(Luma(Home[Ramp * Steps + Step]) - Goal);
+			if (Distance < BestDistance)
+			{
+				BestDistance = Distance;
+				Best = Step;
+			}
+		}
+		return Ramp * Steps + Best;
+	};
+	TArray<FColor> Out = LBA1Palette;
+	// The home palette's first ramp and last are the engine's own colors, not art's.
+	constexpr int32 FirstRamp = 1;
+	constexpr int32 LastRamp = 14;
+	for (int32 Ramp = 0; Ramp < 16; ++Ramp)
+	{
+		// LBA1's first two ramps aren't ramps (its fire and flash colors): each color to the home palette's nearest.
+		if (Ramp < 2)
+		{
+			for (int32 Entry = FMath::Max(Ramp * Steps, 1); Entry < (Ramp + 1) * Steps; ++Entry)
+			{
+				int32 Best = FirstRamp * Steps;
+				for (int32 Other = FirstRamp * Steps; Other < (LastRamp + 1) * Steps; ++Other)
+				{
+					Best = Weighted(Home[Other], LBA1Palette[Entry]) < Weighted(Home[Best], LBA1Palette[Entry]) ? Other : Best;
+				}
+				Out[Entry] = Home[Best];
+			}
+			continue;
+		}
+		// The ramp whose colors, as bright, are nearest to these.
+		int32 Target = Ramp == PlantRamp ? HomePlantRamp : Ramp == EarthRamp ? HomeEarthRamp : INDEX_NONE;
+		if (Target == INDEX_NONE)
+		{
+			float BestCost = TNumericLimits<float>::Max();
+			for (int32 Candidate = FirstRamp; Candidate <= LastRamp; ++Candidate)
+			{
+				float Cost = 0.f;
+				for (int32 Step = 0; Step < Steps; ++Step)
+				{
+					const FColor& Color = LBA1Palette[Ramp * Steps + Step];
+					Cost += Weighted(Home[StepAsBright(Candidate, Luma(Color))], Color);
+				}
+				if (Cost < BestCost)
+				{
+					BestCost = Cost;
+					Target = Candidate;
+				}
+			}
+		}
+		for (int32 Step = 0; Step < Steps; ++Step)
+		{
+			float Goal = Luma(LBA1Palette[Ramp * Steps + Step]);
+			if (Ramp == PlantRamp)
+			{
+				const float Middle = Luma(Home[HomePlantRamp * Steps + HomePlantStep]);
+				Goal = Middle + (Goal - PlantMiddle) * PlantContrast * Middle / PlantMiddle;
+			}
+			else if (Ramp == EarthRamp)
+			{
+				const float Middle = Luma(Home[HomeEarthRamp * Steps + HomeEarthStep]);
+				Goal = Middle + (Goal - EarthMiddle) * Middle / EarthMiddle;
+			}
+			Out[Ramp * Steps + Step] = Home[StepAsBright(Target, Goal)];
+		}
+	}
+	for (FColor& Color : Out)
+	{
+		Color.A = 255;
+	}
+	return Out;
+}
+
+void LBAPlanetGround::MovePlantShadows(FLBABrickSprite& Sprite)
+{
+	using namespace LBAPlanetGroundPrivate;
+	const int32 Width = FLBABrickSprite::Width;
+	const int32 Height = FLBABrickSprite::Height;
+	for (int32 Pass = 0; Pass < PlantShadowReach; ++Pass)
+	{
+		TArray<int32> Moves;
+		for (int32 Y = 0; Y < Height; ++Y)
+		{
+			for (int32 X = 0; X < Width; ++X)
+			{
+				if (Sprite.Pixels[Y * Width + X] / 16 != PlantShadowRamp)
+				{
+					continue;
+				}
+				bool bByPlant = false;
+				for (int32 DY = FMath::Max(Y - 1, 0); DY <= FMath::Min(Y + 1, Height - 1); ++DY)
+				{
+					for (int32 DX = FMath::Max(X - 1, 0); DX <= FMath::Min(X + 1, Width - 1); ++DX)
+					{
+						const uint8 Other = Sprite.Pixels[DY * Width + DX];
+						bByPlant = bByPlant || (Other != 0 && Other / 16 == PlantRamp);
+					}
+				}
+				if (bByPlant)
+				{
+					Moves.Add(Y * Width + X);
+				}
+			}
+		}
+		for (const int32 Pixel : Moves)
+		{
+			Sprite.Pixels[Pixel] = uint8(PlantRamp * 16 + Sprite.Pixels[Pixel] % 16);
+		}
+	}
 }

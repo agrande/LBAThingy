@@ -63,8 +63,34 @@ namespace LBAPlanetDistrictsPrivate
 	/** A top brick this many cells over the ground stands on it (a house, a tree): its ground color is the nearest ground's. */
 	constexpr int32 StandsOn = 2;
 	constexpr int32 ColorReach = 40;
-	/** The stub's ground eases into a pad over this (cm). */
+	/**
+	 * The stub's ground eases into a pad over this (cm), wider where they differ more, to keep the slope near MaxEaseSlope
+	 * (a little under where the ground turns to rock), up to MaxBlend; EaseWander of that width comes and goes along the edge.
+	 */
 	constexpr double Blend = 600.0;
+	constexpr double MaxBlend = 2500.0;
+	constexpr double MaxEaseSlope = 0.36;
+	constexpr double EaseWander = 0.4;
+	constexpr double EaseWanderSize = 900.0;
+	/** The ground around the pad's edge comes up to this (cm) under the streets' top: flush with them. */
+	constexpr double EdgeUnder = 1.0;
+	/** The pad's edge is its land this many of the stub's cells from land off it (m): what triangles reach past a town's last cell. */
+	constexpr int32 EdgeCells = 2;
+	/** A town's grass, earth and dark ground go on this far (cm) past its edge, about as far again or none where noise says. */
+	constexpr double KindsReach = 400.0;
+	constexpr double KindsWanderSize = 350.0;
+	/** Flat tiles: the top diamond this covered, at most this many pixels out of it. */
+	constexpr float FlatCoverage = 0.9f;
+	constexpr int32 FlatOutside = 60;
+	/** LBA1's palette ramps of its ground tiles: grass and its shadows, earth, and their least shares in a tile. */
+	constexpr int32 GrassRamp = 2;
+	constexpr int32 GrassShadowRamp = 11;
+	constexpr int32 EarthRamps[] = { 8, 9, 3 };
+	constexpr float MinNatural = 0.9f;
+	constexpr float MinGrass = 0.1f;
+	/** LBA1's dark ground (streets of beaten earth). */
+	constexpr int32 DarkFirst = 964;
+	constexpr int32 DarkLast = 972;
 
 	/** An exit across a scene's edge moves the hero a scene's width one way and little the other. */
 	bool IsEdgeExit(const FIntVector& Move)
@@ -249,9 +275,10 @@ struct LBAPlanetDistricts::FDistricts::FDistrict
 	FIntPoint Low = FIntPoint::ZeroValue;
 	TArray<bool> Land;
 	TArray<bool> Water;
-	/** The ground over the sea (cm) and its color (sRGB). */
+	/** The ground over the sea (cm), under its bricks; the streets' top; and the top brick where that is the ground, else the nearest ground's. */
 	TArray<float> Ground;
-	TArray<FVector3f> Colors;
+	TArray<float> Streets;
+	TArray<int32> GroundBricks;
 	/** Its scenes and where their frames are in its frame (units), and per cell the scene drawn there (INDEX_NONE: none). */
 	TArray<TPair<int32, FIntVector>> Offsets;
 	TArray<int32> SceneOf;
@@ -308,12 +335,12 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 	SizeX = High.X - Low.X;
 	SizeZ = High.Y - Low.Y;
 	const int32 Cells = SizeX * SizeZ;
-	TArray<int32> Heights, Bottoms;
-	TArray<FVector3f> Tops;
+	TArray<int32> Heights, Bottoms, Tops, TopHeights;
+	TopHeights.Init(Empty, Cells);
 	Heights.Init(Empty, Cells);
 	Bottoms.Init(Empty, Cells);
 	SceneOf.Init(INDEX_NONE, Cells);
-	Tops.Init(FVector3f::ZeroVector, Cells);
+	Tops.Init(0, Cells);
 	Land.Init(false, Cells);
 	FVector2D Centers = FVector2D::ZeroVector;
 	for (const TPair<int32, FIntVector>& Offset : Offsets)
@@ -341,7 +368,19 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 				if (Height > Heights[Index])
 				{
 					Heights[Index] = Height;
-					Tops[Index] = Plan.Colors[Column];
+					// The top brick that draws anything (over a blank one, only collision, what's under shows).
+					Tops[Index] = 0;
+					TopHeights[Index] = Height;
+					for (int32 Y = Plan.Heights[Column]; Y >= 0; --Y)
+					{
+						const FLBALayoutBlock* TopBlock = LBA1::GetBlock(Library, Grid.Get(X, Y, Z));
+						if (TopBlock && TopBlock->Brick != 0 && !Data.IsBlankBrick(TopBlock->Brick))
+						{
+							Tops[Index] = TopBlock->Brick;
+							TopHeights[Index] = Y + Up;
+							break;
+						}
+					}
 					Land[Index] = !Plan.Water[Column];
 					SceneOf[Index] = Offset.Key;
 					for (int32 Y = 0; Y <= Plan.Heights[Column]; ++Y)
@@ -456,7 +495,7 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 		Ground[Index] = float((Under[Index] - SeaY) * StepCm - Sink);
 	}
 
-	// Its colors: the top brick's where that is the ground, else the nearest ground's (a pond's ground too).
+	// Its kinds of ground: the top brick's where that is the ground, else the nearest ground's (a pond's ground too).
 	TArray<bool> OnGround;
 	OnGround.SetNumUninitialized(Cells);
 	for (int32 Index = 0; Index < Cells; ++Index)
@@ -464,12 +503,15 @@ bool LBAPlanetDistricts::FDistricts::FDistrict::Build(const LBA1::FData& Data, c
 		OnGround[Index] = Land[Index] && !Ponds[Index] && Heights[Index] - GroundY[Index] <= StandsOn;
 	}
 	const TArray<int32> NearestGround = Nearest(OnGround, SizeX, SizeZ, ColorReach);
-	Colors.SetNumUninitialized(Cells);
+	GroundBricks.SetNumUninitialized(Cells);
+	Streets.SetNumUninitialized(Cells);
 	for (int32 Index = 0; Index < Cells; ++Index)
 	{
 		const int32 From = NearestGround[Index] != INDEX_NONE ? NearestGround[Index] : Index;
-		Colors[Index] = Tops[From];
+		GroundBricks[Index] = Tops[From];
 		Ground[Index] = Ponds[Index] ? Ground[From] : Ground[Index];
+		// A cell's top is where a brick's top face is: one cell over its height.
+		Streets[Index] = float(((TopHeights[From] > Empty ? float(TopHeights[From]) : GroundY[Index]) + 1 - SeaY) * StepCm);
 	}
 
 	// Where: the mean of its scenes' markers (longitudes averaged round the circle); east and north there.
@@ -557,6 +599,68 @@ bool LBAPlanetDistricts::FDistricts::Load(const FString& InDirectory, double Rad
 		Districts.Add(MoveTemp(District));
 	}
 	return true;
+}
+
+const LBAPlanetDistricts::FGroundShares* LBAPlanetDistricts::FDistricts::GetGroundShares(int32 Brick) const
+{
+	using namespace LBAPlanetDistrictsPrivate;
+	if (Brick == 0)
+	{
+		return nullptr;
+	}
+	if (const TOptional<FGroundShares>* Known = GroundBricks.Find(Brick))
+	{
+		return Known->GetPtrOrNull();
+	}
+	TOptional<FGroundShares>& Result = GroundBricks.Add(Brick);
+	FLBABrickSprite Sprite;
+	if (!Data->LoadBrick(Brick, Sprite))
+	{
+		return nullptr;
+	}
+	int32 InDiamond = 0, Covered = 0, Outside = 0, Solid = 0;
+	int32 Ramps[16] = {};
+	for (int32 Y = 0; Y < FLBABrickSprite::Height; ++Y)
+	{
+		for (int32 X = 0; X < FLBABrickSprite::Width; ++X)
+		{
+			const uint8 Pixel = Sprite.Pixels[Y * FLBABrickSprite::Width + X];
+			const bool bDiamond = FMath::Abs(X + 0.5f - 24.f) / 24.f + FMath::Abs(Y + 0.5f - 12.f) / 12.f <= 1.f;
+			InDiamond += bDiamond ? 1 : 0;
+			Covered += bDiamond && Pixel != 0 ? 1 : 0;
+			Outside += !bDiamond && Pixel != 0 ? 1 : 0;
+			Solid += Pixel != 0 ? 1 : 0;
+			Ramps[Pixel / 16] += Pixel != 0 ? 1 : 0;
+		}
+	}
+	if (float(Covered) < FlatCoverage * InDiamond || Outside > FlatOutside)
+	{
+		return nullptr;
+	}
+	FGroundShares Shares;
+	if (Brick >= DarkFirst && Brick <= DarkLast)
+	{
+		Shares.Dark = 1.f;
+		Result = Shares;
+		return Result.GetPtrOrNull();
+	}
+	int32 Earth = 0;
+	for (const int32 Ramp : EarthRamps)
+	{
+		Earth += Ramps[Ramp];
+	}
+	const float Total = float(Solid);
+	const int32 Grass = Ramps[GrassRamp] + Ramps[GrassShadowRamp];
+	const bool bAllEarth = Earth >= MinNatural * Total;
+	const bool bMix = Earth + Grass >= MinNatural * Total && Ramps[GrassRamp] >= MinGrass * Total;
+	if (!bAllEarth && !bMix)
+	{
+		return nullptr;
+	}
+	Shares.Grass = bAllEarth ? 0.f : Grass / float(Grass + Earth);
+	Shares.Earth = 1.f - Shares.Grass;
+	Result = Shares;
+	return Result.GetPtrOrNull();
 }
 
 bool LBAPlanetDistricts::FDistricts::HasIsland(const FString& Island) const
@@ -702,11 +806,16 @@ TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FS
 	// The pads: each district's land at its ground (a district without water: its median ground where the stub's is),
 	// its water carved; the first laid keeps a cell.
 	const TArray<float> Stub = Ground.Heights;
-	TArray<float> PadHeights;
+	TArray<float> PadHeights, PadStreets;
 	PadHeights.Init(0.f, Cells);
+	PadStreets.Init(0.f, Cells);
 	Ground.Pad.Init(false, Cells);
 	Ground.PadWater.Init(false, Cells);
-	Ground.PadColors.Init(FVector3f::ZeroVector, Cells);
+	Ground.Kinded.Init(false, Cells);
+	Ground.Kinds.Init(FGroundShares(), Cells);
+	// Whether a pad's cell has natural ground to carry on past its edge (paving and walls don't).
+	TArray<bool> Natural;
+	Natural.Init(false, Cells);
 	for (int32 Which = 0; Which < Here.Num(); ++Which)
 	{
 		const FDistrict* District = Here[Which];
@@ -740,14 +849,70 @@ TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FS
 			{
 				Ground.Pad[Index] = true;
 				PadHeights[Index] = District->Ground[Under[Index]] + Shift;
-				Ground.PadColors[Index] = District->Colors[Under[Index]];
+				PadStreets[Index] = District->Streets[Under[Index]] + Shift;
+				// Under paving and walls, only seen through their gaps: dark ground.
+				const FGroundShares* Shares = GetGroundShares(District->GroundBricks[Under[Index]]);
+				Ground.Kinded[Index] = true;
+				Ground.Kinds[Index] = Shares ? *Shares : FGroundShares{ 0.f, 0.f, 1.f };
+				Natural[Index] = Shares != nullptr;
 			}
 		}
 		Placed[Which].FrameToMap.AddToTranslation(FVector(0.0, 0.0, Shift));
 	}
 
-	// The stub's ground off a pad eases from the pad's nearest height to its own over Blend.
-	const TArray<int32> NearestPad = Nearest(Ground.Pad, Ground.SizeX, Ground.SizeY, FMath::CeilToInt(Blend / Ground.Cell) + 1);
+	// The pad's edge: its land next to land off it comes up to the streets' top (the lowest around: its triangles stay under
+	// the streets), so a town's ground meets the stub's with no step.
+	auto AtEdge = [&](int32 X, int32 Y)
+	{
+		for (int32 DY = -EdgeCells; DY <= EdgeCells; ++DY)
+		{
+			for (int32 DX = -EdgeCells; DX <= EdgeCells; ++DX)
+			{
+				const int32 NX = X + DX;
+				const int32 NY = Y + DY;
+				if (NX >= 0 && NY >= 0 && NX < Ground.SizeX && NY < Ground.SizeY && !Ground.Pad[NY * Ground.SizeX + NX] && !Ground.PadWater[NY * Ground.SizeX + NX] && Ground.Land[NY * Ground.SizeX + NX])
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+	TArray<float> EdgeHeights = PadStreets;
+	for (int32 Y = 0; Y < Ground.SizeY; ++Y)
+	{
+		for (int32 X = 0; X < Ground.SizeX; ++X)
+		{
+			const int32 Index = Y * Ground.SizeX + X;
+			if (!Ground.Pad[Index])
+			{
+				continue;
+			}
+			float Lowest = PadStreets[Index];
+			for (int32 DY = -1; DY <= 1; ++DY)
+			{
+				for (int32 DX = -1; DX <= 1; ++DX)
+				{
+					const int32 NX = X + DX;
+					const int32 NY = Y + DY;
+					if (NX >= 0 && NY >= 0 && NX < Ground.SizeX && NY < Ground.SizeY && Ground.Pad[NY * Ground.SizeX + NX])
+					{
+						Lowest = FMath::Min(Lowest, PadStreets[NY * Ground.SizeX + NX]);
+					}
+				}
+			}
+			EdgeHeights[Index] = Lowest - float(EdgeUnder);
+			if (AtEdge(X, Y))
+			{
+				PadHeights[Index] = FMath::Max(PadHeights[Index], EdgeHeights[Index]);
+			}
+		}
+	}
+
+	// The stub's ground off a pad eases from the pad's edge to its own, gently, and more so where they differ more.
+	const TArray<int32> NearestPad = Nearest(Ground.Pad, Ground.SizeX, Ground.SizeY, FMath::CeilToInt(MaxBlend * (1.0 + EaseWander) / Ground.Cell) + 1);
+	TArray<bool> Eased;
+	Eased.Init(false, Cells);
 	for (int32 Index = 0; Index < Cells; ++Index)
 	{
 		if (Ground.Pad[Index])
@@ -760,10 +925,61 @@ TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FS
 		const int32 Source = NearestPad[Index];
 		if (Ground.Land[Index] && Source != INDEX_NONE)
 		{
-			const double Off = FVector2D::Distance(FVector2D(Index % Ground.SizeX, Index / Ground.SizeX), FVector2D(Source % Ground.SizeX, Source / Ground.SizeX)) * Ground.Cell;
-			const double T = FMath::SmoothStep(0.0, 1.0, FMath::Clamp(Off / Blend, 0.0, 1.0));
-			Ground.Heights[Index] = float(FMath::Lerp(double(PadHeights[Source]), double(Stub[Index]), T));
+			const FVector2D At(Index % Ground.SizeX, Index / Ground.SizeX);
+			const FVector2D Map = At * Ground.Cell;
+			const double Off = FVector2D::Distance(At, FVector2D(Source % Ground.SizeX, Source / Ground.SizeX)) * Ground.Cell;
+			const double From = EdgeHeights[Source];
+			const double Differ = FMath::Abs(double(Stub[Index]) - From);
+			const double Wander = 1.0 + EaseWander * FMath::Clamp(2.0 * double(FMath::PerlinNoise2D(FVector2D(Map / EaseWanderSize))), -1.0, 1.0);
+			const double Width = FMath::Clamp(Differ / MaxEaseSlope, Blend, MaxBlend) * Wander;
+			if (Off < Width)
+			{
+				Ground.Heights[Index] = float(FMath::Lerp(From, double(Stub[Index]), FMath::SmoothStep(0.0, 1.0, Off / Width)));
+				Eased[Index] = true;
+			}
+			// A town's natural ground carries on past its edge, unevenly.
+			const double KindsOff = Off / (KindsReach * (1.0 + 1.5 * double(FMath::PerlinNoise2D(FVector2D(Map / KindsWanderSize + FVector2D(37.0))))));
+			if (Natural[Source] && KindsOff >= 0.0 && KindsOff < 1.0)
+			{
+				Ground.Kinded[Index] = true;
+				Ground.Kinds[Index] = Ground.Kinds[Source];
+			}
 		}
+	}
+	// Nearest pads change from cell to cell: two passes of a small blur take the creases out of the eased ground, its first
+	// cell off the pad staying where it meets the pad.
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		const TArray<float> Before = Ground.Heights;
+		ParallelFor(Ground.SizeY, [&](int32 Y)
+		{
+			for (int32 X = 0; X < Ground.SizeX; ++X)
+			{
+				const int32 Index = Y * Ground.SizeX + X;
+				if (!Eased[Index])
+				{
+					continue;
+				}
+				float Sum = 0.f;
+				float Weights = 0.f;
+				bool bByPad = false;
+				for (int32 DY = -1; DY <= 1; ++DY)
+				{
+					for (int32 DX = -1; DX <= 1; ++DX)
+					{
+						const int32 NX = X + DX;
+						const int32 NY = Y + DY;
+						if (NX >= 0 && NY >= 0 && NX < Ground.SizeX && NY < Ground.SizeY && Ground.Land[NY * Ground.SizeX + NX])
+						{
+							bByPad = bByPad || Ground.Pad[NY * Ground.SizeX + NX];
+							Sum += Before[NY * Ground.SizeX + NX];
+							Weights += 1.f;
+						}
+					}
+				}
+				Ground.Heights[Index] = bByPad || Weights == 0.f ? Before[Index] : Sum / Weights;
+			}
+		});
 	}
 	return Placed;
 }

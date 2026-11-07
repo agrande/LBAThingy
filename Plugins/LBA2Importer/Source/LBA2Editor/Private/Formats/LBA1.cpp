@@ -209,6 +209,22 @@ const FLBALayoutBlock* LBA1::GetBlock(const FLBALibrary& Library, const FLBAGrid
 	return Layout.Blocks.IsValidIndex(Cell.Block) ? &Layout.Blocks[Cell.Block] : nullptr;
 }
 
+bool LBA1::FData::IsBlankBrick(int32 Brick) const
+{
+	if (const bool* Known = BlankBricks.Find(Brick))
+	{
+		return *Known;
+	}
+	FLBABrickSprite Sprite;
+	bool bBlank = LoadBrick(Brick, Sprite);
+	for (const uint8 Pixel : Sprite.Pixels)
+	{
+		bBlank = bBlank && Pixel == 0;
+	}
+	BlankBricks.Add(Brick, bBlank);
+	return bBlank;
+}
+
 FVector3f LBA1::FData::GetTopColor(int32 Brick) const
 {
 	if (const FVector3f* Known = TopColors.Find(Brick))

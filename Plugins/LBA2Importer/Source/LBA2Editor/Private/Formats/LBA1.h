@@ -79,6 +79,8 @@ namespace LBA1
 		bool LoadLibrary(int32 Index, FLBALibrary& Out) const;
 		/** A brick's sprite (1-based, as layouts' blocks name them). */
 		bool LoadBrick(int32 Brick, FLBABrickSprite& Out) const;
+		/** A brick with nothing to draw: its cell is only collision, and what's under it shows. */
+		bool IsBlankBrick(int32 Brick) const;
 		/** LBA1's palette (sRGB). */
 		TArray<FColor> GetPalette() const;
 		bool LoadPlan(int32 Index, FPlan& Out) const;
@@ -97,5 +99,6 @@ namespace LBA1
 		FLBAHqrFile Ress;
 		TArray<FVector3f> Palette;
 		mutable TMap<int32, FVector3f> TopColors;
+		mutable TMap<int32, bool> BlankBricks;
 	};
 }
