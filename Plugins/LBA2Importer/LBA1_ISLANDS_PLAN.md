@@ -16,8 +16,8 @@ for what isn't replaced yet.
 
 | Phase | What | Status |
 |---|---|---|
-| 0 | Remove the two duplicate islets | done, code uncommitted; re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
-| 1 | Textured terrain, with LBA1 tiles where they fit | built, uncommitted, awaiting the user's review; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
+| 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
+| 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
 | 2 | The color system, and town ground becoming terrain | not started; palette rule awaiting the user's OK |
 | 3 | Kit: recurring pieces and simple houses as models | not started |
 | 4 | Trees, rocks and paths | not started |
