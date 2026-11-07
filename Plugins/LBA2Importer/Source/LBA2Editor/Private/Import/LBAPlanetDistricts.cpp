@@ -3,6 +3,7 @@
 #include "Algo/StableSort.h"
 #include "Async/ParallelFor.h"
 #include "Formats/LBA1.h"
+#include "Import/LBAPlanetKit.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
 #include "LBATypes.h"
@@ -990,7 +991,7 @@ FVector LBAPlanetDistricts::FTown::GetOrigin() const
 	return FVector(Low.X * CellCm, Low.Z * CellCm, Low.Y * StepCm);
 }
 
-bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out) const
+bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out, const LBAPlanetKit::FTable* Kit) const
 {
 	using namespace LBAPlanetDistrictsPrivate;
 	if (!Districts.IsValidIndex(Placed.District))
@@ -1011,6 +1012,8 @@ bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out)
 	Out.Bricks.Init(0, Out.Size.X * Out.Size.Y * Out.Size.Z);
 	Out.Shapes.Init(0, Out.Bricks.Num());
 	Out.Scenes.Init(INDEX_NONE, Out.Size.X * Out.Size.Z);
+	Out.Pieces.Reset();
+	Out.Replaced.Init(false, Out.Bricks.Num());
 
 	// Each column from the scene drawn over it, but the sea's (its water and the sea floor under it).
 	auto IsSea = [&District](int32 X, int32 Z)
@@ -1045,6 +1048,51 @@ bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out)
 					{
 						Out.Bricks[Out.Index(TX, Y + Up, TZ)] = Block->Brick;
 						Out.Shapes[Out.Index(TX, Y + Up, TZ)] = Block->Shape;
+					}
+				}
+			}
+		}
+
+		// Its kit pieces: whole layouts (block 0 is the low corner) the kit has a model for, all drawn from this scene.
+		for (int32 Z = 0; Kit && Z < LBA1::SceneCells; ++Z)
+		{
+			for (int32 X = 0; X < LBA1::SceneCells; ++X)
+			{
+				for (int32 Y = 0; Y < LBA::GridSizeY; ++Y)
+				{
+					const FLBAGridCell& Anchor = Grid.Get(X, Y, Z);
+					if (Anchor.Block != 0 || !Library.Layouts.IsValidIndex(Anchor.Layout))
+					{
+						continue;
+					}
+					const FLBALayout& Layout = Library.Layouts[Anchor.Layout];
+					const int32 Model = Kit->Find(Layout);
+					if (Model == INDEX_NONE)
+					{
+						continue;
+					}
+					bool bWhole = X + Layout.SizeX <= LBA1::SceneCells && Z + Layout.SizeZ <= LBA1::SceneCells && Y + Layout.SizeY <= LBA::GridSizeY;
+					for (int32 Index = 0; bWhole && Index < Layout.Blocks.Num(); ++Index)
+					{
+						const FIntVector At = FIntVector(X, Y, Z) + Layout.GetBlockCoords(Index);
+						const FLBAGridCell& Here = Grid.Get(At.X, At.Y, At.Z);
+						const int32 Column = (Cell.Y + At.Z) * Out.Size.X + Cell.X + At.X;
+						bWhole = (Layout.Blocks[Index].Brick == 0 || (Here.Layout == Anchor.Layout && Here.Block == Index))
+							&& District.SceneOf[Column] == Offset.Key && !IsSea(Cell.X + At.X, Cell.Y + At.Z);
+					}
+					if (!bWhole)
+					{
+						continue;
+					}
+					const FIntVector Low(Cell.X + X, Y + Up, Cell.Y + Z);
+					Out.Pieces.Add({ Model, Offset.Key, Low, FIntVector(Layout.SizeX, Layout.SizeY, Layout.SizeZ) });
+					for (int32 Index = 0; Index < Layout.Blocks.Num(); ++Index)
+					{
+						if (Layout.Blocks[Index].Brick != 0)
+						{
+							const FIntVector At = Low + Layout.GetBlockCoords(Index);
+							Out.Replaced[Out.Index(At.X, At.Y, At.Z)] = true;
+						}
 					}
 				}
 			}

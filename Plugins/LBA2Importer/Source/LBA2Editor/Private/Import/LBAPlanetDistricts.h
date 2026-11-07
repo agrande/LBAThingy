@@ -25,6 +25,10 @@ namespace LBA1
 {
 	class FData;
 }
+namespace LBAPlanetKit
+{
+	class FTable;
+}
 
 namespace LBAPlanetDistricts
 {
@@ -89,6 +93,18 @@ namespace LBAPlanetDistricts
 		/** Per column (z * Size.X + x): the scene drawn there (INDEX_NONE: none). */
 		TArray<int32> Scenes;
 
+		/** A layout drawn as a kit model (LBAPlanetKit): its model, scene and cells (from Low, Size of them). */
+		struct FPiece
+		{
+			int32 Model = INDEX_NONE;
+			int32 Scene = INDEX_NONE;
+			FIntVector Low = FIntVector::ZeroValue;
+			FIntVector Size = FIntVector::ZeroValue;
+		};
+		TArray<FPiece> Pieces;
+		/** Per cell (Index): a piece's, drawn by its model rather than as a brick (its brick stays: the collision). */
+		TBitArray<> Replaced;
+
 		int32 Index(int32 X, int32 Y, int32 Z) const { return (Z * Size.X + X) * Size.Y + Y; }
 		/** Where cell 0, 0, 0 is in the frame (cm, as FPlaced::FrameToMap takes it). */
 		FVector GetOrigin() const;
@@ -108,8 +124,11 @@ namespace LBAPlanetDistricts
 		/** Places the island's districts on its ground and lays their pads. */
 		TArray<FPlaced> Lay(const FString& Island, FGround& Ground) const;
 
-		/** A placed district's bricks: its land's, not its sea's (the planet's sea is there); quays reach under the sea. */
-		bool MakeTown(const FPlaced& Placed, FTown& Out) const;
+		/**
+		 * A placed district's bricks: its land's, not its sea's (the planet's sea is there); quays reach under the sea. With a
+		 * Kit, its whole layouts that the kit has a model for are its Pieces.
+		 */
+		bool MakeTown(const FPlaced& Placed, FTown& Out, const LBAPlanetKit::FTable* Kit = nullptr) const;
 		/** LBA1's data, for the towns' bricks (after Load). */
 		const LBA1::FData& GetData() const { return *Data; }
 

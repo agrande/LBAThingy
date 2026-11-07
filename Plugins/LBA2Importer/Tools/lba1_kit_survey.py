@@ -81,7 +81,8 @@ def main():
                     continue
                 entry = lib[layout - 1]
                 key = (tuple(entry["size"]), tuple(b[2] for b in entry["blocks"]))
-                p = pieces.setdefault(key, dict(layout=entry, count=0, scenes=collections.Counter(), islands=set()))
+                # The example names it in Resources/Models/lba1_kit.json: scene and 0-based layout index, as the importer counts.
+                p = pieces.setdefault(key, dict(layout=entry, count=0, scenes=collections.Counter(), islands=set(), example="%d:%d" % (n, layout - 1)))
                 p["count"] += 1; p["scenes"][n] += 1; p["islands"].add(island)
             # The top brick of every column (the ground and the roofs as seen from above).
             for x in range(lba1.SIZE_X):
@@ -113,7 +114,7 @@ def main():
     print("  cells %d; pieces of 8+ cells %d (%d instances)" % (cells, len(big), sum(p["count"] for _, p in big)))
     summary = []
     for rank, (key, p) in enumerate(ordered):
-        summary.append(dict(rank=rank, size=key[0], count=p["count"], scenes=dict(p["scenes"]), islands=sorted(p["islands"]),
+        summary.append(dict(rank=rank, example=p["example"], size=key[0], count=p["count"], scenes=dict(p["scenes"]), islands=sorted(p["islands"]),
                             bricks=sorted(set(b for b in key[1] if b))))
     json.dump(summary, open(os.path.join(OUT, "pieces.json"), "w"), indent=0, default=int)
 
@@ -133,7 +134,7 @@ def main():
     # Big pieces first page, small pieces second: a lamp or a tree is a tall column, a floor tile a single cell.
     sheet([(draw_piece(p["layout"]), "#%d x%d %s" % (i, p["count"], "x".join(map(str, k[0])))) for i, (k, p) in enumerate(ordered[:100])], "pieces.png")
     sized = sorted(((k, p) for k, p in ordered if k[0][1] >= 3 or k[0][0] * k[0][2] >= 4), key=lambda kv: -kv[1]["count"] * np.prod(kv[0][0]))
-    sheet([(draw_piece(p["layout"]), "x%d %s s%s" % (p["count"], "x".join(map(str, k[0])), ",".join(map(str, list(p["scenes"])[:3])))) for k, p in sized[:150]], "pieces_big.png")
+    sheet([(draw_piece(p["layout"]), "x%d %s  %s" % (p["count"], "x".join(map(str, k[0])), p["example"])) for k, p in sized[:150]], "pieces_big.png")
 
     # Ground tiles per island.
     ground = {}

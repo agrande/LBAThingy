@@ -19,7 +19,7 @@ for what isn't replaced yet.
 | 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
 | 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
 | 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
-| 3 | Kit: recurring pieces and simple houses as models | not started |
+| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). Next: 3b simple houses |
 | 4 | Trees, rocks and paths | not started |
 | 5 | Rune stones on real islets | not started |
 
@@ -212,6 +212,25 @@ Citabau too: not a stub island matter. The bricks' collision is still what Twins
 5. **Instancing:** use instanced meshes per kit model. Keep the negative bounds extension the bent culling needs.
 6. **Collision:** keep it from the bricks' shapes in this iteration, and check Twinsen against the visuals.
 
+### What was built (2026-11-07): 3a, the props
+
+- `Import/LBAPlanetKit` reads the table, `Resources/Models/lba1_kit.json` (not `Tools/`: the importer reads it), and the remake's
+  own LBA1 replacements (`www/metadata/lba1/layouts.json`: barrel, box, cloth bench), keyed by size + bricks.
+  `FDistricts::MakeTown` finds whole layouts with a model (`FTown::Pieces`, `Replaced`); `LBAPlanetTowns` skips their bricks when
+  drawing (collision kept), lays terrain under them, and instances the models per island (`Kit_<island>_<model>`).
+- Table entries: Citadel's lamppost (26), tree (1) for both pines, the harbour's bollard rail (50, x and z), sign board (5).
+  304 instances. Orientation: LBA2 bodies at yaw 0 in a district's frame face as on their island; the rail runs along x.
+- `Tools/lba2_decor_sheet.py` draws an island's decor bodies (`decor_<ISLAND>.png`); pieces_big.png labels now give each piece's
+  example `scene:layout`.
+- **Boulders left as bricks.** The boulder heaps (17:68, 17:77, 12:67...) are LBA1's rocky shores and terrace edges, many half
+  buried. No LBA2 decor body fits: rocks are big textured terrain chunks (Citadel 2 sits 2.25 m over its pivot, 3 is red), the low
+  dark ones (Citadel 8-10) are slabs. Next try: a generated rock (preference 3), or leave them to Phase 4's rocks.
+- `"fit": "height"` and `"every"` exist for that (scaled to the piece's height and set on its floor, copies along it) but no entry
+  uses them now.
+- Checks: 157 tests pass; globe 154.4 fps (155.5 before).
+- Not done in 3a: iron railings (12:152, 12:153 x184: remake iron fence models?), picket fences, life buoys, the brown palisade
+  (24:59), roof slopes, walls. The sign board model (1 m) is smaller than LBA1's (1.3 m).
+
 ## Phase 4: trees, rocks and paths
 
 - Scatter LBA2 trees and rocks on grass benches. Measure the density on Citabau rather than guessing.
@@ -225,7 +244,7 @@ main islands), so the slabs sit inside real land with a coast.
 
 ## Checks after each phase
 
-- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2 (2026-11-07).
+- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a (2026-11-07).
 - **Tests:** `LBA2.Enclosure` 157 tests pass; `-LBA2Shots=belt` holds Twinsen at 3.7 m (2026-11-07).
 - **Street level:** `shots.ps1 -Map /Game/LBA2/Planets/L_TWINSUN -Poses hero -Extra "-LBA2HeroAt=6286,56485,0"`
 - **Comparison:** the same camera poses as `Saved/LookDev/lba1_review/a` and `b`, side by side.
@@ -239,7 +258,10 @@ world.x = 0.6537 a - 0.7567 b + 36832
 world.y = 0.7567 a + 0.6537 b + 39232
 world yaw = map yaw + 49.18
 ```
-Actor positions come from dumping `L_TWINSUN_Stubs` with a headless python script. Useful world poses, `x,y,z,pitch,yaw`:
+Actor positions come from dumping `L_TWINSUN_Stubs` with a headless python script. On 2026-11-07 this formula didn't land on
+kit instances' dumped positions (cameras aimed with it saw sea or other streets): use it with care. What worked: shoot
+`-Map /Game/LBA2/Planets/L_TWINSUN_Stubs` itself, where poses are map coordinates as dumped (unbent and unlit, enough to judge
+shapes). Useful world poses, `x,y,z,pitch,yaw`:
 - Harbour from the south-east: `14529,54368,2200,-16,139.2`
 - Harbour from the west: `4208,50069,2200,-14,49.2`
 - Principal from above: `7644,66135,24000,-89,139.2`

@@ -1,5 +1,6 @@
 #include "Import/LBAPlanetTowns.h"
 
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
@@ -12,6 +13,9 @@
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBAPlanetGround.h"
+#include "Import/LBAPlanetKit.h"
+#include "Import/LBARemakeAssets.h"
+#include "Math/RandomStream.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
 #include "LBATypes.h"
@@ -27,13 +31,14 @@ namespace LBAPlanetTownsPrivate
 	constexpr int32 KindsSoften = 3;
 }
 
-void LBAPlanetTowns::EmitGround(const LBAPlanetDistricts::FDistricts& Districts, TConstArrayView<LBAPlanetDistricts::FPlaced> Placed, const FVector& Pivot, FLBAMeshBuilder& Builder, int32 Section)
+void LBAPlanetTowns::EmitGround(const LBAPlanetDistricts::FDistricts& Districts, const LBAPlanetKit::FTable& Kit, TConstArrayView<LBAPlanetDistricts::FPlaced> Placed, const FVector& Pivot,
+	FLBAMeshBuilder& Builder, int32 Section)
 {
 	using namespace LBAPlanetTownsPrivate;
 	for (const LBAPlanetDistricts::FPlaced& District : Placed)
 	{
 		LBAPlanetDistricts::FTown Town;
-		if (!Districts.MakeTown(District, Town))
+		if (!Districts.MakeTown(District, Town, &Kit))
 		{
 			continue;
 		}
@@ -76,7 +81,9 @@ void LBAPlanetTowns::EmitGround(const LBAPlanetDistricts::FDistricts& Districts,
 			{
 				for (int32 Y = 0; Y < Town.Size.Y; ++Y)
 				{
-					if (!SharesAt(X, Y, Z) || (Y + 1 < Town.Size.Y && Town.Bricks[Town.Index(X, Y + 1, Z)] != 0 && !Data.IsBlankBrick(Town.Bricks[Town.Index(X, Y + 1, Z)])))
+					// Under a brick, no ground; under a kit model, ground.
+					const int32 Above = Y + 1 < Town.Size.Y ? Town.Index(X, Y + 1, Z) : INDEX_NONE;
+					if (!SharesAt(X, Y, Z) || (Above != INDEX_NONE && Town.Bricks[Above] != 0 && !Data.IsBlankBrick(Town.Bricks[Above]) && !Town.Replaced[Above]))
 					{
 						continue;
 					}
@@ -93,7 +100,7 @@ void LBAPlanetTowns::EmitGround(const LBAPlanetDistricts::FDistricts& Districts,
 }
 
 int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FString& Folder, const FString& Island, const LBAPlanetDistricts::FDistricts& Districts,
-	TConstArrayView<LBAPlanetDistricts::FPlaced> Placed, double Radius)
+	const LBAPlanetKit::FTable& Kit, TConstArrayView<LBAPlanetDistricts::FPlaced> Placed, double Radius)
 {
 	using namespace LBAPlanetTownsPrivate;
 	const LBA1::FData& Data = Districts.GetData();
@@ -106,16 +113,16 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 	for (const LBAPlanetDistricts::FPlaced& District : Placed)
 	{
 		LBAPlanetDistricts::FTown Town;
-		if (!Districts.MakeTown(District, Town))
+		if (!Districts.MakeTown(District, Town, &Kit))
 		{
 			Context.Warn(FString::Printf(TEXT("LBA1's %s on %s: its scenes' grids can't be read"), *District.Name, *Island));
 			continue;
 		}
-		for (const int32 Brick : Town.Bricks)
+		for (int32 Index = 0; Index < Town.Bricks.Num(); ++Index)
 		{
-			if (Brick != 0)
+			if (Town.Bricks[Index] != 0 && !Town.Replaced[Index])
 			{
-				Used.Add(Brick);
+				Used.Add(Town.Bricks[Index]);
 			}
 		}
 		Towns.Add(MoveTemp(Town));
@@ -158,15 +165,16 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		UStaticMesh* Collision = nullptr;
 	};
 	TArray<FPiece> Pieces;
-	auto CellsOf = [&Data](const LBAPlanetDistricts::FTown& Town)
+	auto CellsOf = [&Data](const LBAPlanetDistricts::FTown& Town, bool bVisual)
 	{
 		LBABrickMesh::FCells Cells;
 		Cells.Size = Town.Size;
-		// A blank brick is only collision: the faces around it are seen.
-		Cells.Brick = [&Town, &Data](int32 X, int32 Y, int32 Z)
+		// A blank brick is only collision: the faces around it are seen. So is a kit piece's brick.
+		Cells.Brick = [&Town, &Data, bVisual](int32 X, int32 Y, int32 Z)
 		{
-			const int32 Brick = Town.Bricks[Town.Index(X, Y, Z)];
-			return Brick != 0 && !Data.IsBlankBrick(Brick) ? Brick : 0;
+			const int32 Index = Town.Index(X, Y, Z);
+			const int32 Brick = Town.Bricks[Index];
+			return Brick != 0 && !Data.IsBlankBrick(Brick) && !(bVisual && Town.Replaced[Index]) ? Brick : 0;
 		};
 		Cells.Shape = [&Town](int32 X, int32 Y, int32 Z) { return int32(Town.Shapes[Town.Index(X, Y, Z)]); };
 		return Cells;
@@ -174,7 +182,7 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 	for (int32 TownIndex = 0; TownIndex < Towns.Num(); ++TownIndex)
 	{
 		const LBAPlanetDistricts::FTown& Town = Towns[TownIndex];
-		const LBABrickMesh::FCells Cells = CellsOf(Town);
+		const LBABrickMesh::FCells Cells = CellsOf(Town, false);
 		for (const int32 Scene : TownPlaces[TownIndex]->Scenes)
 		{
 			FLBAMeshBuilder Builder;
@@ -204,7 +212,7 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		const LBAPlanetDistricts::FPlaced& District = *TownPlaces[Piece.Town];
 		FLBAMeshBuilder Builder;
 		const int32 Scene = Piece.Scene;
-		LBABrickMesh::EmitVisual(CellsOf(Town), Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material), Scale,
+		LBABrickMesh::EmitVisual(CellsOf(Town, true), Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material), Scale,
 			Context.GetProjectSettings().BackFaces, [&Town, &Districts, Scene](const FIntVector& Cell, int32)
 			{
 				return Town.Scenes[Cell.Z * Town.Size.X + Cell.X] == Scene && !Districts.GetGroundShares(Town.Bricks[Town.Index(Cell.X, Cell.Y, Cell.Z)]);
@@ -242,6 +250,83 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		}
 		UE_LOG(LogLBA2, Display, TEXT("LBA1 town %s on %s: scene %d, %d triangles"), *District.Name, *Island, Scene, Triangles);
 		++Built;
+	}
+
+	// The kit's models, instanced per model over the island's towns.
+	FLBARemakeAssets Remake(Context);
+	bool bRemakeTried = false;
+	bool bRemake = false;
+	TMap<int32, UInstancedStaticMeshComponent*> Instancers;
+	for (int32 TownIndex = 0; TownIndex < Towns.Num(); ++TownIndex)
+	{
+		const LBAPlanetDistricts::FTown& Town = Towns[TownIndex];
+		const LBAPlanetDistricts::FPlaced& District = *TownPlaces[TownIndex];
+		for (const LBAPlanetDistricts::FTown::FPiece& Piece : Town.Pieces)
+		{
+			const LBAPlanetKit::FModel& Model = Kit.GetModel(Piece.Model);
+			UInstancedStaticMeshComponent** Instancer = Instancers.Find(Piece.Model);
+			if (!Instancer)
+			{
+				UStaticMesh* Mesh = nullptr;
+				if (Model.Body != INDEX_NONE)
+				{
+					Mesh = Context.FindAsset<UStaticMesh>(Context.GetContentPath(TEXT("Islands") / Model.Island / TEXT("Decor")), FString::Printf(TEXT("SM_%s_Decor_%03d"), *Model.Island, Model.Body));
+				}
+				else
+				{
+					if (!bRemakeTried)
+					{
+						bRemakeTried = true;
+						bRemake = Remake.Initialize();
+					}
+					Mesh = bRemake ? Remake.GetModelMesh(FPaths::GetPath(Model.RemakeFile), FPaths::GetCleanFilename(Model.RemakeFile)) : nullptr;
+				}
+				UInstancedStaticMeshComponent* Component = nullptr;
+				if (!Mesh)
+				{
+					Context.Warn(FString::Printf(TEXT("LBA1 kit on %s: no mesh for %s (%s), it stays bricks"), *Island, *Model.Name,
+						Model.Body != INDEX_NONE ? *FString::Printf(TEXT("%s decor %d: import the island first"), *Model.Island, Model.Body) : *Model.RemakeFile));
+				}
+				else if (AActor* Actor = Context.SpawnGeneratedActor<AActor>(World, FTransform::Identity,
+					FString::Printf(TEXT("Kit_%s_%s"), *Island, *FLBAImportContext::SanitizeName(Model.Name)), TEXT("Stubs/Kit")))
+				{
+					Component = NewObject<UInstancedStaticMeshComponent>(Actor, TEXT("Instances"));
+					Component->SetStaticMesh(Mesh);
+					Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					Actor->SetRootComponent(Component);
+					Actor->AddInstanceComponent(Component);
+					Component->RegisterComponent();
+					Actor->Tags.Add(ULBAPlanetAsset::StubTag);
+				}
+				Instancer = &Instancers.Add(Piece.Model, Component);
+			}
+			if (!*Instancer)
+			{
+				continue;
+			}
+			// On the footprint's center and the piece's lowest cell; copies spread along its longer side.
+			const FBox Box = (*Instancer)->GetStaticMesh()->GetBoundingBox();
+			const double Size = Model.Scale * (Model.bFitHeight ? Piece.Size.Y * StepCm / FMath::Max(Box.GetSize().Z, 1.0) : 1.0);
+			const bool bAlongX = Piece.Size.X >= Piece.Size.Z;
+			const int32 Copies = Model.Every > 0.0 ? FMath::Max(1, FMath::RoundToInt(FMath::Max(Piece.Size.X, Piece.Size.Z) / Model.Every)) : 1;
+			FRandomStream Random(HashCombine(GetTypeHash(Piece.Low), GetTypeHash(Piece.Scene)));
+			for (int32 Copy = 0; Copy < Copies; ++Copy)
+			{
+				const double Along = (Copy + 0.5) / Copies;
+				// A fitted model sits on the piece's floor: some bodies' pivots are far under them (Citadel's rock 2: 2.25 m).
+				const FVector Frame = Town.GetOrigin() + FVector((Piece.Low.X + Piece.Size.X * (bAlongX ? Along : 0.5)) * CellCm,
+					(Piece.Low.Z + Piece.Size.Z * (bAlongX ? 0.5 : Along)) * CellCm, Piece.Low.Y * StepCm - (Model.bFitHeight ? Box.Min.Z * Size : 0.0));
+				const double Yaw = Model.Yaw + (Model.bRandomTurn ? Random.FRandRange(0.0, 360.0) : 0.0);
+				(*Instancer)->AddInstance(FTransform(FRotator(0.0, Yaw, 0.0), Frame, FVector(Size)) * District.FrameToMap, true);
+			}
+		}
+	}
+	for (const TPair<int32, UInstancedStaticMeshComponent*>& Pair : Instancers)
+	{
+		if (Pair.Value)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA1 kit on %s: %s, %d copies"), *Island, *Kit.GetModel(Pair.Key).Name, Pair.Value->GetInstanceCount());
+		}
 	}
 	Context.Flush();
 	return Built;

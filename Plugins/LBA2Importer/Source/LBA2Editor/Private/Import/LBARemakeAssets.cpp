@@ -163,7 +163,9 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 	FLBAGltfModel Model;
 	FString Error;
 	const FString PluginPath = FPaths::Combine(PluginModelsDirectory, SubFolder, File);
-	if (!Model.Load(FPaths::FileExists(PluginPath) ? PluginPath : FPaths::Combine(ModelsDirectory, SubFolder, File), Error))
+	// LBA1's models (lba1/layouts: the globe's LBA1 towns, LBAPlanetKit) are next to LBA2's.
+	const FString RemakePath = SubFolder.StartsWith(TEXT("lba1/")) ? FPaths::Combine(ModelsDirectory, TEXT(".."), SubFolder, File) : FPaths::Combine(ModelsDirectory, SubFolder, File);
+	if (!Model.Load(FPaths::FileExists(PluginPath) ? PluginPath : RemakePath, Error))
 	{
 		Context.Warn(FString::Printf(TEXT("Remake model %s: %s"), *Key, *Error));
 		return nullptr;

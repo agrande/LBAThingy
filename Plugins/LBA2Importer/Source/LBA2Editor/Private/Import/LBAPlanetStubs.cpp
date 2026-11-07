@@ -11,6 +11,7 @@
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBAPlanetDistricts.h"
 #include "Import/LBAPlanetGround.h"
+#include "Import/LBAPlanetKit.h"
 #include "Import/LBAPlanetTowns.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
@@ -538,6 +539,12 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 	{
 		Context.Warn(FString::Printf(TEXT("Planet %s: no LBA1 towns on the stub islands, LBA1's data isn't found (the importer's LBA1 Directory)"), *Planet));
 	}
+	// The kit: recurring pieces of the towns drawn as models (LBAPlanetKit).
+	LBAPlanetKit::FTable Kit;
+	if (bDistricts)
+	{
+		Kit.Load(Districts.GetData(), Context.GetProjectSettings().bUseRemakeModels ? GetDefault<ULBA2ImporterSettings>()->RemakeDirectory.Path : FString());
+	}
 	UMaterialInterface* GroundMaterial = LBAPlanetGround::Build(Context, bDistricts ? &Districts.GetData() : nullptr, Folder);
 	if (!GroundMaterial)
 	{
@@ -1002,7 +1009,7 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		}
 		// LBA1's ground over its pads, on LBA1's cells, in the same textures from the same pivot: where it meets the ground
 		// around it, nothing shows.
-		LBAPlanetTowns::EmitGround(Districts, Placed, Pivot, Builder, GroundSection);
+		LBAPlanetTowns::EmitGround(Districts, Kit, Placed, Pivot, Builder, GroundSection);
 		const int32 Triangles = Builder.NumTriangles();
 		FMeshDescription Description;
 		TArray<UMaterialInterface*> Materials;
@@ -1057,7 +1064,7 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		// Their towns on the pads, LBA1's bricks in 3D.
 		if (!Placed.IsEmpty())
 		{
-			LBAPlanetTowns::Build(Context, World, Folder, Name, Districts, Placed, Radius);
+			LBAPlanetTowns::Build(Context, World, Folder, Name, Districts, Kit, Placed, Radius);
 		}
 	}
 	Context.EndLevel(World);
