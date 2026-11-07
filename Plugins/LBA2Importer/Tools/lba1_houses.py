@@ -3,6 +3,7 @@ roofs and stairs found from a scene's grid, drawn as a top-down plan to check ag
 Writes to Saved/LookDev/lba1_houses.
 
 Usage: lba1_houses.py <command> [args]
+  model <scene> [...]     the model (houses, openings, stairs) over the iso render (model_<scene>.png)
   explore <scene> [...]   plan of the raw grid: heights, roof cells, every placed layout that isn't wall or ground (boxes,
                           labelled layout:size), to see what the model has to find
 """
@@ -541,6 +542,77 @@ def openings_cmd(scenes):
         print(path, dict(kinds))
 
 
+# Ramp shapes: the direction (axis 0 x / 2 z, sign) each rises toward.
+RISE = {2: (0, 1), 3: (2, 1), 4: (2, -1), 5: (0, -1)}
+
+
+def is_stair_brick(b, cache={}):
+    """A ramp brick drawn as steps: grey stone (saturation under 0.22: the towns' four stair bricks 1032, 1031, 1295,
+    546 are 0.11-0.19; rock slopes 0.27, grass and thatch over 0.5). Blank ramps (collision only) aren't."""
+    if b not in cache:
+        img = lba1.brick(b); m = img[..., 3] > 0
+        if m.sum() < 30:
+            cache[b] = False
+        else:
+            rgb = img[m][:, :3].astype(float) / 255
+            mx, mn = rgb.max(1), rgb.min(1)
+            sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0).mean()
+            cache[b] = sat < 0.22
+    return cache[b]
+
+
+def find_stairs(s):
+    """Flights of stairs: stair-brick ramp cells of one direction, joined across the flight at the same row and along it
+    one row up per cell. Each: dir (axis, sign), cells, along / across ranges, bottom row (the ramp's lowest cell) and
+    top (the row its highest cell climbs to), width, run, and per side ('lo', 'hi' across) whether a wall or solid stands
+    beside the steps (a cheek) or not (open: a drop or the street)."""
+    stairs = {}
+    for x, y, z in zip(*np.nonzero((s.shape >= 2) & (s.shape <= 5))):
+        b = int(s.brick[x, y, z])
+        if b and not s.is_thatch(b) and is_stair_brick(b):
+            stairs[x, y, z] = int(s.shape[x, y, z])
+    seen = set(); flights = []
+    for st in sorted(stairs):
+        if st in seen:
+            continue
+        sh = stairs[st]; axis, sign = RISE[sh]
+        stack = [st]; seen.add(st); cells = []
+        while stack:
+            c = stack.pop(); cells.append(c)
+            x, y, z = c
+            steps = []
+            for d in (-1, 1):
+                if axis == 0:
+                    steps += [(x, y, z + d), (x + d, y + d * sign, z)]
+                else:
+                    steps += [(x + d, y, z), (x, y + d * sign, z + d)]
+            for nb in steps:
+                if nb in stairs and nb not in seen and stairs[nb] == sh:
+                    seen.add(nb); stack.append(nb)
+        al = [c[axis] for c in cells]; ac = [c[2 - axis] for c in cells]; ys = [c[1] for c in cells]
+        f = dict(shape=sh, axis="x" if axis == 0 else "z", sign=sign, cells=cells, along=(min(al), max(al) + 1),
+                 across=(min(ac), max(ac) + 1), bottom=min(ys), top=max(ys) + 1, width=max(ac) - min(ac) + 1,
+                 run=max(al) - min(al) + 1)
+        # Sides: beside each step, solid over the step's surface (its row + 1) is a cheek wall; air at the step's own
+        # row is a drop; else (ground at the step's level) the street.
+        X, Y, Z = s.brick.shape
+        for name, k in (("lo", f["across"][0] - 1), ("hi", f["across"][1])):
+            votes = collections.Counter()
+            for c in cells:
+                p = list(c); p[2 - axis] = k
+                if not (0 <= p[0] < X and 0 <= p[2] < Z):
+                    votes["drop"] += 1
+                elif p[1] + 1 < Y and s.brick[p[0], p[1] + 1, p[2]] > 0:
+                    votes["wall"] += 1
+                elif s.brick[p[0], p[1], p[2]] == 0:
+                    votes["drop"] += 1
+                else:
+                    votes["street"] += 1
+            f[name] = votes.most_common(1)[0][0]
+        flights.append(f)
+    return flights
+
+
 def find_model(s):
     """The scene's building model: houses (with their walls' openings) and the openings of every other drawn wall."""
     found = find_houses(s)
@@ -555,13 +627,13 @@ def find_model(s):
                 inside |= h.z0 - 1 <= o["fixed"] < h.z1 + 1 and a0 < h.x1 and a1 > h.x0
         if not inside:
             others.append(o)
-    return found, others
+    return found, others, find_stairs(s)
 
 
 KIND_COLORS = {"door": (0, 255, 255), "window": (255, 255, 0), "closed door": (255, 140, 0), "wall piece": (255, 255, 255)}
 
 
-def draw_model(s, found, others, path):
+def draw_model(s, found, others, flights, path):
     """The model over the scene's iso render: houses (floor cyan, eave magenta, ridge orange), openings by kind (door
     cyan, window yellow, closed door orange, wall piece white)."""
     iso_path = os.path.join(PROJECT, "Saved/LookDev/lba1_kit/iso_%d.png" % s.n)
@@ -592,6 +664,17 @@ def draw_model(s, found, others, path):
                      y0, y0 + o["height"], KIND_COLORS[o["kind"]])
     for o in others:
         quad(o["side"], o["fixed"] + 1, o["along"][0], o["along"][1], o["rows"][0], o["rows"][1], KIND_COLORS[o["kind"]])
+    for f in flights:
+        # The flight's sloped surface from its low edge to its high edge, and an arrow up its middle.
+        a0, a1 = f["along"]; c0, c1 = f["across"]
+        lo_a, hi_a = (a0, a1) if f["sign"] > 0 else (a1, a0)
+        def pt(a, c, y):
+            return iso_point(a, y, c) if f["axis"] == "x" else iso_point(c, y, a)
+        poly = [pt(lo_a, c0, f["bottom"]), pt(lo_a, c1, f["bottom"]), pt(hi_a, c1, f["top"]), pt(hi_a, c0, f["top"])]
+        color = (255, 60, 220) if "drop" in (f["lo"], f["hi"]) else (160, 255, 60)
+        d.line(poly + poly[:1], fill=color, width=4)
+        cm = (c0 + c1) / 2
+        d.line([pt(lo_a, cm, f["bottom"]), pt(hi_a, cm, f["top"])], fill=color, width=3)
     img.save(path)
 
 
@@ -599,12 +682,16 @@ def model_cmd(scenes):
     os.makedirs(OUT, exist_ok=True)
     for n in map(int, scenes):
         s = Scene(n)
-        found, others = find_model(s)
+        found, others, flights = find_model(s)
         kinds = collections.Counter(o["kind"] for h in found for w in h.walls.values() for o in w["openings"])
         kinds.update(o["kind"] for o in others)
         path = os.path.join(OUT, "model_%d.png" % n)
-        draw_model(s, found, others, path)
-        print("%s: %d houses, %s" % (path, len(found), dict(kinds)))
+        draw_model(s, found, others, flights, path)
+        print("%s: %d houses, %s, %d flights" % (path, len(found), dict(kinds), len(flights)))
+        for f in flights:
+            print("   flight %s%s along %s across %s rows %d-%d width %d run %d sides %s/%s cells %d" % (
+                "+" if f["sign"] > 0 else "-", f["axis"], f["along"], f["across"], f["bottom"], f["top"], f["width"],
+                f["run"], f["lo"], f["hi"], len(f["cells"])))
 
 
 def iso_point(X, Y, Z):

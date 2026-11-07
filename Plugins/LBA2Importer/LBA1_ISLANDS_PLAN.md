@@ -558,8 +558,34 @@ scene's iso render (`model_<scene>.png`; sheets `model_houses_sheet.png`, `model
 into the big terrace (only its front half) and the steep two-part roof at x 5-10 z 15-28. Blocks: the harbour's and
 fortress's doorways, round windows, banners found.
 
+**Stairs (added 2026-11-07):** the towns' stairs are ramp cells (shapes 2-5) of four grey stone bricks, one per direction
+(1032, 1031, 1295, 546: 741 cells, saturation 0.11-0.19), each cell drawn as two steps (16 cm rise, 32 cm tread). Grass
+(573-578), rock (6399, 6408, saturation 0.27) and thatch ramps are slopes and roofs. Rule: a flight = stair-brick ramp
+cells of one direction, joined across at the same row and along one row up per cell; it keeps direction, width, run,
+bottom and top rows, and per side what stands beside the steps: wall (solid over the step: a cheek), drop (air at the
+step's row) or street. 59 flights in 11, 12, 13, 42, 59, among them the short flights down into the pits in front of Old
+Burg's and Proxim City's doors. Geometry plan: modeled steps (two per cell), the ramp kept as collision so Twinsen walks
+them as today; cheek walls continue the wall beside; drops get a stringer.
+
+**What the indoor enclosure work gives this** (memory notes `lba2-enclosed-interiors`, `lba2-grid-plan-tools`):
+- Process: explicit model, plan view, then geometry; one rule per round over a fixed regression set (here 42, 13, 11, 12,
+  59); later, the model saved as text with golden tests, like `Tests/Plans` / `LBA2.Enclosure.Plans`.
+- Walls are foot + body + top layout segments, and cut walls are cropped layouts that continue with the rest of their own
+  layout (`LBAWallSurvey`, the wallpaper profile in `LBAIsoImporter.cpp`): the way to build a house's undrawn back walls and
+  gable triangles in its front walls' style, rather than one repeated cell.
+- Doorways: jambs, lintels, thresholds; a header from the lintel or a door height; passage underside and flanks; the far
+  end closed dark (like the original's exits): the same for a house's doorway recess.
+- Frames: pieces cut from the grid as whole instances and drawn separately (`CutFrames`, the Frames mesh): the arch and
+  jamb pieces here become the frame models.
+- Stairs: the indoor plan's R1 (floors at no level's height climbing one cell at a time between two levels) is the
+  general form; the towns only needed the ramp bricks. Indoors, enclosure faces must never close a slope cell (it blocked
+  Twinsen's stairs): keep stair cells out of any wall generation here too. The remake has a stairs model
+  (`CI_096_097_098_099_stairs`) for the look of steps.
+- Tools: player-like poses (`room_poses.py`, `side_poses.py`) and a build-import-shots round (`rooms.ps1`) to copy for town
+  close-ups; capture the original first.
+
 **Next in the model:** a piece-kind table (round window, arched door, plaque, banner, cellar door: the kind decides the
-frame; today a round window just above a walkway reads as "closed door"); stairs (`FLBA1Stair`); then port to C++
+frame; today a round window just above a walkway reads as "closed door"); then port to C++
 (`LBAPlanetDistricts`, per district rather than per scene) and the geometry steps above.
 
 ## Phase 4: trees, rocks and paths
