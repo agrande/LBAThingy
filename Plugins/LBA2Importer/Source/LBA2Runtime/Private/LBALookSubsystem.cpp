@@ -5,6 +5,7 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PostProcessVolume.h"
+#include "Engine/Texture.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
@@ -252,6 +253,24 @@ void ULBALookSubsystem::ApplyOverrides(UMaterialInstanceDynamic* Instance) const
 		{
 			Instance->SetScalarParameterValue(Override.Key, V[0]);
 		}
+	}
+	for (const TPair<FName, TObjectPtr<UTexture>>& Override : TextureOverrides)
+	{
+		Instance->SetTextureParameterValue(Override.Key, Override.Value);
+	}
+}
+
+void ULBALookSubsystem::SetTextureOverride(FName Name, UTexture* Texture)
+{
+	if (Texture)
+	{
+		TextureOverrides.Add(Name, Texture);
+		ApplyControls();
+	}
+	else if (TextureOverrides.Remove(Name) > 0)
+	{
+		// Back to the imported texture, the other overrides kept.
+		SetParameterOverride(NAME_None, {});
 	}
 }
 

@@ -274,3 +274,78 @@ float3 LBAPlanetSunRelight(FLBAPlanetView P, FLBAPlanetSun Sun, float3 Flat, flo
 	OwnLight = Own;
 	return clamp(Own / max(Camera, 1e-3), 0.05, 8.0);
 }
+
+// Post-process side: the sea's colors by place -------------------------------------------------------------------------
+//
+// Toward the belt the sea pales to ice, around the desert it turns to the turquoise of its oasis. The planet's mask
+// (ULBAPlanetAsset::SeaRegions, LBASeaRegions in the importer) holds, on the flat map around the pole, how far the sea
+// is from the belt's land (R), from the islands whose sea turns turquoise (G) and from the others (B), in meters. The
+// cartoon water then shows a step of the island's sea texture recolored toward the region (LBASeaColor), tinted by its
+// own place's sunset (LBAPlanetSeaSunset).
+//
+//   PlanetSeaFrame      world to the map: xy cos and sin of the turn about Z, zw the move (cm)
+//   PlanetSeaIce        x, y: from x meters out from the belt's land the ice fades, gone at y; z: how much (0: off);
+//                       w: half the mask's side (cm)
+//   PlanetSeaTurquoise  x, y: the same from the turquoise islands' coasts (and blue again half way to another
+//                       island); z: how much (0: off)
+//   PlanetSeaSunset     rgb: the sea's tint in the sunset (lba.Globe.SeaSunsetTint); a: 0 off
+
+#define LBA_SEA_REGION_STEPS 4
+
+struct FLBASeaRegions
+{
+	float4 Frame;
+	float4 Ice;
+	float4 Turquoise;
+	float4 Sunset;
+};
+
+// The mask's distances (m: belt, turquoise islands, others) at a flat world point, at the mip of a pixel's Footprint
+// (cm): far sea seen from high up reads a few texels, not texels scattered all over the mask (that cost 7 % of the
+// globe voyage's frame rate).
+float3 LBASeaRegionDistances(Texture2D Mask, FLBASeaRegions R, float2 Flat, float Footprint)
+{
+	uint Width, Height;
+	Mask.GetDimensions(Width, Height);
+	const float Side = 2.0 * max(R.Ice.w, 1.0);
+	const float2 Map = float2(R.Frame.x * Flat.x - R.Frame.y * Flat.y, R.Frame.y * Flat.x + R.Frame.x * Flat.y) + R.Frame.zw;
+	const float Lod = log2(max(Footprint * Width / Side, 1.0));
+	return 255.0 * Mask.SampleLevel(View.SharedBilinearClampedSampler, Map / Side + 0.5, Lod).rgb;
+}
+
+// How far toward its region the sea at a flat world point is, in steps of the atlas (0 to LBA_SEA_REGION_STEPS), and
+// the region's first slot in it (ice 0, turquoise LBA_SEA_REGION_STEPS). Footprint: a pixel's size there (cm).
+float LBASeaRegionLevel(Texture2D Mask, FLBASeaRegions R, float2 Flat, float Footprint, out int FirstSlot)
+{
+	FirstSlot = 0;
+	uint Width, Height;
+	Mask.GetDimensions(Width, Height);
+	if (Width < 64 || (R.Ice.z <= 0.0 && R.Turquoise.z <= 0.0))
+	{
+		return 0.0;
+	}
+	const float3 Distance = LBASeaRegionDistances(Mask, R, Flat, Footprint);
+	const float Ice = R.Ice.z * (1.0 - smoothstep(R.Ice.x, R.Ice.y, Distance.x));
+	// Between a turquoise island and another, turquoise until about half way.
+	const float Share = Distance.z / max(Distance.y + Distance.z, 1e-3);
+	const float Turquoise = R.Turquoise.z * (1.0 - smoothstep(R.Turquoise.x, R.Turquoise.y, Distance.y)) * smoothstep(0.35, 0.65, Share);
+	FirstSlot = Ice >= Turquoise ? 0 : LBA_SEA_REGION_STEPS;
+	return max(Ice, Turquoise) * LBA_SEA_REGION_STEPS;
+}
+
+// The shaded sea's Color at a flat world point in its own place's sunset, wherever the camera is: pale ice and foam go
+// peach, the more the paler (deep blue would only turn teal: it has next to no red to warm). The light the sea reflects
+// can't give it: by day it has next to no red, so the renderer's orange sunset sky taken as a ratio to the day's burns
+// its pale colors pink (red x10 to x35, measured at the belt with lba.Look.Debug 4 against lba.Globe.Sun 0).
+float3 LBAPlanetSeaSunset(FLBAPlanetView P, FLBAPlanetSun Sun, FLBASeaRegions R, float2 Flat, float3 Color)
+{
+	if (!LBAPlanetBent(P) || !LBAPlanetSunOn(Sun) || R.Sunset.a <= 0.0)
+	{
+		return Color;
+	}
+	float Sunset;
+	LBAPlanetSunAt(Sun, max(P.Bend.x, 1.0), Flat, Sunset);
+	// Linear luminance: the sea's blue (56,140,176) about 0.23, the ice's pale blue (156,196,224) 0.53, white 1.
+	const float Pale = saturate((dot(Color, float3(0.2126, 0.7152, 0.0722)) - 0.25) / 0.3);
+	return Color * lerp(1.0, R.Sunset.rgb, Sunset * Pale);
+}

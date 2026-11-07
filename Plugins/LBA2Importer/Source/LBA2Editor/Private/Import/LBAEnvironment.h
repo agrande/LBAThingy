@@ -170,6 +170,8 @@ struct FLBAEnvironmentPreset
 	float SeaLight = 1.f;
 	/** The original sea texture and its tile size (cm), for cartoon water. */
 	UTexture2D* SeaTexture = nullptr;
+	/** The sea texture's steps toward ice and turquoise, for the globe's sea by place (LBASeaRegions). */
+	UTexture2D* SeaRegionTexture = nullptr;
 	float SeaTileSize = 1024.f;
 	float WaterNeutralLight = 1.f;
 

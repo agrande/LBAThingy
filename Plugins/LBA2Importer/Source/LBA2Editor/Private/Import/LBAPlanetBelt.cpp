@@ -486,7 +486,7 @@ namespace LBAPlanetBeltPrivate
 	}
 }
 
-TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FString& Planet, double Radius, const FString& Folder)
+TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FString& Planet, double Radius, const FString& Folder, TArray<FVector2D>* OutLand)
 {
 	using namespace LBAPlanetBeltPrivate;
 
@@ -1027,6 +1027,12 @@ TSoftObjectPtr<UWorld> LBAPlanetBelt::Build(FLBAImportContext& Context, const FS
 				LandCells += 1.0;
 				Highest = FMath::Max(Highest, double(Height(X, Y)));
 				NearestShore = FMath::Min(NearestShore, Radius * FMath::DegreesToRadians(90.0 - RowLatitude(Y)));
+				if (OutLand)
+				{
+					const double Longitude = FMath::DegreesToRadians(ColumnLongitude(X));
+					const double Rho = Radius * FMath::DegreesToRadians(90.0 - RowLatitude(Y));
+					OutLand->Add(FVector2D(FMath::Cos(Longitude) * Rho, FMath::Sin(Longitude) * Rho));
+				}
 			}
 		}
 	}

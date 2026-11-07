@@ -18,6 +18,7 @@
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBAPlanetBuilder.h"
 #include "Import/LBASeabed.h"
+#include "Import/LBASeaRegions.h"
 #include "Import/LBAWater.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
@@ -1300,6 +1301,11 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		Preset.SeaColor = FLinearColor::FromSRGBColor(Xpl->Palette[SeaIndex]);
 		Preset.SeaTexture = SeaTexture;
 		Preset.SeaTileSize = 8192.f * Scale;
+		// The globe's sea pales to ice toward the Hamalayi and turns turquoise around the desert (LBASeaRegions).
+		if (Preset.bWater && LBAPlanetBuilder::IsPlaced(Island.Name))
+		{
+			Preset.SeaRegionTexture = LBASeaRegions::BuildAtlas(Context, TextureFolder, Island.Name, SkySea, Xpl->Palette);
+		}
 	}
 	Preset.bWater &= Preset.SeaColor.GetLuminance() > 0.f;
 	if (Preset.ClearSkyColor.IsSet())

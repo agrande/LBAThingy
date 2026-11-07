@@ -10,6 +10,7 @@ class UMaterialParameterCollection;
 class UPostProcessComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
+class UTexture2D;
 class UWaterWavesAsset;
 class UWorld;
 
@@ -153,6 +154,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sea")
 	TSoftObjectPtr<UMaterialInterface> SeaMaterial;
+
+	/**
+	 * The sea's colors by place, on the flat map (its pole in the middle, SeaRegionsExtent cm each way): how far the sea
+	 * is from the belt's land (R), from the islands whose sea turns turquoise (G) and from the others (B), in meters.
+	 * The palette shading pales the sea to ice toward the belt and turns it turquoise around those islands
+	 * (ULBAPlanetSubsystem, lba.Globe.SeaIce* and lba.Globe.SeaTurquoise*).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sea")
+	TSoftObjectPtr<UTexture2D> SeaRegions;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sea")
+	float SeaRegionsExtent = 0.f;
 
 	/** Where materials read the bend (MPC_LBA_Planet, see LBAPlanet.ush), written each frame. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sea")

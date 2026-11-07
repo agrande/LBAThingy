@@ -13,6 +13,7 @@
 #include "Engine/LevelStreamingDynamic.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
@@ -134,6 +135,24 @@ namespace
 		TEXT("For calibrating each surface's own sun, shown / 4: 1 the light the renderer gives (scene color / base color), 2 the model's for the surface's place, 3 what that multiplies its light by."));
 	TAutoConsoleVariable<float> CVarGlobeSunsetTintHeight(TEXT("lba.Globe.SunsetTintHeight"), 60.f,
 		TEXT("How high the sunset sun's orange reaches (m): above a surface, the air that reddens it falls by e over this height."));
+	// The sea's colors by place (ULBAPlanetAsset::SeaRegions): its distances from the belt's land and the islands' coasts.
+	// The belt's shelf of shallows reaches about 25 m out; Citadel's farthest coast is 140 m from the belt's nearest shore.
+	TAutoConsoleVariable<float> CVarGlobeSeaIce(TEXT("lba.Globe.SeaIce"), 1.f,
+		TEXT("How far the sea pales to ice toward the belt (0: not at all, 1: all the way, white and pale blue)."));
+	TAutoConsoleVariable<float> CVarGlobeSeaIceFrom(TEXT("lba.Globe.SeaIceFrom"), 15.f,
+		TEXT("Out to here from the belt's land the sea is all ice (m)."));
+	TAutoConsoleVariable<float> CVarGlobeSeaIceTo(TEXT("lba.Globe.SeaIceTo"), 90.f,
+		TEXT("From here out from the belt's land the sea has no ice (m)."));
+	TAutoConsoleVariable<float> CVarGlobeSeaTurquoise(TEXT("lba.Globe.SeaTurquoise"), 1.f,
+		TEXT("How far the sea turns turquoise around the desert, like its oasis (0: not at all, 1: all the way)."));
+	TAutoConsoleVariable<float> CVarGlobeSeaTurquoiseFrom(TEXT("lba.Globe.SeaTurquoiseFrom"), 5.f,
+		TEXT("Out to here from the desert's coast the sea is all turquoise (m)."));
+	TAutoConsoleVariable<float> CVarGlobeSeaTurquoiseTo(TEXT("lba.Globe.SeaTurquoiseTo"), 70.f,
+		TEXT("From here out from the desert's coast the sea is blue again (m); between two islands it is blue again half way."));
+	// Peach on the ice's pale blues and white, measured (255,217,188) by the belt; only pale water takes it. Redder
+	// (1.6,0.95,0.6) went salmon (255,204,189): the sea's own sunset tint already turns pale texels mauve.
+	TAutoConsoleVariable<FString> CVarGlobeSeaSunsetTint(TEXT("lba.Globe.SeaSunsetTint"), TEXT("1.3,1.1,0.6"),
+		TEXT("The sea's tint where it is sunset (R,G,B; 1,1,1: none), whatever the camera's place."));
 	TAutoConsoleVariable<int32> CVarGlobeBelt(TEXT("lba.Globe.Belt"), 1,
 		TEXT("0: the planet's belt (Twinsun's Hamalayi mountains) isn't streamed in (for the next level opened)."));
 	TAutoConsoleVariable<int32> CVarGlobeStubs(TEXT("lba.Globe.Stubs"), 1,
@@ -396,6 +415,13 @@ void ULBAPlanetSubsystem::Activate(ULBAPlanetAsset* InAsset, int32 InHome)
 		}
 	}
 	LevelAddedHandle = FWorldDelegates::LevelAddedToWorld.AddUObject(this, &ULBAPlanetSubsystem::OnLevelAdded);
+	// The sea's colors by place, measured on the map at the planet's own radius.
+	UTexture2D* SeaRegions = Radius == Asset->Radius ? Asset->SeaRegions.LoadSynchronous() : nullptr;
+	bSeaRegions = SeaRegions && Asset->SeaRegionsExtent > 0.f;
+	if (ULBALookSubsystem* Look = World->GetSubsystem<ULBALookSubsystem>(); Look && bSeaRegions)
+	{
+		Look->SetTextureOverride(TEXT("SeaRegions"), SeaRegions);
+	}
 	if (!bPlanetLevel)
 	{
 		LoadIslands();
@@ -777,6 +803,7 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 		const float SkyBelow = bLumen ? 0.f : CVarGlobeSeaSkyBelow.GetValueOnGameThread();
 		Instance->SetVectorParameterValue(TEXT("PlanetSkyBelow"), FLinearColor(SkyBelow, SkyBelow, SkyBelow, 0.f));
 		UpdateSurfaceSun(*Instance);
+		UpdateSeaRegions(*Instance);
 	}
 	PreviousSea = Sea;
 }
@@ -941,6 +968,41 @@ void ULBAPlanetSubsystem::UpdateSurfaceSun(UMaterialParameterCollectionInstance&
 	const int32 Debug = CVarGlobeSurfaceSunDebug.GetValueOnGameThread();
 	Instance.SetVectorParameterValue(TEXT("PlanetSunAmbient"), FLinearColor(SunsetLight.R, SunsetLight.G, SunsetLight.B, Debug > 0 ? -float(Debug) : SunsetLightTint - DayLightTint));
 	Instance.SetVectorParameterValue(TEXT("PlanetSunCamera"), FLinearColor(float(CameraToSun.X), float(CameraToSun.Y), float(CameraToSun.Z), CameraSunset));
+}
+
+namespace
+{
+	/** R, G, B from a console variable (any of , ; or spaces between them: -ExecCmds splits on commas). */
+	FLinearColor ParseChannels(const FString& Value, const FLinearColor& Default)
+	{
+		TArray<FString> Channels;
+		const TCHAR* Separators[] = { TEXT(","), TEXT(";"), TEXT(" ") };
+		if (Value.ParseIntoArray(Channels, Separators, UE_ARRAY_COUNT(Separators)) == 3)
+		{
+			return FLinearColor(FCString::Atof(*Channels[0]), FCString::Atof(*Channels[1]), FCString::Atof(*Channels[2]));
+		}
+		return Default;
+	}
+}
+
+void ULBAPlanetSubsystem::UpdateSeaRegions(UMaterialParameterCollectionInstance& Instance) const
+{
+	// From the world to the map the sea regions are laid on (its pole at the origin): a turn about Z and a move.
+	const FTransform WorldToMap = GetMapToWorld().Inverse();
+	const double Yaw = FMath::DegreesToRadians(WorldToMap.Rotator().Yaw);
+	const FVector Move = WorldToMap.GetTranslation();
+	Instance.SetVectorParameterValue(TEXT("PlanetSeaFrame"), FLinearColor(float(FMath::Cos(Yaw)), float(FMath::Sin(Yaw)), float(Move.X), float(Move.Y)));
+	const float On = bSeaRegions ? 1.f : 0.f;
+	Instance.SetVectorParameterValue(TEXT("PlanetSeaIce"), FLinearColor(CVarGlobeSeaIceFrom.GetValueOnGameThread(),
+		FMath::Max(CVarGlobeSeaIceTo.GetValueOnGameThread(), CVarGlobeSeaIceFrom.GetValueOnGameThread() + 0.1f),
+		On * FMath::Clamp(CVarGlobeSeaIce.GetValueOnGameThread(), 0.f, 1.f), Asset->SeaRegionsExtent));
+	Instance.SetVectorParameterValue(TEXT("PlanetSeaTurquoise"), FLinearColor(CVarGlobeSeaTurquoiseFrom.GetValueOnGameThread(),
+		FMath::Max(CVarGlobeSeaTurquoiseTo.GetValueOnGameThread(), CVarGlobeSeaTurquoiseFrom.GetValueOnGameThread() + 0.1f),
+		On * FMath::Clamp(CVarGlobeSeaTurquoise.GetValueOnGameThread(), 0.f, 1.f), 0.f));
+	// The sea's own sunset follows the surfaces' (off with them).
+	const bool bSunset = bSunFollows && CVarGlobeSurfaceSun.GetValueOnGameThread() != 0;
+	const FLinearColor SeaSunset = ParseChannels(CVarGlobeSeaSunsetTint.GetValueOnGameThread(), FLinearColor(1.3f, 1.1f, 0.6f));
+	Instance.SetVectorParameterValue(TEXT("PlanetSeaSunset"), FLinearColor(SeaSunset.R, SeaSunset.G, SeaSunset.B, bSunset ? 1.f : 0.f));
 }
 
 void ULBAPlanetSubsystem::DrawDebug() const

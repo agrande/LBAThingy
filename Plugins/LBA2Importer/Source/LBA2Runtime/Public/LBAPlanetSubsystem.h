@@ -54,6 +54,7 @@ class UVolumetricCloudComponent;
  *   lba.Globe.ShowFog 1       the opened island's height fog (to compare)
  *   lba.Globe.Haze 0          no haze paling the sky towards the sea's horizon
  *   lba.Globe.SurfaceSun 0    every surface lit by the sun of the camera's place (to compare)
+ *   lba.Globe.SeaIce 0        no ice on the sea toward the belt; lba.Globe.SeaTurquoise 0: no turquoise sea
  *
  * The bent view is a true sphere with the camera on top, so the sun (a directional light, far away) is where it is seen
  * from the camera's place on the planet: the opened island's sun and character lights turn as the camera travels, lit
@@ -62,6 +63,12 @@ class UVolumetricCloudComponent;
  * makes the sky orange: above the Dinofly's ceiling it fades back to the day's (lba.Globe.SkySunset*). The
  * one sun lights the whole view as if everything stood at the camera's place, so the palette shading gives each
  * surface the sun of its own place instead (LBAPlanetSunRelight, lba.Globe.SurfaceSun), its orange paler on high ground.
+ * The sea is tinted by its own place's sunset (LBAPlanetSeaSunset, lba.Globe.SeaSunsetTint).
+ *
+ * The sea pales to ice toward the belt and turns turquoise around the desert, like its oasis: the palette shading reads
+ * how far each bit of sea is from the belt's land and the islands' coasts (ULBAPlanetAsset::SeaRegions) and shows
+ * steps of the island's sea texture recolored toward those regions (LBASeaRegions in the importer; lba.Globe.SeaIce*,
+ * lba.Globe.SeaTurquoise*).
  */
 UCLASS()
 class LBA2RUNTIME_API ULBAPlanetSubsystem : public UTickableWorldSubsystem
@@ -119,6 +126,8 @@ private:
 	void UpdateSun(bool bCameraCut);
 	/** Writes what each surface needs to be lit by the sun of its own place (LBAPlanetSunRelight in LBAPlanet.ush). */
 	void UpdateSurfaceSun(UMaterialParameterCollectionInstance& Instance) const;
+	/** Writes where the sea pales to ice and turns turquoise (ULBAPlanetAsset::SeaRegions), and the sea's own sunset. */
+	void UpdateSeaRegions(UMaterialParameterCollectionInstance& Instance) const;
 	/** The opened island has clouds, and they are off (lba.Globe.ShowClouds): the sky has to make up for them. */
 	bool IsSkyClear() const;
 	void DrawDebug() const;
@@ -179,6 +188,8 @@ private:
 	FLinearColor SkyDayHorizon = FLinearColor::Transparent;
 	/** The opened island's sea level (Water plugin oceans) is the sea (lba.Globe.Sea); the sea disc lies under it. */
 	bool bWaterSea = false;
+	/** The planet's sea regions are in use: its mask is the looks' (only at the planet's own radius). */
+	bool bSeaRegions = false;
 	TWeakObjectPtr<ULevelStreaming> SeaStream;
 	/** The planet's belt (ULBAPlanetAsset::BeltLevel), on its map. */
 	TWeakObjectPtr<ULevelStreaming> BeltStream;

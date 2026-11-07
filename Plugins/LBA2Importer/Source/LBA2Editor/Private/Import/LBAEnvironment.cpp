@@ -703,6 +703,10 @@ void LBAEnvironment::Spawn(FLBAImportContext& Context, UWorld* World, const FLBA
 				UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(LevelLook, TEXT("SeaTexture"), Preset.SeaTexture);
 				UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(LevelLook, TEXT("SeaTileSize"), Preset.SeaTileSize);
 			}
+			if (Preset.SeaRegionTexture)
+			{
+				UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(LevelLook, TEXT("SeaRegionTexture"), Preset.SeaRegionTexture);
+			}
 		}
 		UMaterialEditingLibrary::UpdateMaterialInstance(LevelLook);
 		Context.MarkForSave(LevelLook);

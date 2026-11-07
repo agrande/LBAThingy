@@ -413,7 +413,8 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
 	// v31: globe mode's bend (MPC_LBA_Planet's PlanetBend and PlanetView). v32: pre-drawn art (ArtStencil, CustomDepth).
 	// v33: globe mode's sun of each surface's place (MPC_LBA_Planet's PlanetSun*). v35: day sky high up (PlanetSkyDay*).
-	constexpr int32 Version = 35;
+	// v36: globe mode's sea by place, ice and turquoise (SeaRegionTexture, SeaRegions, PlanetSea*), and its own sunset.
+	constexpr int32 Version = 36;
 
 	CreateDitherTextures();
 	UMaterialParameterCollection* PlanetCollection = GetPlanetParameters();
@@ -509,6 +510,10 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("HalftoneRamp"), TextureObject(TEXT("HalftoneRamp"), HalftoneRamp, 960) },
 		// The island's sea texture, set per level (LBAEnvironment), for cartoon water.
 		{ TEXT("SeaTexture"), TextureObject(TEXT("SeaTexture"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1080) },
+		// Globe mode's sea by place: the island's sea texture recolored toward ice and turquoise (set per level,
+		// LBAEnvironment), and the planet's mask of where (set in play, ULBAPlanetSubsystem).
+		{ TEXT("SeaRegionTexture"), TextureObject(TEXT("SeaRegionTexture"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1100) },
+		{ TEXT("SeaRegions"), TextureObject(TEXT("SeaRegions"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1140) },
 		{ TEXT("PlanetBend"), Planet(TEXT("PlanetBend"), 1200) },
 		{ TEXT("PlanetView"), Planet(TEXT("PlanetView"), 1280) },
 		{ TEXT("PlanetSunPlaces"), Planet(TEXT("PlanetSunPlaces"), 1360) },
@@ -519,6 +524,10 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("PlanetSunCamera"), Planet(TEXT("PlanetSunCamera"), 1760) },
 		{ TEXT("PlanetSkyDayZenith"), Planet(TEXT("PlanetSkyDayZenith"), 1840) },
 		{ TEXT("PlanetSkyDayHorizon"), Planet(TEXT("PlanetSkyDayHorizon"), 1920) },
+		{ TEXT("PlanetSeaFrame"), Planet(TEXT("PlanetSeaFrame"), 2000) },
+		{ TEXT("PlanetSeaIce"), Planet(TEXT("PlanetSeaIce"), 2080) },
+		{ TEXT("PlanetSeaTurquoise"), Planet(TEXT("PlanetSeaTurquoise"), 2160) },
+		{ TEXT("PlanetSeaSunset"), Planet(TEXT("PlanetSeaSunset"), 2240) },
 		{ TEXT("Strength"), Scalar(TEXT("Strength"), 1.f, TEXT("Palette")) },
 		{ TEXT("NeutralRow"), Scalar(TEXT("NeutralRow"), 12.f, TEXT("Palette")) },
 		{ TEXT("NeutralLight"), Scalar(TEXT("NeutralLight"), 1.f, TEXT("Palette")) },
@@ -663,7 +672,11 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Sun.Camera = PlanetSunCamera;\n"
 		"S.Sun.SkyZenith = PlanetSkyDayZenith;\n"
 		"S.Sun.SkyHorizon = PlanetSkyDayHorizon;\n"
-		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, CustomDepth.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture,\n"
+		"S.SeaRegions.Frame = PlanetSeaFrame;\n"
+		"S.SeaRegions.Ice = PlanetSeaIce;\n"
+		"S.SeaRegions.Turquoise = PlanetSeaTurquoise;\n"
+		"S.SeaRegions.Sunset = PlanetSeaSunset;\n"
+		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, CustomDepth.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture, SeaRegionTexture, SeaRegions,\n"
 		"    Dither, DitherSampler, DitherRamp, DitherRampSampler, HalftoneRamp, HalftoneRampSampler, S);"), DitherDotsPerSide);
 
 	UMaterialEditingLibrary::ConnectMaterialProperty(Custom, TEXT(""), MP_EmissiveColor);
@@ -838,6 +851,12 @@ UMaterialParameterCollection* FLBARenderingAssets::GetPlanetParameters()
 		// High up, the day's sky the palette shading shows (PlanetSkyDayZenith's alpha 0: off).
 		{ TEXT("PlanetSkyDayZenith"), FLinearColor::Transparent },
 		{ TEXT("PlanetSkyDayHorizon"), FLinearColor::Transparent },
+		// The sea by place: ice toward the belt, turquoise around the desert, its own sunset (LBASeaRegionLevel,
+		// LBAPlanetSeaSunset; PlanetSeaIce's and PlanetSeaTurquoise's z 0, PlanetSeaSunset's alpha 0: off).
+		{ TEXT("PlanetSeaFrame"), FLinearColor::Transparent },
+		{ TEXT("PlanetSeaIce"), FLinearColor::Transparent },
+		{ TEXT("PlanetSeaTurquoise"), FLinearColor::Transparent },
+		{ TEXT("PlanetSeaSunset"), FLinearColor::Transparent },
 	};
 	// Parameters dropped from the list go (only generated materials use the collection).
 	bool bChanged = PlanetParameters->VectorParameters.RemoveAll([&Defaults](const FCollectionVectorParameter& Parameter)

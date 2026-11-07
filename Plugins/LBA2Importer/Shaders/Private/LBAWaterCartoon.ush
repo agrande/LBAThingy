@@ -41,7 +41,12 @@ uint LBASeaHash(int2 Cell)
 //    copy at random by weight, so the borders are a scatter of texels instead of a seam.
 //  - No shimmering in the distance: the mip is picked from TexelsPerPixel, and between two mips each world texel of
 //    the coarser one switches at random, so the change spreads instead of drawing a line.
-float3 LBASeaColor(Texture2D Sea, int Size, float2 Texels, float TexelsPerPixel, FLBACartoonWaterSettings C)
+//  - The sea's colors by place (globe mode, LBASeaRegionLevel): Regions stacks the sea texture recolored in steps toward
+//    ice, then toward turquoise (LBASeaRegions in the importer), Size texels each. Level (0 to LBA_SEA_REGION_STEPS)
+//    says how far toward the region from FirstSlot on; between two steps each texel of the drifting texture picks one
+//    at random by how close it is, so the sea's colors change texel by texel instead of blending.
+float3 LBASeaColor(Texture2D Sea, int Size, float2 Texels, float TexelsPerPixel, FLBACartoonWaterSettings C,
+	Texture2D Regions, float Level, int FirstSlot)
 {
 	const int MaxMip = int(firstbithigh(uint(Size)));
 	const float Lod = log2(max(TexelsPerPixel, 1.0));
@@ -88,6 +93,17 @@ float3 LBASeaColor(Texture2D Sea, int Size, float2 Texels, float TexelsPerPixel,
 	}
 	int2 Texel = int2(floor(T * MipScale));
 	Texel = ((Texel % MipSize) + MipSize) % MipSize;
+	if (Level > 0.0)
+	{
+		uint RegionsWidth, RegionsHeight;
+		Regions.GetDimensions(RegionsWidth, RegionsHeight);
+		const float Pick = (LBASeaHash(int2(floor(Texels * MipScale)) + int2(4243, 1777 + Mip)) & 0xFFFFu) / 65535.0;
+		const int Step = min(int(floor(Level)) + (Pick < frac(Level) ? 1 : 0), LBA_SEA_REGION_STEPS);
+		if (Step > 0 && int(RegionsWidth) == Size && int(RegionsHeight) >= Size * 2 * LBA_SEA_REGION_STEPS)
+		{
+			return Regions.Load(int3(Texel.x, Texel.y + (FirstSlot + Step - 1) * MipSize, Mip)).rgb;
+		}
+	}
 	return Sea.Load(int3(Texel, Mip)).rgb;
 }
 
