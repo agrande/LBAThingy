@@ -302,6 +302,73 @@ steps or more). It finds the three pure slopes (0.78-0.89) but:
   blank filler cells (brick 223) around their slope, a third of their cells; those don't.
 Better next try: whole roofs per house (a gable over the footprint of a connected run of thatch cells, ridge along its
 long side, a tiling thatch texture unprojected from 42:186), or remake-style roof models in the kit table.
+The forum notes below ("Insights from the MBN grid conversion thread") back the whole-roof route.
+
+### Insights from the MBN grid conversion thread (read 2026-11-07)
+
+Source: forum.magicball.net/t/easy-isometric-grid-maps-conversion/29551 (2024-12 to 2026-11). A community artist converts
+LBA1 grids to 3D in Blender, first by hand on Proxima's harbour (Proxim City), then with a rule-driven one-click importer
+tested on Proxima and Citadel. These are lessons for our own pipeline, not a spec: don't copy their models, textures or
+look (the user's instruction). Pictures are in the thread; post numbers given as `#n`.
+
+**Roofs (the main reason this was read)**
+- LBA1's roofs are not sloped in the grid data, unlike other slopes (#4: "Adeline didn't make the roofs sloped"). Even
+  the expert redid them by hand at first, then built a **roof system** in the importer: whole roofs generated per house,
+  not per tile (#188, #193, #207). This confirms our failed per-piece slope fit: stop fitting bricks, build per house.
+- Their generated roof shape (#188 "structural shell", #199 white placeholders, #202 with house volumes shown):
+  - a plain gable over the house's rectangular footprint, **ridge along the long side**;
+  - the **gable ends are wall**: the stone wall goes up as a triangle under the roof, the roof material only on the two
+    slopes;
+  - **eaves overhang** the walls on the long sides and stick out a little past the gable walls;
+  - the roof is a **slab with visible thickness** (the thatch edge shows along the eave and the verge), not a zero-thickness
+    plane;
+  - a separate **ridge cap** runs along the ridge, thicker than the thatch.
+  Overhang and thickness look like roughly a third to half a cell in the shots. Judged by eye, not measured.
+- The **ridge cap matters to readers**. In LBA1 the ridge is drawn as a thick band of big rounded pieces (people read it
+  as coconut husks, #119, #135). Forum readers objected when it was turned into rolled loops, and liked a solid band (logs,
+  clay ridge tiles, a thick thatch roll; #118-#123, #139). For us: a ridge piece along the ridge, colored from the ridge
+  pixels of the facing roof sprite, is likely worth more than detailing the slopes.
+- **Footprint from the house volume.** Their houses are boxes found from the grid (footprint + wall height); the roof sits
+  on that box; door and window assets can cut through the roof system when they reach it (#207). One failure they hit: the
+  generated slope came down lower than a door opening inside allowed (#201). So check the eave height against the tallest
+  opening in the long walls, and raise the eave (or lower the pitch) where it clashes.
+- Overhanging parts that the rules can't infer (Citadel's garage) were marked by hand with boxes (#193). Expect a few
+  per-house overrides; keep a place for them (our plan overrides, memory note `lba2-grid-plan-tools`).
+- Texture: a **trim sheet** for roofs (thatch field, edge, ridge) rather than one unique texture per house (#82, #64).
+  Thatch drawn too pale reads as "white" (#105): keep it on the darker straw steps of the chosen ramp.
+
+**Grid conversion lessons that apply to our towns**
+- **Grid art alone leaves holes** at the backs of buildings; they cross-check the art with LBA1's collision shapes and
+  rebuild missing geometry from collision (#191, #207). We already draw from the bricks' shapes; same conclusion.
+- Some collision openings are wrong (a cellar window with a huge hole, door tiles inside a neighbour's house generating a
+  second door, #201, #207). Rules need **fill boxes and cut boxes with priorities**: fill the bad hole, then cut the real
+  opening; a higher-priority box cuts through lower ones' geometry (#207).
+- **Systems for linear things.** Tiles are assigned to a material, an asset, or a system. Systems follow edge paths
+  derived from the tiles: curbs and wall capping stones as a profile swept along the path, fences, stairs, roofs; cliffs as
+  a path extruded upward (#193, #207). The more tiles get assigned, the more of every new grid fills itself in.
+  Our kit table (`lba1_kit.json`) is the per-layout half of this; walls, caps, kerbs and roofs are the system half.
+- **Assets on walls** carry a pivot rule: standing on the ground against a wall, hanging on a wall, or free-standing.
+  Wall openings are sized in half-bricks along and bricks up, with an offset (sewer windows sit half a brick off, #193).
+- **Neighbouring scenes duplicate border rows.** Grids that join repeat the neighbour's edge cells; without slicing them
+  off you get two fences in the same place (#206). Check our districts where two scenes meet before blaming the kit.
+  Their rule for which scenes join: if you can walk across the screen edge it is directly connected; if you need a vehicle
+  it is far (#193, #197). Several regulars disagree for some scenes, so treat it as a default, not a fact.
+- **Interior faces.** Their first cleanup cast a ray one cell along each face's normal and deleted faces that hit another
+  face, plus loose triangles under slopes, with props masked out first, since props made neighbouring level faces
+  disappear (#11, #12). We avoid most of this by deciding faces from cells; the prop-masking pitfall still applies to any
+  face test that sees kit pieces.
+- **After the rules, simplify.** Merge the repeated grid faces into larger polygons but keep a one-cell band next to other
+  materials and walls, so corner dirt can be painted there (#207). Our greedy wall merge is the same idea.
+- **Ground.** Grass and dirt marked per tile quadrant and turned into vertex-color splat weights, blended by height, "no
+  more tiles" (#199, #207). Anti-repetition: random rotation per cell with a hex mask for grass and dirt; paving can't be
+  rotated, so mirror or flip some tiles and add grime (#147). Repetition that is invisible from the iso angle shows from
+  new angles (#145): check textures from low, turned cameras too.
+- **Tile edges.** LBA1 tile art has no margin, so mips and AA make seams flicker (#9). Keep growing atlas islands (as the
+  slopes atlas does, 2 px).
+- **Sorting.** Sloped blocks with transparency drew in the wrong order (#7, #9). Keep town pieces opaque or masked.
+- Their scale: a cell 0.5 m wide, a step 0.25 m (#202, tool panel). Same 2:1 ratio as our 64 cm / 32 cm.
+- What gave the strongest "3D" read in their shots, apart from roofs: capping stones on walls, door and window frames as
+  separate pieces, bevelled level edges, stairs as modelled steps (#64, #143, #151).
 
 ### Simple objects left as bricks (survey, 2026-11-07)
 
@@ -356,7 +423,9 @@ faces against it.
 1. `lba1_town_survey.py iso 42` and `section 42`: the roofs are 1-cell-deep slices along z (42:186/188 facing, 42:190 back,
    42:187 slope over wall, 42:189 gable end), slopes rising along x one step per cell, ridges along z.
 2. Per house: the connected cells of those layouts (or of thatch-colored bricks) give a footprint and a ridge height. Emit two
-   slope quads and the gable triangles; hide the layouts' cells from the visual cells (collision kept).
+   slope quads and the gable triangles; hide the layouts' cells from the visual cells (collision kept). From the forum notes
+   above: gable triangles in the wall's style, the roof as a thick slab with eaves past the walls, a ridge cap along the
+   ridge, and the eave kept above the tallest door in the long walls.
 3. Texture: the facing slope's art read through the iso projection, from the composed image of 42:186 (not per-cell sprites:
    the art straddles them), tiled along the ridge; the back slope uses the same art mirrored, as `EmitSlopes` does.
 4. Shots: `-Poses towns`, Proxim City 1-4.
