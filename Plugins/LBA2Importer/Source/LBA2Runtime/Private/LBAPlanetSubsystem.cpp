@@ -461,6 +461,14 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 		TInlineComponentArray<USceneComponent*> Components(Actor);
 		for (USceneComponent* Component : Components)
 		{
+			// Distance fields are baked from the flat meshes, but the bend shows them sunk: a far surface lay under its own
+			// unbent copy and was shaded by it, the more the further (the belt's shadows crept up it as the camera came
+			// closer). The shadow maps draw the bent meshes, so they shadow everything.
+			ULightComponent* AnyLight = Cast<ULightComponent>(Component);
+			if (AnyLight && AnyLight->bUseRayTracedDistanceFieldShadows)
+			{
+				AnyLight->SetUseRayTracedDistanceFieldShadows(false);
+			}
 			if (USkyAtmosphereComponent* SkyAtmosphere = Cast<USkyAtmosphereComponent>(Component))
 			{
 				// Kept under the camera (UpdateView).
