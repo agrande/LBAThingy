@@ -653,6 +653,8 @@ void FLBASceneImporter::PopulateLevel(UWorld* World, const FLBAScene& Scene, ULB
 		Start->PlayerStartTag = *FString::Printf(TEXT("LBAScene_%03d"), Scene.Index);
 	}
 
+	TArray<ALBASceneDoor*> Doors;
+	TArray<LBAScenes::FDoorLeaf> DoorLeaves;
 	for (int32 Index = 1; Index < Scene.Objects.Num(); ++Index)
 	{
 		const FLBASceneObjectData& Object = Scene.Objects[Index];
@@ -708,6 +710,8 @@ void FLBASceneImporter::PopulateLevel(UWorld* World, const FLBAScene& Scene, ULB
 				DoorActor->AutoCloseDistance = LBAScenes::DoorAutoCloseDistance * Scale;
 				DoorActor->OpenSound = Door.OpenSample != INDEX_NONE ? Audio->GetSample(Door.OpenSample) : nullptr;
 				DoorActor->CloseSound = Door.CloseSample != INDEX_NONE ? Audio->GetSample(Door.CloseSample) : nullptr;
+				Doors.Add(DoorActor);
+				DoorLeaves.Add({ Object.Position, Door.Direction, Door.Width });
 				++NumDoors;
 			}
 			Actor->Scene = Asset;
@@ -748,6 +752,12 @@ void FLBASceneImporter::PopulateLevel(UWorld* World, const FLBAScene& Scene, ULB
 			UE_LOG(LogLBA2, Verbose, TEXT("Scene %d object %d: entity %d has no body %d"), Scene.Index, Index, Object.Entity, Object.Body);
 			++NumMissingBodies;
 		}
+	}
+
+	const TArray<int32> OtherLeaves = LBAScenes::FindDoubleDoors(DoorLeaves);
+	for (int32 Index = 0; Index < Doors.Num(); ++Index)
+	{
+		Doors[Index]->OtherLeaf = OtherLeaves[Index] != INDEX_NONE ? Doors[OtherLeaves[Index]] : nullptr;
 	}
 
 	for (int32 Index = 0; Index < Scene.Zones.Num(); ++Index)

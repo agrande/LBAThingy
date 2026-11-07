@@ -219,6 +219,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Door")
 	TObjectPtr<USoundBase> CloseSound;
 
+	/** The other leaf of a double door: they open and close together. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "LBA|Door")
+	TObjectPtr<ALBASceneDoor> OtherLeaf;
+
 	UFUNCTION(BlueprintCallable, Category = "LBA|Door")
 	void Open();
 
@@ -240,6 +244,8 @@ protected:
 private:
 	/** A pawn stands where the closed door goes. */
 	bool IsDoorwayTaken() const;
+	/** Sets this leaf and the other one going, with one sound (often only one of their tracks has any). */
+	void SetWantsOpen(bool bOpen);
 
 	FVector ClosedLocation = FVector::ZeroVector;
 	/** The closed door's bounds, relative to ClosedLocation. */

@@ -644,7 +644,7 @@ How it holds together (the world is flat and still; only the view is round):
   does: Citabau's rock, grass and pale stone at Citadel's 25 texels per meter, LBA1's earth (its evenly lit bricks,
   unprojected from iso) and the desert's sand with their patterns on the Citabau palette ramp of LBA2's color for that
   kind. Measured in the same light, top views: earth (71, 51, 15) against Citadel's (75, 54, 17), grass (73, 105, 65)
-  against (88, 113, 77). No cost: 154.0 fps on the globe test, 152.9 before. The pads and the shelf under the sea stay
+  against (88, 113, 77). No cost: 154.0 fps on the globe test, 152.9 before. The shelf under the sea stays
   plain vertex colors. Collision from their triangles. Painted land under a placed island is left out.
   `lba.Globe.Stubs 0` leaves them out.
 - **Placement** (`LBAPlanetBuilder`, island layer): an island goes where the original's holomap has it
@@ -698,8 +698,10 @@ How it holds together (the world is flat and still; only the view is round):
   (their lowest, or the streets' level where that is lower: the level 20 % of the top bricks around each cell, 11 m,
   are under; the lowest of the 5 x 5 cells around, so the stub's 1 m triangles stay under the streets), over the
   district's sea (the lowest of its scenes' own: LBA1 keeps one per scene, Principal's harbour at 0 and the scenes
-  around it at 3 cells), its water carved into the sea at least 1.2 m deep, the stub's ground eased into it over 6 m,
-  its colors the ground's top bricks'. Land a pad needs off the painted coast is grown (the stub's grid reaches 60 m
+  around it at 3 cells), its water carved into the sea at least 1.2 m deep. Its edge comes up to the streets' top, and the stub's ground eases
+  into that over 6 to 25 m, wider where they differ more (a slope near 20 degrees), the width wandering by 40 % along the
+  edge, so a town has no rectangular outline and the Water tower sits on its hill. Its kinds of ground are the top
+  bricks' (dark ground under paving and walls), the natural ones going on about 4 m past the edge. Land a pad needs off the painted coast is grown (the stub's grid reaches 60 m
   further); LBA1's small water (fountains, gutters) and brick-less holes under 30 m2 are ground. Districts: Principal
   harbour (7 scenes: the harbour, Outside the fortress, Old Burg, Ruins, Outside the library, Military camp, Peg Leg
   Street; 7,500 m2 of land on the south coast, turned 9 degrees, 11 m from its markers, 74 % of its land on painted
@@ -708,13 +710,23 @@ How it holds together (the world is flat and still; only the view is round):
   three rune stone scenes, islets in the sea where their markers are; Rebellion harbour (moved 29 m from its markers,
   out of the bay's water onto its shore). Each district gets a note in the stub level
   (`District_<island>_<name>`) and a log line with its fit and its LBA1 frame's transform to the map.
-- **LBA1's towns in 3D** (`LBAPlanetTowns`, L4; `/Game/LBA2/Planets/Towns`): each district's bricks as they are, in its
+- **LBA1's towns in 3D** (`LBAPlanetTowns`, L4; `/Game/LBA2/Planets/Towns`): each district's bricks in its
   frame on the map: its scenes' grids (`LBA1::FData::LoadGrid`, the same cells and layouts as LBA2's interiors), each
   column from the scene drawn over it, the sea's columns left to the planet's sea, quays by the sea carried down 4
   cells under it (their lowest brick repeated). Extruded as the interiors are (`LBABrickMesh`, shared with
-  `FLBAIsoImporter`): cubes UV-mapped onto LBA1's brick sprites in LBA1's palette, one atlas per island
-  (`T_LBA1_<ISLAND>_Bricks`), collision from the bricks' shapes. One mesh per scene (`SM_LBA1_Scene_NNN` + `_Collision`,
-  2,800-30,000 triangles each, 250,000 in all), its actor `Town_<island>_Scene_NNN` tagged `LBA_Stub` in the stubs'
+  `FLBAIsoImporter`): cubes UV-mapped onto LBA1's brick sprites, one atlas per island
+  (`T_LBA1_<ISLAND>_Bricks`), collision from the bricks' shapes. Colors: a tile is LBA1's pattern on a ramp of the home
+  island's palette (`LBAPlanetGround::MakeTownPalette`): its plants on LBA2's olive and its earth on LBA2's brown, at the
+  original's ground as seen on screen (`sunny_47`: 100,112,72 and 88,60,32), everything else on the ramp nearest to
+  LBA1's own hue, so islands differ through their tiles and man-made colors while natural ground stays the planet's.
+  Exact palette colors, so the look shader treats them as LBA2's art. Plants' shadows share a ramp with stone
+  (`MovePlantShadows`: only those next to a plant's pixels move). Blank bricks (nothing to draw, only collision) count as air
+  when drawing. Flat tiles of grass, earth, a mix of both or dark ground aren't drawn (`FDistricts::GetGroundShares`, from
+  the sprite's shape and ramps): they are terrain (`EmitGround`), a quad on each one's top in the stub's own mesh,
+  `M_LBA_StubGround` from the same pivot, so its textures run on into the ground around it, its corners holding the kinds
+  of the bricks within 3 cells. Paving stays bricks: its courses follow the streets, which a texture laid in the map's frame
+  wouldn't. The bricks' collision stays under all of it. One mesh per scene (`SM_LBA1_Scene_NNN` + `_Collision`,
+  2,400-30,000 triangles each, 207,064 in all), its actor `Town_<island>_Scene_NNN` tagged `LBA_Stub` in the stubs'
   level. Twinsen walks the harbour's streets. Globe test on `L_TWINSUN`: 128.0 fps (130.6 without the stub islands).
   Later layers replace the bricks with LBA2-like or remake models.
 
@@ -847,7 +859,7 @@ In a scene level (outliner folders under *Scene*):
 |---|---|
 | Object with a 3D body | `ALBASceneActor` (an `ACharacter`): the entity's body and its start animation (in place: root motion waits for scripts), capsule fitted in the body's box and the exact box blocking pawns. Objects without a body never collide, like the original. Objects the original hides at start are hidden in game and, for now, don't block (the original's do). Stand-ins for gameplay handled differently here (Twinsen with Zoe or carried, the Dinofly, meca-penguins: Project Settings > Plugins > LBA2 > Hidden Scene Entities) are hidden in game, without collision. The meca-penguin slot (object 1) is skipped. |
 | Sprite object (interiors: doors, signs, pickups) | `ALBASceneSprite`: a static mesh per sprite (`Sprites/SM_Sprite_NNN`, `SM_SpriteRaw_NNN`, `SM_SpriteAnim_NNN`, one atlas `T_Sprites`) with the sprite projected onto the visible faces of its box like the interior bricks: pixel exact from the original angle, solid from the others, the box as collision. Animated sprites (ANIM3DS) flip through their frames. Still sprites lba2remake made a 3D model for (its `model_replacements.json`: the museum's surveillance button and lever, chest lids, clover boxes, the casino entrance...) show that model instead (`Remake/sprites/SM_Remake_*`, its mesh as collision; *Use Remake Models*). |
-| Sliding door (a sprite whose track opens it: `OPEN_LEFT/RIGHT/UP/DOWN`) | `ALBASceneDoor`, a sprite the player opens and closes (`ILBAInteractable`, see below), with its slide (`OpenOffset`: direction and width from the track), the original speed and the samples its track plays. |
+| Sliding door (a sprite whose track opens it: `OPEN_LEFT/RIGHT/UP/DOWN`) | `ALBASceneDoor`, a sprite the player opens and closes (`ILBAInteractable`, see below), with its slide (`OpenOffset`: direction and width from the track), the original speed and the samples its track plays. Two leaves side by side on one line and sliding apart are one double door (`OtherLeaf`, `LBAScenes::FindDoubleDoors`). The Temple of Bu's door sprites, which lba2remake has no models for, show the plugin's own models (`Resources/Models`: its `model_replacements.json`, GLBs from `Tools/make_door_models.py`, `.blend` files to rework by hand, `Tools/check_door_models.py` to compare them with the sprites): their `"door": true` gives them a box as collision and `M_LBA_ColorClipped`, which cuts the leaf off at the closed door's far edge, as the original clips the sprite. |
 | Zone | A volume per zone type, sized to its box, with the original settings as properties: `ALBACubeChangeVolume`, `ALBACameraZoneVolume`, `ALBAScenarioZoneVolume`, `ALBAGridZoneVolume`, `ALBAGiverZoneVolume`, `ALBAMessageZoneVolume`, `ALBALadderVolume`, `ALBAEscalatorVolume`, `ALBARailVolume`, and `ALBAHitVolume` (Unreal's `APainCausingVolume`). Cube changes between cubes of the same island are left out (the island is one level). |
 | Track point | `ATargetPoint` `Point_NN` (tag `LBAPoint_NN`) |
 | Hero start | `APlayerStart` tagged `LBAScene_NNN` |

@@ -72,4 +72,18 @@ namespace LBAScenes
 
 	/** Finds the first OPEN_* of a track script. */
 	bool FindDoorTrack(const TArray<uint8>& Track, FDoorTrack& OutDoor);
+
+	/** A door's position and how it opens. */
+	struct FDoorLeaf
+	{
+		FIntVector Position = FIntVector::ZeroValue;
+		FIntVector Direction = FIntVector::ZeroValue;
+		int32 Width = 0;
+	};
+
+	/**
+	 * The two leaves of double doors, for each leaf the index of its other leaf or INDEX_NONE: side by side on the same line
+	 * and floor, sliding apart. The original's life scripts open them together.
+	 */
+	TArray<int32> FindDoubleDoors(const TArray<FDoorLeaf>& Leaves);
 }

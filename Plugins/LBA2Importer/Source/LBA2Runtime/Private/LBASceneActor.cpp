@@ -330,6 +330,12 @@ void ALBASceneSprite::Tick(float DeltaSeconds)
 	}
 }
 
+namespace
+{
+	/** Past the closed door's far edge, so that rounding never cuts a closed door (cm). */
+	constexpr float ClipMargin = 0.5f;
+}
+
 ALBASceneDoor::ALBASceneDoor()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -340,25 +346,51 @@ void ALBASceneDoor::BeginPlay()
 	Super::BeginPlay();
 	ClosedLocation = GetActorLocation();
 	ClosedBounds = GetSpriteComponent()->Bounds.GetBox().ShiftBy(-ClosedLocation);
+	if (!OpenOffset.IsNearlyZero() && ClosedBounds.IsValid)
+	{
+		// Model doors (M_LBA_ColorClipped) stop at the closed door's far edge, as the original clips the sprite to a fixed
+		// rectangle (OBJECT.CPP): the leaf is longer than its pillar is wide, and would come out on the pillar's other side.
+		const FVector Direction = OpenOffset.GetSafeNormal();
+		const FBox Closed = ClosedBounds.ShiftBy(ClosedLocation);
+		const double FarEdge = FVector::DotProduct(Closed.GetCenter(), Direction) + FVector::DotProduct(Closed.GetExtent(), Direction.GetAbs());
+		UStaticMeshComponent* Mesh = GetSpriteComponent();
+		Mesh->SetCustomPrimitiveDataFloat(0, float(Direction.X));
+		Mesh->SetCustomPrimitiveDataFloat(1, float(Direction.Y));
+		Mesh->SetCustomPrimitiveDataFloat(2, float(Direction.Z));
+		Mesh->SetCustomPrimitiveDataFloat(3, float(FarEdge) + ClipMargin);
+	}
 	SetActorTickEnabled(true);
 }
 
 void ALBASceneDoor::Open()
 {
-	if (!bWantsOpen && OpenSound)
-	{
-		UGameplayStatics::PlaySoundAtLocation(this, OpenSound, GetActorLocation());
-	}
-	bWantsOpen = true;
+	SetWantsOpen(true);
 }
 
 void ALBASceneDoor::Close()
 {
-	if (bWantsOpen && CloseSound)
+	SetWantsOpen(false);
+}
+
+void ALBASceneDoor::SetWantsOpen(bool bOpen)
+{
+	if (bWantsOpen != bOpen || (OtherLeaf && OtherLeaf->bWantsOpen != bOpen))
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, CloseSound, GetActorLocation());
+		USoundBase* Sound = bOpen ? OpenSound : CloseSound;
+		if (!Sound && OtherLeaf)
+		{
+			Sound = bOpen ? OtherLeaf->OpenSound : OtherLeaf->CloseSound;
+		}
+		if (Sound)
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, Sound, GetActorLocation());
+		}
 	}
-	bWantsOpen = false;
+	bWantsOpen = bOpen;
+	if (OtherLeaf)
+	{
+		OtherLeaf->bWantsOpen = bOpen;
+	}
 }
 
 bool ALBASceneDoor::CanInteract_Implementation(APawn* User) const

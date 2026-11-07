@@ -138,6 +138,43 @@ TArray<FString> LBAScenes::GetIslandFiles(int32 Island)
 	}
 }
 
+TArray<int32> LBAScenes::FindDoubleDoors(const TArray<FDoorLeaf>& Leaves)
+{
+	// Scene positions are hand-placed: the Temple of Bu's leaves are up to 16 units more or less than a leaf's width apart.
+	constexpr int32 Tolerance = 64;
+	auto Nearest = [&Leaves](int32 Index)
+	{
+		const FDoorLeaf& Leaf = Leaves[Index];
+		int32 Best = INDEX_NONE;
+		int32 BestDistance = MAX_int32;
+		for (int32 Other = 0; Other < Leaves.Num(); ++Other)
+		{
+			const FIntVector Offset = Leaves[Other].Position - Leaf.Position;
+			// The other leaf lies behind this one's opening.
+			const int32 Behind = -(Offset.X * Leaf.Direction.X + Offset.Z * Leaf.Direction.Z);
+			const int32 Across = FMath::Abs(Offset.X * Leaf.Direction.Z) + FMath::Abs(Offset.Z * Leaf.Direction.X);
+			if (Other != Index && Leaves[Other].Direction + Leaf.Direction == FIntVector::ZeroValue && Offset.Y == 0 && Across <= Tolerance
+				&& Behind > 0 && Behind <= Leaf.Width + Tolerance && Behind < BestDistance)
+			{
+				Best = Other;
+				BestDistance = Behind;
+			}
+		}
+		return Best;
+	};
+	TArray<int32> Pairs;
+	Pairs.Init(INDEX_NONE, Leaves.Num());
+	for (int32 Index = 0; Index < Leaves.Num(); ++Index)
+	{
+		const int32 Other = Nearest(Index);
+		if (Other != INDEX_NONE && Nearest(Other) == Index)
+		{
+			Pairs[Index] = Other;
+		}
+	}
+	return Pairs;
+}
+
 bool LBAScenes::FindDoorTrack(const TArray<uint8>& Track, FDoorTrack& OutDoor)
 {
 	// Track macros (TM_* in COMMON.H) and the size of their operands, as SearchOffsetTrack skips them.

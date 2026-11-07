@@ -6,6 +6,7 @@
 #include "MaterialEditingLibrary.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionAppendVector.h"
 #include "Materials/MaterialExpressionCameraVectorWS.h"
 #include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionComment.h"
@@ -13,6 +14,8 @@
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionDivide.h"
+#include "Materials/MaterialExpressionDotProduct.h"
+#include "Materials/MaterialExpressionIf.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
 #include "Materials/MaterialExpressionLocalPosition.h"
 #include "Materials/MaterialExpressionMultiply.h"
@@ -46,6 +49,7 @@ namespace
 		TEXT("M_LBA_Glow"),
 		TEXT("M_LBA_TexturedGlow"),
 		TEXT("M_LBA_StubGround"),
+		TEXT("M_LBA_ColorClipped"),
 	};
 	static_assert(UE_ARRAY_COUNT(MasterNames) == uint8(ELBAMaterial::Count), "Keep MasterNames in sync");
 
@@ -390,6 +394,51 @@ UMaterial* FLBAMaterialLibrary::CreateMaster(ELBAMaterial Kind)
 		G.Column = -150;
 		G.Out(G.Multiply(Albedo, TEXT(""), Shade, TEXT(""), 0), TEXT(""), MP_BaseColor);
 		G.Surface(1.f, 0.f);
+		break;
+	}
+	case ELBAMaterial::ColorClipped:
+	{
+		Material->BlendMode = BLEND_Masked;
+		UMaterialExpressionVertexColor* VC = G.Add<UMaterialExpressionVertexColor>(0);
+		G.Column = -300;
+		UMaterialExpression* Albedo = G.VertexAlbedo(VC, 0);
+		UMaterialExpression* Shade = G.BakedShade(VC, 200);
+		G.Column = -150;
+		G.Out(G.Multiply(Albedo, TEXT(""), Shade, TEXT(""), 0), TEXT(""), MP_BaseColor);
+		G.Surface(1.f, 0.f);
+
+		// Kept where dot(world position, normal) <= distance, on the flat world (globe mode's bend excluded).
+		auto PrimitiveData = [&G](const TCHAR* Name, uint8 Index, int32 Y)
+		{
+			UMaterialExpressionScalarParameter* Param = G.Scalar(Name, 0.f, Y);
+			Param->bUseCustomPrimitiveData = true;
+			Param->PrimitiveDataIndex = Index;
+			return Param;
+		};
+		G.Column = -600;
+		UMaterialExpressionWorldPosition* Position = G.Add<UMaterialExpressionWorldPosition>(800);
+		Position->WorldPositionShaderOffset = WPT_ExcludeAllShaderOffsets;
+		UMaterialExpressionAppendVector* NormalXY = G.Add<UMaterialExpressionAppendVector>(1100);
+		G.Connect(PrimitiveData(TEXT("ClipNormalX"), 0, 900), TEXT(""), NormalXY, TEXT("A"));
+		G.Connect(PrimitiveData(TEXT("ClipNormalY"), 1, 1000), TEXT(""), NormalXY, TEXT("B"));
+		UMaterialExpressionAppendVector* Normal = G.Add<UMaterialExpressionAppendVector>(1200);
+		G.Connect(NormalXY, TEXT(""), Normal, TEXT("A"));
+		G.Connect(PrimitiveData(TEXT("ClipNormalZ"), 2, 1300), TEXT(""), Normal, TEXT("B"));
+		G.Column = -450;
+		UMaterialExpressionDotProduct* Dot = G.Add<UMaterialExpressionDotProduct>(800);
+		G.Connect(Position, TEXT(""), Dot, TEXT("A"));
+		G.Connect(Normal, TEXT(""), Dot, TEXT("B"));
+		// Graph nodes rather than a custom node: the position is a large-world value, which custom nodes do not take as it is.
+		// Exactly on the plane is kept: with no plane set, everything is on it.
+		UMaterialExpressionIf* Keep = G.Add<UMaterialExpressionIf>(800);
+		G.Connect(Dot, TEXT(""), Keep, TEXT("A"));
+		G.Connect(PrimitiveData(TEXT("ClipDistance"), 3, 1400), TEXT(""), Keep, TEXT("B"));
+		UMaterialExpressionConstant* Kept = G.Constant(1.f, 1500);
+		UMaterialExpressionConstant* Cut = G.Constant(0.f, 1600);
+		Keep->AGreaterThanB.Connect(0, Cut);
+		Keep->AEqualsB.Connect(0, Kept);
+		Keep->ALessThanB.Connect(0, Kept);
+		G.Out(Keep, TEXT(""), MP_OpacityMask);
 		break;
 	}
 	case ELBAMaterial::Glow:

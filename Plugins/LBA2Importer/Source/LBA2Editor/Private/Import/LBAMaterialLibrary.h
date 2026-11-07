@@ -43,6 +43,11 @@ enum class ELBAMaterial : uint8
 	TexturedGlow,
 	/** Globe mode's stub islands: the ground's kinds from vertex shares and noise, a tiling texture each (LBAStubGround.ush). */
 	StubGround,
+	/**
+	 * Color cut off beyond a plane of world space, set per component in custom primitive data: normal xyz, then distance
+	 * (all zero by default: nothing is cut). A sliding door's leaf ends where its pillar begins, like the original's clip.
+	 */
+	ColorClipped,
 	Count
 };
 

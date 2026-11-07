@@ -7,6 +7,7 @@
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Interfaces/IPluginManager.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBATypes.h"
@@ -112,21 +113,36 @@ bool FLBARemakeAssets::Initialize()
 	LayoutsMetadata = LoadJson(FPaths::Combine(Root, TEXT("www/metadata/lba2/layouts.json")));
 	GridsMetadata = LoadJson(FPaths::Combine(Root, TEXT("www/metadata/lba2/grids.json")));
 	bAvailable = LayoutsMetadata.IsValid() && FPaths::DirectoryExists(ModelsDirectory);
-	const TSharedPtr<FJsonObject> Replacements = LoadJson(FPaths::Combine(Root, TEXT("www/metadata/lba2/model_replacements.json")));
-	const TSharedPtr<FJsonObject>* Sprites = nullptr;
-	if (Replacements.IsValid() && Replacements->TryGetObjectField(TEXT("sprites"), Sprites))
+	auto LoadSpriteReplacements = [this](const FString& Path)
 	{
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*Sprites)->Values)
+		const TSharedPtr<FJsonObject> Replacements = LoadJson(Path);
+		const TSharedPtr<FJsonObject>* Sprites = nullptr;
+		if (Replacements.IsValid() && Replacements->TryGetObjectField(TEXT("sprites"), Sprites))
 		{
-			const TSharedPtr<FJsonObject> Value = Pair.Value->AsObject();
-			FSpriteReplacement Replacement;
-			Value->TryGetStringField(TEXT("file"), Replacement.File);
-			Value->TryGetBoolField(TEXT("hide"), Replacement.bHide);
-			if (Replacement.bHide || !Replacement.File.IsEmpty())
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*Sprites)->Values)
 			{
-				SpriteReplacements.Add(FCString::Atoi(*Pair.Key), Replacement);
+				const TSharedPtr<FJsonObject> Value = Pair.Value->AsObject();
+				FSpriteReplacement Replacement;
+				Value->TryGetStringField(TEXT("file"), Replacement.File);
+				Value->TryGetBoolField(TEXT("hide"), Replacement.bHide);
+				Value->TryGetBoolField(TEXT("door"), Replacement.bDoor);
+				if (Replacement.bHide || !Replacement.File.IsEmpty())
+				{
+					SpriteReplacements.Add(FCString::Atoi(*Pair.Key), Replacement);
+				}
+				if (Replacement.bDoor)
+				{
+					DoorModels.Add(Replacement.File);
+				}
 			}
 		}
+	};
+	LoadSpriteReplacements(FPaths::Combine(Root, TEXT("www/metadata/lba2/model_replacements.json")));
+	// The plugin's own models fill in for sprites the remake has none of.
+	if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("LBA2Importer")))
+	{
+		PluginModelsDirectory = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources/Models"));
+		LoadSpriteReplacements(FPaths::Combine(PluginModelsDirectory, TEXT("model_replacements.json")));
 	}
 	if (!bAvailable)
 	{
@@ -146,13 +162,15 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 
 	FLBAGltfModel Model;
 	FString Error;
-	if (!Model.Load(FPaths::Combine(ModelsDirectory, SubFolder, File), Error))
+	const FString PluginPath = FPaths::Combine(PluginModelsDirectory, SubFolder, File);
+	if (!Model.Load(FPaths::FileExists(PluginPath) ? PluginPath : FPaths::Combine(ModelsDirectory, SubFolder, File), Error))
 	{
 		Context.Warn(FString::Printf(TEXT("Remake model %s: %s"), *Key, *Error));
 		return nullptr;
 	}
 
 	const float Factor = float((SubFolder == TEXT("sprites") ? WorldUnit : ModelScale * LBA::BrickSizeXZ) * Context.GetScale());
+	const bool bDoor = SubFolder == TEXT("sprites") && DoorModels.Contains(File);
 	const FString Folder = Context.GetContentPath(TEXT("Remake") / SubFolder);
 	const FString TextureFolder = Context.GetContentPath(TEXT("Remake/Textures"));
 	FLBAMaterialLibrary& Materials = Context.GetMaterials();
@@ -219,7 +237,7 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 		}
 		else
 		{
-			Material = Materials.GetMaster(bBlend ? ELBAMaterial::Translucent : ELBAMaterial::Color);
+			Material = Materials.GetMaster(bBlend ? ELBAMaterial::Translucent : bDoor ? ELBAMaterial::ColorClipped : ELBAMaterial::Color);
 		}
 		FString SlotName = GltfMaterial ? FLBAImportContext::SanitizeName(GltfMaterial->Name) : FString();
 		if (SlotName.IsEmpty())
@@ -355,7 +373,9 @@ UStaticMesh* FLBARemakeAssets::GetModelMesh(const FString& SubFolder, const FStr
 	TArray<UMaterialInterface*> MeshMaterials;
 	TArray<FName> Slots;
 	Builder.BuildStatic(Description, MeshMaterials, Slots);
-	Options.bComplexAsSimple = true;
+	// A door moves and pawns stand against it: a plain box, not its spikes and studs.
+	Options.bComplexAsSimple = !bDoor;
+	Options.bSimpleBox = bDoor;
 	Result = Context.CreateStaticMesh(Folder, TEXT("SM_Remake_") + FLBAImportContext::SanitizeName(FPaths::GetBaseFilename(File)),
 		MoveTemp(Description), MeshMaterials, Slots, Options);
 	return Result;

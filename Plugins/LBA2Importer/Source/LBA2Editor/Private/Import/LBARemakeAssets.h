@@ -75,14 +75,17 @@ public:
 		FString File;
 		/** The remake draws nothing for it (a layout model already shows it). */
 		bool bHide = false;
+		/** A sliding door's leaf (the plugin's own models): collides as a box, and is cut off where its pillar begins. */
+		bool bDoor = false;
 	};
 
 	/** Replacement of a still sprite (SPRITES.HQR >= 100, SPRIRAW.HQR below), or null. */
 	const FSpriteReplacement* FindSpriteReplacement(int32 Sprite) const { return SpriteReplacements.Find(Sprite); }
 
 	/**
-	 * Static mesh for a model of www/models/lba2/<SubFolder>/<File>, imported on first use. Layout models are in remake
-	 * grid space (origin at their cell), sprite models in remake world units around the object's position.
+	 * Static mesh for a model of www/models/lba2/<SubFolder>/<File>, or of the plugin's Resources/Models/<SubFolder>/<File>
+	 * first, imported on first use. Layout models are in remake grid space (origin at their cell), sprite models in remake
+	 * world units around the object's position.
 	 */
 	UStaticMesh* GetModelMesh(const FString& SubFolder, const FString& File);
 	/** Lamps of a model imported with GetModelMesh. */
@@ -92,6 +95,10 @@ private:
 	FLBAImportContext& Context;
 	bool bAvailable = false;
 	FString ModelsDirectory;
+	/** The plugin's own models (Resources/Models, made by Tools/make_door_models.py), for sprites the remake has none of. */
+	FString PluginModelsDirectory;
+	/** Files of the sprite models that are doors. */
+	TSet<FString> DoorModels;
 	TSharedPtr<FJsonObject> LayoutsMetadata;
 	TSharedPtr<FJsonObject> GridsMetadata;
 	TMap<int32, FSpriteReplacement> SpriteReplacements;

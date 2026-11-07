@@ -1,0 +1,15 @@
+{
+    "sprites": {
+        "114": { "file": "door_lattice_a.glb", "door": true },
+        "115": { "file": "door_lattice_b.glb", "door": true },
+        "139": { "file": "door_spiked_x.glb", "door": true },
+        "140": { "file": "door_spiked_z.glb", "door": true },
+        "169": { "file": "door_cell.glb", "door": true },
+        "209": { "file": "door_hatch.glb", "door": true },
+        "325": { "file": "door_arch_left_x.glb", "door": true },
+        "326": { "file": "door_arch_right_x.glb", "door": true },
+        "327": { "file": "door_arch_right_z.glb", "door": true },
+        "328": { "file": "door_arch_left_z.glb", "door": true },
+        "332": { "file": "door_cell_keyhole.glb", "door": true }
+    }
+}
