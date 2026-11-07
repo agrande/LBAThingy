@@ -20,6 +20,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
+#include "LBALookSubsystem.h"
 #include "LBAPlanetCulling.h"
 #include "LBAStorm.h"
 #include "Materials/Material.h"
@@ -28,6 +29,7 @@
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "NiagaraActor.h"
+#include "UObject/UObjectIterator.h"
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
 #include "WaterZoneActor.h"
@@ -85,6 +87,27 @@ namespace
 		TEXT("Where the sun stands overhead on the planet: its longitude (degrees, the planet map's angle)."));
 	TAutoConsoleVariable<float> CVarGlobeSunMinElevation(TEXT("lba.Globe.SunMinElevation"), 20.f,
 		TEXT("The sun never gets lower than this (degrees), however far it is: the far side of the belt stays lit."));
+	// Citadel's far coast is 52 degrees from the pole, the belt's nearest shore 76: the islands keep their day.
+	TAutoConsoleVariable<float> CVarGlobeSunsetFrom(TEXT("lba.Globe.SunsetFrom"), 55.f,
+		TEXT("Going out from the pole, where the sunset towards the belt begins: the angle from the pole (degrees)."));
+	TAutoConsoleVariable<float> CVarGlobeSunsetTo(TEXT("lba.Globe.SunsetTo"), 78.f,
+		TEXT("Where the sunset is complete: the angle from the pole (degrees)."));
+	TAutoConsoleVariable<float> CVarGlobeSunsetElevation(TEXT("lba.Globe.SunsetElevation"), 3.f,
+		TEXT("How high the sun stands in the sunset, over the pole's side of the horizon (degrees)."));
+	/** The sky's factor in the sunset, for its orange: the atmosphere scatters little red, much blue. */
+	const FLinearColor SunsetSkyFactor(70.f, 16.f, 5.f);
+	const FLinearColor DayHazeTint(1.f, 0.6f, 0.7f);
+	const FLinearColor SunsetHazeTint(1.f, 0.5f, 0.1f);
+	const FLinearColor SunsetSunTint(1.f, 0.55f, 0.25f);
+	constexpr float SunsetHazeGlow = 0.6f;
+	/**
+	 * The look's LightTint: surfaces take their color from the palette and little from the light, so a warm sun on the
+	 * belt's blue snow only made it gray. The sunset gives it more of the light's color. 0.35 is the enhanced look's own.
+	 */
+	constexpr float DayLightTint = 0.35f;
+	constexpr float SunsetLightTint = 0.8f;
+	TAutoConsoleVariable<float> CVarGlobeSunsetSunGain(TEXT("lba.Globe.SunsetSunGain"), 5.5f,
+		TEXT("How much stronger the sun is in the sunset: so low, it lights hardly any ground, only walls facing it."));
 	TAutoConsoleVariable<float> CVarGlobeSunGroundLight(TEXT("lba.Globe.SunGroundLight"), 1.f,
 		TEXT("How much the sun's intensity makes up for its elevation: 1 keeps lit flat ground as bright as in the opened island's level, 0 leaves the intensity."));
 	TAutoConsoleVariable<float> CVarGlobeSunSmoothing(TEXT("lba.Globe.SunSmoothing"), 0.5f,
@@ -402,16 +425,11 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 				const float AirDistribution = SkyAtmosphere->RayleighExponentialDistribution;
 				const auto AirAbove = [AirDistribution](float Height) { return AirDistribution * (1.f - FMath::Exp(-Height / AirDistribution)); };
 				SkyAtmosphere->SetRayleighScatteringScale(SkyAtmosphere->RayleighScatteringScale * AirAbove(20.f) / AirAbove(Asset->AtmosphereHeight));
-				// The haze gets the sky's tint undone (and some more of green and blue, which the grade pushes), so that it ends up pale.
-				const float SkyMin = FMath::Max(SkyAtmosphere->SkyLuminanceFactor.GetMin(), 1e-3f);
-				const FLinearColor Tint = SkyAtmosphere->SkyLuminanceFactor;
-				SkyAtmosphere->SetMieScattering(FLinearColor(SkyMin / FMath::Max(Tint.R, SkyMin), 0.6f * SkyMin / FMath::Max(Tint.G, SkyMin), 0.7f * SkyMin / FMath::Max(Tint.B, SkyMin)));
 				SkyAtmosphere->SetMieAbsorptionScale(0.f);
 				SkyAtmosphere->SetWorldLocation(FVector(0.0, 0.0, SeaLevel - Radius));
 				SkyAtmosphere->MarkRenderStateDirty();
 				Atmosphere = SkyAtmosphere;
 				LevelSkyFactor = SkyAtmosphere->SkyLuminanceFactor;
-				SkyFactor = LevelSkyFactor;
 			}
 			else if (UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Component))
 			{
@@ -420,6 +438,7 @@ void ULBAPlanetSubsystem::AdaptLevel(ULevel* Level, int32 IslandIndex)
 					SunLight = Light;
 					LevelSunRotation = Light->GetComponentRotation();
 					LevelSunIntensity = Light->Intensity;
+					LevelSunColor = FLinearColor(Light->LightColor);
 					LevelCloudScale = Light->CloudScatteredLuminanceScale;
 				}
 				else if (Light->CastShadows)
@@ -715,15 +734,6 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 			// so that the land's light doesn't change in flight. Far from the camera it would be outside the low atmosphere.
 			Sky->SetWorldLocation(FVector(View.X, View.Y, SeaLevel + 500.0));
 		}
-		const float Haze = CVarGlobeHaze.GetValueOnGameThread();
-		const float HazeHeight = FMath::Max(CVarGlobeHazeHeight.GetValueOnGameThread(), 1.f) / 1000.f;
-		const float HazeGlow = CVarGlobeHazeGlow.GetValueOnGameThread();
-		if (SkyAtmosphere->MieScatteringScale != Haze || SkyAtmosphere->MieExponentialDistribution != HazeHeight || SkyAtmosphere->MieAnisotropy != HazeGlow)
-		{
-			SkyAtmosphere->SetMieScatteringScale(Haze);
-			SkyAtmosphere->SetMieExponentialDistribution(HazeHeight);
-			SkyAtmosphere->SetMieAnisotropy(HazeGlow);
-		}
 	}
 	UpdateSun(bCameraCut);
 
@@ -762,6 +772,7 @@ void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
 	}
 	FRotator Rotation = LevelSunRotation;
 	float SunScale = 1.f;
+	float Sunset = 0.f;
 	if (CVarGlobeSun.GetValueOnGameThread() != 0)
 	{
 		const FVector2D Viewed(View.X, View.Y);
@@ -778,12 +789,23 @@ void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
 		const double MaxAngle = FMath::DegreesToRadians(90.0 - FMath::Clamp(CVarGlobeSunMinElevation.GetValueOnGameThread(), 1.f, 89.f));
 		const double Angle = FMath::Min(ToOverhead.Size() / Radius, MaxAngle);
 		const FVector2D Along = ToOverhead.GetSafeNormal();
-		const FVector ToSun(Along.X * FMath::Sin(Angle), Along.Y * FMath::Sin(Angle), FMath::Cos(Angle));
+		const FVector DayToSun(Along.X * FMath::Sin(Angle), Along.Y * FMath::Sin(Angle), FMath::Cos(Angle));
+
+		// Towards the belt the sun goes down, over the pole's side of the horizon, whichever side of the belt the camera is on.
+		const FVector Pole = GetMapToWorld().GetLocation();
+		const FVector2D ToPole = FVector2D(Pole.X, Pole.Y) - SunView;
+		Sunset = FMath::SmoothStep(CVarGlobeSunsetFrom.GetValueOnGameThread(), CVarGlobeSunsetTo.GetValueOnGameThread(),
+			float(FMath::RadiansToDegrees(ToPole.Size() / Radius)));
+		const double SunsetElevation = FMath::DegreesToRadians(CVarGlobeSunsetElevation.GetValueOnGameThread());
+		const FVector2D ToPoleAlong = ToPole.GetSafeNormal();
+		const FVector SunsetToSun(ToPoleAlong.X * FMath::Cos(SunsetElevation), ToPoleAlong.Y * FMath::Cos(SunsetElevation), FMath::Sin(SunsetElevation));
+		const FVector ToSun = FMath::Lerp(DayToSun, SunsetToSun, double(Sunset)).GetSafeNormal();
 		Rotation = (-ToSun).Rotation();
 
 		const double LevelSine = -LevelSunRotation.Vector().Z;
 		// Only ever down: a sun lower than the level's, turned up, burns the walls facing it (the belt's went white).
 		SunScale = float(FMath::Min(FMath::Pow(FMath::Max(LevelSine, 0.01) / ToSun.Z, double(CVarGlobeSunGroundLight.GetValueOnGameThread())), 1.0));
+		SunScale *= FMath::Lerp(1.f, CVarGlobeSunsetSunGain.GetValueOnGameThread(), Sunset);
 	}
 	else
 	{
@@ -791,27 +813,60 @@ void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
 	}
 	Sun->SetWorldRotation(Rotation);
 	Sun->SetIntensity(LevelSunIntensity * SunScale);
+	const FLinearColor SunColor = LevelSunColor * FMath::Lerp(FLinearColor::White, SunsetSunTint, Sunset);
+	Sun->SetLightColor(SunColor);
 	if (UDirectionalLightComponent* Key = CharacterLight.Get())
 	{
 		// The key light is what the sun lacks to light characters as in the original: together they stay the same.
 		Key->SetWorldRotation(Rotation);
+		Key->SetLightColor(SunColor);
 		Key->SetIntensity(FMath::Max(LevelCharacterIntensity + LevelSunIntensity * (1.f - SunScale), 0.f));
 	}
 	if (UDirectionalLightComponent* Fill = CharacterFill.Get())
 	{
 		Fill->SetWorldRotation(FRotator(Rotation.Pitch, Rotation.Yaw + 180.0, 0.0));
 	}
+	if (FMath::Abs(Sunset - LookSunset) > 0.01f || (Sunset <= 0.f && LookSunset > 0.f))
+	{
+		LookSunset = Sunset;
+		if (ULBALookSubsystem* Look = GetWorld()->GetSubsystem<ULBALookSubsystem>())
+		{
+			TArray<float> LightTint;
+			if (Sunset > 0.f)
+			{
+				LightTint.Add(FMath::Lerp(DayLightTint, SunsetLightTint, Sunset));
+			}
+			Look->SetParameterOverride(TEXT("LightTint"), LightTint);
+		}
+	}
 	if (USkyAtmosphereComponent* SkyAtmosphere = Atmosphere.Get())
 	{
 		// Rebuilds the atmosphere's and the sun's render state, so not for changes too small to see.
 		const float ClearSkyGain = IsSkyClear() ? CVarGlobeClearSkyGain.GetValueOnGameThread() : 1.f;
-		const FLinearColor Factor = LevelSkyFactor * ClearSkyGain / FMath::Max(SunScale, 0.01f);
-		if (!Factor.Equals(SkyFactor, 0.01f * Factor.GetMax()))
+		const FLinearColor DayFactor = LevelSkyFactor * ClearSkyGain;
+		// Red comes first and blue goes last, or the sky turns green half way: blue, then lavender, rose and orange.
+		const auto Blend = [](float Day, float Dusk, float Amount) { return FMath::Pow(Day, 1.f - Amount) * FMath::Pow(Dusk, Amount); };
+		const FLinearColor Factor = FLinearColor(Blend(DayFactor.R, SunsetSkyFactor.R, FMath::Pow(Sunset, 0.7f)), Blend(DayFactor.G, SunsetSkyFactor.G, Sunset),
+			Blend(DayFactor.B, SunsetSkyFactor.B, Sunset * Sunset)) / FMath::Max(SunScale, 0.01f);
+		const auto Changed = [](float New, float Old) { return FMath::Abs(New - Old) > 0.01f * New; };
+		if (Changed(Factor.R, SkyFactor.R) || Changed(Factor.G, SkyFactor.G) || Changed(Factor.B, SkyFactor.B))
 		{
 			SkyFactor = Factor;
 			SkyAtmosphere->SetSkyLuminanceFactor(Factor);
+			// The haze gets the sky's factor undone, so that its color is its own: pale, however tinted the sky is.
+			const FLinearColor HazeTint = FMath::Lerp(DayHazeTint, SunsetHazeTint, Sunset) * FMath::Max(DayFactor.GetMin(), 1e-3f) / FMath::Max(SunScale, 0.01f);
+			SkyAtmosphere->SetMieScattering(FLinearColor(HazeTint.R / FMath::Max(Factor.R, 1e-3f), HazeTint.G / FMath::Max(Factor.G, 1e-3f), HazeTint.B / FMath::Max(Factor.B, 1e-3f)));
 			Sun->CloudScatteredLuminanceScale = LevelCloudScale / FMath::Max(SunScale, 0.01f);
 			Sun->MarkRenderStateDirty();
+		}
+		const float Haze = CVarGlobeHaze.GetValueOnGameThread();
+		const float HazeHeight = FMath::Max(CVarGlobeHazeHeight.GetValueOnGameThread(), 1.f) / 1000.f;
+		const float HazeGlow = FMath::Lerp(CVarGlobeHazeGlow.GetValueOnGameThread(), SunsetHazeGlow, Sunset);
+		if (SkyAtmosphere->MieScatteringScale != Haze || SkyAtmosphere->MieExponentialDistribution != HazeHeight || SkyAtmosphere->MieAnisotropy != HazeGlow)
+		{
+			SkyAtmosphere->SetMieScatteringScale(Haze);
+			SkyAtmosphere->SetMieExponentialDistribution(HazeHeight);
+			SkyAtmosphere->SetMieAnisotropy(HazeGlow);
 		}
 	}
 }

@@ -55,7 +55,8 @@ class UVolumetricCloudComponent;
  *
  * The bent view is a true sphere with the camera on top, so the sun (a directional light, far away) is where it is seen
  * from the camera's place on the planet: the opened island's sun and character lights turn as the camera travels, lit
- * flat ground staying as bright as in its level (UpdateSun; lba.Globe.Sun*).
+ * flat ground staying as bright as in its level (UpdateSun; lba.Globe.Sun*). Towards the belt it goes down, and the
+ * sky turns orange: it is always sunset on the Hamalayi (lba.Globe.Sunset*).
  */
 UCLASS()
 class LBA2RUNTIME_API ULBAPlanetSubsystem : public UTickableWorldSubsystem
@@ -145,11 +146,14 @@ private:
 	TWeakObjectPtr<UDirectionalLightComponent> CharacterFill;
 	FRotator LevelSunRotation = FRotator::ZeroRotator;
 	float LevelSunIntensity = 0.f;
+	FLinearColor LevelSunColor = FLinearColor::White;
 	float LevelCharacterIntensity = 0.f;
 	FLinearColor LevelCloudScale = FLinearColor::White;
 	FLinearColor LevelSkyFactor = FLinearColor::White;
 	/** The sky's factor in use: it (and the clouds' scale) makes up for the sun's intensity, so the sky stays as it is. */
-	FLinearColor SkyFactor = FLinearColor::White;
+	FLinearColor SkyFactor = FLinearColor::Black;
+	/** The sunset the look's light tint was last set for. */
+	float LookSunset = 0.f;
 	/** The place the sun is seen from: the view, smoothed so that the camera swinging around Twinsen doesn't move it. */
 	FVector2D SunView = FVector2D::ZeroVector;
 	bool bHasSunView = false;
