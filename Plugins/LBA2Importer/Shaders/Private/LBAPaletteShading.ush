@@ -356,7 +356,7 @@ float LBAWaterContactDistance(float3 Translated, float Range)
 		if (Hi > 0.0)
 		{
 			UNROLL
-			for (int B = 0; B < 2; ++B)
+			for (int B = 0; B < 4; ++B)
 			{
 				const float Mid = 0.5 * (Lo + Hi);
 				if (LBAWaterContactAt(Translated, Dir * Mid, Range))

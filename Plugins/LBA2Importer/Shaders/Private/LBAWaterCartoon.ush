@@ -101,8 +101,8 @@ float LBAFoam(float Distance, float2 P, float Time, FLBACartoonWaterSettings C)
 	}
 	const float X = Distance / C.FoamWidth;
 	const float Noise = 0.5 + 0.25 * sin(P.x * 0.031 + P.y * 0.017 + Time * 0.7) + 0.25 * sin(P.y * 0.043 - P.x * 0.011 - Time * 0.9);
-	const float Hug = X < 0.2 + 0.15 * Noise ? 1.0 : 0.0;
+	const float Hug = X < 0.067 + 0.05 * Noise ? 1.0 : 0.0;
 	const float Phase = frac(Time * C.FoamSpeed + 0.2 * Noise);
-	const float Leaving = abs(X - (0.35 + 0.65 * Phase)) < 0.06 * (1.0 - Phase) ? 1.0 : 0.0;
+	const float Leaving = abs(X - (0.35 + 0.65 * Phase)) < 0.02 * (1.0 - Phase) ? 1.0 : 0.0;
 	return max(Hug, Leaving);
 }
