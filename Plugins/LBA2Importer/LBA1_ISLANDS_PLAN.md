@@ -21,7 +21,7 @@ for what isn't replaced yet.
 | 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
 | 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (72f2d74, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). 3c simple objects: generated fences, railings, sandbags, buoys + remake oil drums (shots `phase3c_objects_before_after.png`, `phase3c_objects_close.png`). Next: Phase 3 extended (houses as buildings with openings and frames, stairs as steps, roofs per house, palms), see that section |
 | 4 | Trees, rocks and paths | not started |
-| 5 | Rune stones on real islets | not started |
+| 5 | Rune stones: two road trips out of Proxim City | planned with the user (2026-11-07), not started; see that section |
 
 Show the user each phase's shots before starting the next, and check every look change against reference shots with
 measured colors (memory note `lba2-compare-with-original`).
@@ -596,8 +596,104 @@ frame; today a round window just above a walkway reads as "closed door"); then p
 
 ## Phase 5: rune stones
 
-The stone scenes are straight-edged slabs in the sea. Grow grammar islets around them (a stub grid with pads, as on the
-main islands), so the slabs sit inside real land with a coast.
+Planned with the user on 2026-11-07. Nothing built yet.
+
+### Today
+
+Scenes 45, 46 and 47 are districts of their own, laid at their holomap markers: straight brick slabs in the sea, not
+joined to the island. Scene 47's cliff is a flat wall standing in the water. Shots:
+`Saved/LookDev/proxima_runestones_today.png` (left: the holomap painting with LBA1's markers, up toward Hamalayi).
+
+### What LBA1 has (from its data and the user's screenshots)
+
+- **Two stones.** Scene 45 is the **Eclipse Stone** (text bank 6, text 29), scene 46 the **Marked Stone** (text 30), and
+  scene 47 the way to it. The signs in Proxim City read "To the Eclipse Stone" and "To the Marked Stone" (texts 198, 199).
+  ScummVM's names "Upper/Lower rune stone" are its own labels, not the game's.
+- **Reached by land vehicles.** Two are parked in Proxim City (FILE3D 18 and 46). The **motorbike** (46) shows up at the
+  Eclipse Stone, the **buggy** at the Marked Stone's cliff (FILE3D 39 in scene 47). No hovering, and not the Proto-Pack.
+- **The look.** A brown earth road with green verges and a row of round boulders along each edge. Over the water, the
+  same road becomes a causeway. The stone is a rounded standing stone with carved runes, about Twinsen's height
+  (sprite 60).
+- **Eclipse (45).** The causeway runs to a small round islet with the stone.
+- **Marked (47, then 46).** The causeway runs to a vertical, striped brown cliff, 20 bricks (about 6.4 m) high, with a
+  **round hole** at its foot (sprite 61). The buggy stays in front of the cliff and Twinsen goes in on foot. Past the
+  cliff, another causeway runs to a round islet with the stone.
+- **Holomap markers** (RESS.HQR entry 8):
+  - The Marked Stone is 83 m from Proxim City, on the Hamalayi side, at the tip of the painting's north-west arm.
+  - The Eclipse Stone is 107 m away on the desert side, about 15 m past the tip of the painted south lobe (about 90 m).
+  - For scale, Principal's harbour is 110 m from Port Belooga and 115 m from the Water Tower. The user finds those
+    distances right for a vehicle trip.
+
+### The user's decisions (2026-11-07)
+
+- The island's outline stays close to the holomap painting.
+- The stones sit on opposite sides of Proxim City. The **Marked Stone is north**, on the Hamalayi side, with the cliff and
+  the hole. The **Eclipse Stone is south**, on the desert side.
+- A decent road for land vehicles, long enough to make a vehicle worth taking (Principal's distances).
+- Make it look like LBA1: roads with boulder edges, causeways and round islets.
+- It must look like part of the terrain, not patched on top. LBA1's iso grids aren't needed: plain terrain is fine, as
+  long as the stones are visible and the shapes are distinctive.
+- For the hole, try LBA2's own pieces first.
+
+### Design
+
+- **North, the Marked Stone, by buggy (about 85 m from the city).**
+  - The north-west arm rises into a steep rock ridge. Its face is a vertical, striped cliff about 6 m high.
+  - The road ends on a small parking spot in front of the cliff.
+  - The round hole is a short tunnel just big enough to walk through, coming out into a small cove.
+  - From the cove, a causeway runs to the stone's round islet. The stone stays out of sight until Twinsen comes through.
+- **South, the Eclipse Stone, by motorbike (about 100 m).**
+  - The south lobe becomes a low, open spit of sand and grass, seen from the city's south shore.
+  - The road runs along it, then becomes a causeway to the stone's round islet, about where the marker is. The causeway
+    and islet are smaller than one texel of the painting (4 to 8 m), so the outline still matches.
+- **Both.** The stones are a bit taller than LBA1's, so they can be seen from the city and from the Dinofly. Each road ends
+  where a vehicle can turn around.
+
+### How to build it
+
+1. **Retire the three scenes as districts.** Drop Proxima's 45, 46 and 47 from the district list
+   (`LBAPlanetDistricts.cpp`, the Proxima entries) and from `Tools/district_pads.py`. Proxim City (42 + 44) stays.
+2. **Landmark shapes in the terrain generator.**
+   - Ridge, knoll, spit, cove and causeway, each with a position and a few numbers.
+   - They change the wanted height and the land mask before `LBAPlanetStubs` decides benches, cliffs, beaches and
+     ground kinds, so its own rules shape them, as on every other island.
+   - Positions are automatic: each site starts at LBA1's marker and moves to the nearest tip of painted land.
+   - Shapes come from a small data asset per island, so they can be tuned without code.
+   - Prototype it first in `Tools/stub_grammar.py`, as the earlier layers were.
+3. **The hole.**
+   - The heightmap can't hold a tunnel, so cut a narrow slot through the ridge where the tunnel runs.
+   - Fill the slot with a rock piece that has the round tunnel through it, using the cliffs' rock material on both faces
+     so the cliff reads as one piece.
+   - First look for a cave mouth or tunnel entrance among LBA2's island decor (`Tools/lba2_decor_sheet.py`); generate the
+     piece only if nothing fits.
+   - The cliff needs its vertical streaks: cliffs are projected from above (Phase 1), so check that this face is steep
+     enough to get them.
+4. **The roads.**
+   - An earth roadbed about 3 m wide with grass verges, as a ground kind in the stub mesh.
+   - Laid out automatically: a cheapest-path search from Proxim City to each site, avoiding cliffs and preferring gentle
+     slopes. Where it crosses a bench edge, that edge becomes a ramp.
+   - Round boulders along both edges, from the kit's boulder pieces (LBA2 rocks).
+   - These are the first of Phase 4's paths, so build them so that phase can reuse the code.
+5. **Props.**
+   - The stones: rounded standing stones carrying sprite 60's runes.
+   - Optionally, the buggy and the motorbike parked at their sites and in the city. Pick a source first: LBA1's FILE3D
+     models (18, 39, 46), remake models, or simple shapes.
+
+### Checks
+
+- A top view laid over the holomap painting: the outline stays close to it.
+- Shots from Proxim City toward each site, of the cliff and its hole, and of each stone close up.
+- Twinsen walking each road end to end, and through the hole.
+- The usual checks below: frame rate, belt test, `LBA2.Enclosure`.
+- Poses: Proxima from above `54899,36478,26000,-89,139.2` (the whole island and both sites), nearer
+  `54899,36478,15000,-89,139.2`. These top views aren't turned like the painting: check which way is north before
+  judging.
+
+### Pitfalls
+
+- Don't infer lore from item texts. A first draft of this plan claimed the stones were reached with the Proto-Pack; the
+  user checked, and it was wrong. Ask, or look at the scenes' actors, instead.
+- Other sessions edit `LBAPlanetDistricts` and `LBAPlanetTowns` for Phase 3: message them before touching those files.
 
 ## Checks after each phase
 
