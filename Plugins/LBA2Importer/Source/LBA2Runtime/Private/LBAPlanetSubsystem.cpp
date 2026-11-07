@@ -87,10 +87,11 @@ namespace
 		TEXT("Where the sun stands overhead on the planet: its longitude (degrees, the planet map's angle)."));
 	TAutoConsoleVariable<float> CVarGlobeSunMinElevation(TEXT("lba.Globe.SunMinElevation"), 20.f,
 		TEXT("The sun never gets lower than this (degrees), however far it is: the far side of the belt stays lit."));
-	// Citadel's far coast is 52 degrees from the pole, the belt's nearest shore 76: the islands keep their day.
-	TAutoConsoleVariable<float> CVarGlobeSunsetFrom(TEXT("lba.Globe.SunsetFrom"), 55.f,
+	// The belt's nearest shore is 76 degrees from the pole. Citadel's north cliffs, at 51, get the first of it: a quarter of the
+	// way, its harbour (33) and Desert (under 30) none.
+	TAutoConsoleVariable<float> CVarGlobeSunsetFrom(TEXT("lba.Globe.SunsetFrom"), 40.f,
 		TEXT("Going out from the pole, where the sunset towards the belt begins: the angle from the pole (degrees)."));
-	TAutoConsoleVariable<float> CVarGlobeSunsetTo(TEXT("lba.Globe.SunsetTo"), 78.f,
+	TAutoConsoleVariable<float> CVarGlobeSunsetTo(TEXT("lba.Globe.SunsetTo"), 76.f,
 		TEXT("Where the sunset is complete: the angle from the pole (degrees)."));
 	TAutoConsoleVariable<float> CVarGlobeSunsetElevation(TEXT("lba.Globe.SunsetElevation"), 3.f,
 		TEXT("How high the sun stands in the sunset, over the pole's side of the horizon (degrees)."));
