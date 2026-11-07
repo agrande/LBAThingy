@@ -5,6 +5,7 @@
 #include "LBASceneTravelSubsystem.h"
 #include "LBAIslandMenu.generated.h"
 
+class UBorder;
 class UButton;
 class UHorizontalBox;
 class UScrollBox;
@@ -17,6 +18,12 @@ class ULBAIslandMenu;
 UENUM()
 enum class ELBAMenuAction : uint8
 {
+	/** Shows the showcase places (LBAPointsOfInterest), the tab the menu opens on. */
+	PointsTab,
+	/** Shows one heading of showcase places. */
+	PointGroup,
+	/** Goes to a showcase place. */
+	Point,
 	/** Shows a planet's islands. */
 	Planet,
 	/** Shows an island's scenes. */
@@ -50,7 +57,8 @@ public:
 
 	ELBAMenuAction Action = ELBAMenuAction::Quit;
 
-	/** ELBAPlanet, index into the menu's islands or test levels, scene number, or index into the shown level's stations. */
+	/** ELBAPlanet, index into the menu's islands, test levels or place headings, scene number, index into the shown level's
+	 * stations or into the showcase places. */
 	int32 Value = INDEX_NONE;
 
 	UFUNCTION()
@@ -72,6 +80,13 @@ struct FLBAMenuButton
 	UPROPERTY()
 	TObjectPtr<ULBAIslandMenuButtonHandler> Handler;
 
+	/** Bar at the button's left edge, lit where the player is. */
+	UPROPERTY()
+	TObjectPtr<UBorder> Marker;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> Subtitle;
+
 	/** The planet or island the menu shows. */
 	bool bActive = false;
 
@@ -86,12 +101,14 @@ struct FLBAMenuButton
 };
 
 /**
- * Travel menu shown by ALBAPlayerController (M / gamepad Start), laid out like lba2remake's teleport menu: planets
- * along the top, the selected planet's islands on the left, and the selected island's scenes on the right (its
- * areas, each with the interiors it opens on). Picking an island goes to its level's start, picking a scene to that
- * scene's hero start. After the planets, the Tests tab lists the test levels and sandboxes, the feature test map first,
- * each with its stations. Playable with the mouse, the keyboard (arrows, Enter, Q / E for tabs) or a gamepad (d-pad,
- * A, LB / RB). Esc, B, M or Start close it.
+ * Travel menu shown by ALBAPlayerController (M / gamepad Start): tabs along the top, a list on the left and what it
+ * holds on the right. It opens on the Points of interest tab (showcase places, LBAPointsOfInterest); then one tab per
+ * planet, its islands on the left and the selected island's scenes on the right (its areas, each with the interiors it
+ * opens on): picking an island goes to its level's start, picking a scene to that scene's hero start. The Tests tab
+ * lists the test levels and sandboxes, the feature test map first, each with its stations. Drawn after the original's
+ * menus (framed bars, the choice lit in amber) with large, high-contrast text. Playable with the mouse, the keyboard
+ * (arrows, Enter, Q / E for tabs) or a gamepad (d-pad, A, LB / RB); left and right always cross between the two
+ * columns. Esc, B, M or Start close it.
  * The layout is built in C++, so it needs no asset; a Blueprint subclass can restyle it through the colors and
  * icons below. The editor's level selector (LBA2Editor) is a subclass that opens levels in the editor instead.
  */
@@ -105,35 +122,47 @@ public:
 
 	/** Panel behind everything. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
-	FLinearColor PanelColor = FLinearColor(0.f, 0.f, 0.f, 0.92f);
+	FLinearColor PanelColor = FLinearColor(FColor(10, 16, 30, 240));
 
-	/** Panel outline and the line under the planets. */
+	/** Panel frame and the line under the tabs. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
-	FLinearColor BorderColor = FLinearColor(FColor(97, 206, 206));
+	FLinearColor BorderColor = FLinearColor(FColor(120, 150, 190));
 
-	/** Background of the scene list. */
+	/** Background of the right column. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
-	FLinearColor TreeColor = FLinearColor(FColor(45, 45, 45));
+	FLinearColor TreeColor = FLinearColor(FColor(18, 28, 48, 255));
 
-	/** Background of the focused or hovered button. */
+	/** Frame of every button, a bar like the original's menu entries. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
-	FLinearColor FocusColor = FLinearColor(FColor(32, 162, 255, 128));
+	FLinearColor ButtonColor = FLinearColor(FColor(28, 42, 70, 255));
 
-	/** Background of the planet and island shown. */
+	/** Fill of the focused or hovered button. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
-	FLinearColor ActiveColor = FLinearColor(FColor(32, 162, 255, 40));
+	FLinearColor FocusColor = FLinearColor(FColor(232, 170, 48, 255));
 
-	/** Text of planets and islands neither shown nor focused. */
+	/** Text on the focused button. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
-	FLinearColor IdleTextColor = FLinearColor(FColor(130, 130, 130));
+	FLinearColor FocusTextColor = FLinearColor(FColor(20, 14, 4, 255));
 
-	/** Text of where the player is (planet, island, scene). */
+	/** Fill of the tab and left-column entry shown. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
-	FLinearColor CurrentColor = FLinearColor(1.f, 0.85f, 0.35f, 1.f);
+	FLinearColor ActiveColor = FLinearColor(FColor(52, 84, 132, 255));
+
+	/** Text of tabs and left-column entries neither shown nor focused. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
+	FLinearColor IdleTextColor = FLinearColor(FColor(168, 180, 200));
+
+	/** Text of headings and subtitles. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
+	FLinearColor CaptionColor = FLinearColor(FColor(140, 200, 220));
+
+	/** Marker bar and text of where the player is (planet, island, scene, place). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
+	FLinearColor CurrentColor = FLinearColor(FColor(255, 214, 90));
 
 	/** Text of the feature test map, and the outline of its button. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
-	FLinearColor FeatureColor = FLinearColor(FColor(97, 206, 206));
+	FLinearColor FeatureColor = FLinearColor(FColor(120, 220, 220));
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
 	TMap<ELBAPlanet, TSoftObjectPtr<UTexture2D>> PlanetIcons;
@@ -152,6 +181,10 @@ public:
 	/** The Tests tab and the feature test map. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
 	TSoftObjectPtr<UTexture2D> TestsIcon;
+
+	/** The Points of interest tab and its places. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Style")
+	TSoftObjectPtr<UTexture2D> PointsIcon;
 
 	/** Icons the menu loads by path (the LBA2Editor module adds them to cooks). */
 	TArray<FSoftObjectPath> GetIconPaths() const;
@@ -194,6 +227,13 @@ private:
 	void BuildSceneTree();
 	void BuildTestLevelList();
 	void BuildStationList();
+	void BuildPointGroupList();
+	void BuildPointList();
+	/**
+	 * Left from anywhere in the right column goes to the left column's entry shown, right from the left column to the
+	 * right column's current or first entry (directional navigation finds nothing beside entries below the other column).
+	 */
+	void UpdateNavigation();
 	void AddScenes(const TMap<int32, TArray<const FLBASceneMenuEntry*>>& Children, int32 Parent, int32 Depth);
 	/** Subtitle: a smaller grey line under the label. */
 	FLBAMenuButton& AddButton(TArray<FLBAMenuButton>& List, ELBAMenuAction Action, int32 Value, const FText& Label, const TSoftObjectPtr<UTexture2D>& Icon,
@@ -203,7 +243,9 @@ private:
 	void SelectIsland(int32 Island);
 	void ShowTests();
 	void SelectTestLevel(int32 Level);
-	/** Planets then Tests, step tabs to the right (negative: left). */
+	void ShowPoints();
+	void SelectPointGroup(int32 Group);
+	/** Points of interest, planets then Tests, step tabs to the right (negative: left). */
 	void CycleTab(int32 Step);
 	/** Where the player is (their scene, station or level start), else the island or test level shown. */
 	UButton* FindDefaultButton();
@@ -262,6 +304,14 @@ private:
 
 	/** The Tests tab is shown instead of a planet. */
 	bool bShowTests = false;
+
+	/** The Points of interest tab is shown (the default). */
+	bool bShowPoints = true;
+	/** Headings of the showcase places, in order. */
+	TArray<FText> PointGroups;
+	int32 SelectedPointGroup = 0;
+	/** Index into LBAPointsOfInterest::Get() of the place the player is at, -1 if none. */
+	int32 CurrentPoint = INDEX_NONE;
 	/** Index into TestLevels. */
 	int32 SelectedTestLevel = INDEX_NONE;
 	/** Test level the player is in, -1 elsewhere. */

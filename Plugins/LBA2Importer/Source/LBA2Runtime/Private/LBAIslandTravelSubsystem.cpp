@@ -11,6 +11,7 @@
 #include "LBACharacter.h"
 #include "LBAPlayerController.h"
 #include "LBA2Settings.h"
+#include "LBAPointsOfInterest.h"
 #include "LBASceneTravelSubsystem.h"
 #include "LBATestStation.h"
 #include "Misc/CommandLine.h"
@@ -258,10 +259,24 @@ FLBATravelDestination FLBATravelDestination::ToTestLevel(const TSoftObjectPtr<UW
 	return Destination;
 }
 
+FLBATravelDestination FLBATravelDestination::ToPointOfInterest(FName Id)
+{
+	FLBATravelDestination Destination;
+	Destination.Kind = ELBATravelKind::PointOfInterest;
+	Destination.PointOfInterest = Id;
+	return Destination;
+}
+
 FText FLBATravelDestination::Describe(const UWorld* World) const
 {
 	switch (Kind)
 	{
+	case ELBATravelKind::PointOfInterest:
+	{
+		const FLBAPointOfInterest* Point = LBAPointsOfInterest::Find(PointOfInterest);
+		return Point ? Point->Name : FText::FromName(PointOfInterest);
+	}
+
 	case ELBATravelKind::Island:
 		for (const FLBAIslandInfo& Info : ULBAIslandTravelSubsystem::FindIslands())
 		{
@@ -467,6 +482,17 @@ bool ULBAIslandTravelSubsystem::TravelTo(const FLBATravelDestination& Destinatio
 
 	case ELBATravelKind::TestLevel:
 		return TravelToTestLevel(Destination.Level, Destination.Station);
+
+	case ELBATravelKind::PointOfInterest:
+	{
+		const FLBAPointOfInterest* Point = LBAPointsOfInterest::Find(Destination.PointOfInterest);
+		if (!Point)
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("No point of interest %s (lba.POI lists them)."), *Destination.PointOfInterest.ToString());
+			return false;
+		}
+		return GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>()->TravelToPointOfInterest(*Point);
+	}
 	}
 	return false;
 }

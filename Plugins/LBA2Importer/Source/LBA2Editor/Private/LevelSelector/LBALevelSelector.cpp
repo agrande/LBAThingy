@@ -2,9 +2,11 @@
 
 #include "Editor.h"
 #include "EngineUtils.h"
+#include "Engine/LevelStreaming.h"
 #include "FileHelpers.h"
 #include "GameFramework/PlayerStart.h"
 #include "LBA2Runtime.h"
+#include "LBAPointsOfInterest.h"
 #include "LBASceneAsset.h"
 #include "LBATestStation.h"
 #include "LevelEditorViewport.h"
@@ -211,6 +213,35 @@ bool ULBALevelSelector::OpenInEditor(const FLBATravelDestination& Destination)
 			FrameViewports(Start->GetActorTransform(), Start);
 			LastPick = { Package, Start->GetActorTransform(), INDEX_NONE };
 		}
+		return true;
+	}
+
+	case ELBATravelKind::PointOfInterest:
+	{
+		const FLBAPointOfInterest* Point = LBAPointsOfInterest::Find(Destination.PointOfInterest);
+		if (!Point)
+		{
+			return false;
+		}
+		if (Point->Scene != INDEX_NONE)
+		{
+			return OpenInEditor(FLBATravelDestination::ToScene(Point->Scene));
+		}
+		if (!OpenEditorLevel(Point->Level))
+		{
+			return false;
+		}
+		// The spot is in one of the level's sub-levels' coordinates.
+		FTransform Transform(FRotator(0.0, Point->Yaw, 0.0), Point->Feet + FVector(0.0, 0.0, 100.0));
+		for (const ULevelStreaming* Streaming : GetEditorWorld()->GetStreamingLevels())
+		{
+			if (Streaming && Streaming->GetWorldAssetPackageName() == Point->Frame)
+			{
+				Transform = Transform * Streaming->LevelTransform;
+			}
+		}
+		FrameViewports(Transform, nullptr);
+		LastPick = { Point->Level, Transform, INDEX_NONE };
 		return true;
 	}
 	}

@@ -21,34 +21,36 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/SlateUser.h"
 #include "GameFramework/Pawn.h"
+#include "Styling/CoreStyle.h"
 #include "Widgets/SViewport.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "LBAControls.h"
 #include "LBAPlayerController.h"
+#include "LBAPointsOfInterest.h"
 
 #define LOCTEXT_NAMESPACE "LBAIslandMenu"
 
 namespace
 {
-	constexpr float PlanetIconSize = 48.f;
-	constexpr float IconSize = 16.f;
-	constexpr float IndentPerLevel = 20.f;
-	/** The player is at a station when this close to it (cm). */
+	constexpr float TabIconSize = 30.f;
+	constexpr float IconSize = 22.f;
+	constexpr float IndentPerLevel = 26.f;
+	constexpr float MarkerWidth = 5.f;
+	/** The player is at a station or a showcase spot when this close to it (cm). */
 	constexpr double StationReach = 1500.0;
 
-	UTextBlock* MakeText(UWidgetTree* Tree, const FText& Text, int32 Size, const FLinearColor& Color, ETextJustify::Type Justify = ETextJustify::Center)
+	UTextBlock* MakeText(UWidgetTree* Tree, const FText& Text, int32 Size, const FLinearColor& Color, ETextJustify::Type Justify = ETextJustify::Center,
+		bool bBold = false)
 	{
 		UTextBlock* Block = Tree->ConstructWidget<UTextBlock>();
 		Block->SetText(Text);
-		FSlateFontInfo Font = Block->GetFont();
-		Font.Size = Size;
-		Block->SetFont(Font);
+		Block->SetFont(FCoreStyle::GetDefaultFontStyle(bBold ? "Bold" : "Regular", Size));
 		Block->SetColorAndOpacity(FSlateColor(Color));
 		Block->SetJustification(Justify);
 		return Block;
 	}
 
-	FSlateBrush RoundedBrush(const FLinearColor& Color, float Radius, const FLinearColor& Outline = FLinearColor::Transparent, float OutlineWidth = 0.f)
+	FSlateBrush BoxBrush(const FLinearColor& Color, float Radius, const FLinearColor& Outline = FLinearColor::Transparent, float OutlineWidth = 0.f)
 	{
 		FSlateBrush Brush;
 		Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
@@ -57,12 +59,12 @@ namespace
 		return Brush;
 	}
 
-	/** Flat button: its background color (set every tick) is the whole look. */
-	const FButtonStyle& FlatButtonStyle()
+	/** Square-cornered bar: its background color (set every tick) is the whole look, like the original's menu entries. */
+	const FButtonStyle& BarButtonStyle()
 	{
 		static const FButtonStyle Style = []
 		{
-			const FSlateBrush Brush = RoundedBrush(FLinearColor::White, 4.f);
+			const FSlateBrush Brush = BoxBrush(FLinearColor::White, 2.f);
 			FButtonStyle Result;
 			Result.SetNormal(Brush).SetHovered(Brush).SetPressed(Brush).SetDisabled(Brush);
 			Result.SetNormalPadding(FMargin(0.f)).SetPressedPadding(FMargin(0.f));
@@ -80,6 +82,12 @@ namespace
 	{
 		return World ? UWorld::RemovePIEPrefix(World->GetOutermost()->GetName()) : FString();
 	}
+
+	bool IsListEntry(ELBAMenuAction Action)
+	{
+		return Action == ELBAMenuAction::Scene || Action == ELBAMenuAction::IslandStart || Action == ELBAMenuAction::Station
+			|| Action == ELBAMenuAction::TestLevelStart || Action == ELBAMenuAction::Point;
+	}
 }
 
 void ULBAIslandMenuButtonHandler::HandleClicked()
@@ -93,16 +101,16 @@ void ULBAIslandMenuButtonHandler::HandleClicked()
 ULBAIslandMenu::ULBAIslandMenu(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	// lba2remake's location icons (Tools/export_locations.py, import_location_icons.py).
-	PlanetIcons.Add(ELBAPlanet::Twinsun, PluginIcon(TEXT("T_Location_Twinsun")));
-	PlanetIcons.Add(ELBAPlanet::EmeraldMoon, PluginIcon(TEXT("T_Location_Moon")));
-	PlanetIcons.Add(ELBAPlanet::ZeelishSurface, PluginIcon(TEXT("T_Location_Zeelish")));
-	PlanetIcons.Add(ELBAPlanet::ZeelishUndergas, PluginIcon(TEXT("T_Location_Undergas")));
-	IslandIcon = PluginIcon(TEXT("T_Location_Island"));
-	SectionIcon = PluginIcon(TEXT("T_Location_Section"));
-	BuildingIcon = PluginIcon(TEXT("T_Location_Building"));
-	// Drawn in the same style (Tools/make_tests_icon.py).
-	TestsIcon = PluginIcon(TEXT("T_Location_Tests"));
+	// The menu's own icons (Tools/make_menu_icons.py, import_location_icons.py).
+	PlanetIcons.Add(ELBAPlanet::Twinsun, PluginIcon(TEXT("T_Menu_Twinsun")));
+	PlanetIcons.Add(ELBAPlanet::EmeraldMoon, PluginIcon(TEXT("T_Menu_Moon")));
+	PlanetIcons.Add(ELBAPlanet::ZeelishSurface, PluginIcon(TEXT("T_Menu_Zeelish")));
+	PlanetIcons.Add(ELBAPlanet::ZeelishUndergas, PluginIcon(TEXT("T_Menu_Undergas")));
+	IslandIcon = PluginIcon(TEXT("T_Menu_Island"));
+	SectionIcon = PluginIcon(TEXT("T_Menu_Section"));
+	BuildingIcon = PluginIcon(TEXT("T_Menu_Building"));
+	TestsIcon = PluginIcon(TEXT("T_Menu_Tests"));
+	PointsIcon = PluginIcon(TEXT("T_Menu_Points"));
 }
 
 TArray<FSoftObjectPath> ULBAIslandMenu::GetIconPaths() const
@@ -116,6 +124,7 @@ TArray<FSoftObjectPath> ULBAIslandMenu::GetIconPaths() const
 	Paths.Add(SectionIcon.ToSoftObjectPath());
 	Paths.Add(BuildingIcon.ToSoftObjectPath());
 	Paths.Add(TestsIcon.ToSoftObjectPath());
+	Paths.Add(PointsIcon.ToSoftObjectPath());
 	Paths.RemoveAll([](const FSoftObjectPath& Path) { return Path.IsNull(); });
 	return Paths;
 }
@@ -189,7 +198,8 @@ void ULBAIslandMenu::BuildTree()
 	});
 	CurrentStation = NAME_None;
 	FVector ViewLocation;
-	if (TestLevels.IsValidIndex(CurrentTestLevel) && GetViewLocation(ViewLocation))
+	const bool bViewKnown = GetViewLocation(ViewLocation);
+	if (TestLevels.IsValidIndex(CurrentTestLevel) && bViewKnown)
 	{
 		double Closest = StationReach;
 		for (const FLBATestStationInfo& Station : TestLevels[CurrentTestLevel].Stations)
@@ -203,6 +213,29 @@ void ULBAIslandMenu::BuildTree()
 		}
 	}
 
+	// Showcase places: their headings, and the one the player is at (an interior's scene, or within reach of a spot).
+	const TArray<FLBAPointOfInterest>& Points = LBAPointsOfInterest::Get();
+	PointGroups.Reset();
+	CurrentPoint = INDEX_NONE;
+	for (int32 Index = 0; Index < Points.Num(); ++Index)
+	{
+		const FLBAPointOfInterest& Point = Points[Index];
+		if (!PointGroups.ContainsByPredicate([&Point](const FText& Group) { return Group.EqualTo(Point.Group); }))
+		{
+			PointGroups.Add(Point.Group);
+		}
+		const TOptional<FVector> Feet = ULBASceneTravelSubsystem::FindPointOfInterestFeet(World, Point);
+		const bool bHere = Point.Scene != INDEX_NONE ? Point.Scene == CurrentScene && CurrentIsland == INDEX_NONE
+			: Feet && bViewKnown && FVector::Dist(*Feet, ViewLocation) < StationReach;
+		if (bHere && CurrentPoint == INDEX_NONE)
+		{
+			CurrentPoint = Index;
+		}
+	}
+	SelectedPointGroup = Points.IsValidIndex(CurrentPoint)
+		? FMath::Max(0, PointGroups.IndexOfByPredicate([&](const FText& Group) { return Group.EqualTo(Points[CurrentPoint].Group); }))
+		: 0;
+
 	Planets.Reset();
 	for (const FLBAIslandInfo& Island : Islands)
 	{
@@ -212,33 +245,41 @@ void ULBAIslandMenu::BuildTree()
 	SelectedIsland = Islands.IsValidIndex(HomeIsland) ? HomeIsland : (Islands.IsEmpty() ? INDEX_NONE : 0);
 	SelectedPlanet = Islands.IsValidIndex(SelectedIsland) ? Islands[SelectedIsland].Planet : ELBAPlanet::Twinsun;
 	SelectedTestLevel = TestLevels.IsValidIndex(CurrentTestLevel) ? CurrentTestLevel : (TestLevels.IsEmpty() ? INDEX_NONE : 0);
-	bShowTests = TestLevels.IsValidIndex(CurrentTestLevel) || (Islands.IsEmpty() && !TestLevels.IsEmpty());
+	// The menu always opens on the showcase places.
+	bShowPoints = !Points.IsEmpty();
+	bShowTests = !bShowPoints && (TestLevels.IsValidIndex(CurrentTestLevel) || (Islands.IsEmpty() && !TestLevels.IsEmpty()));
 
-	// Full-screen dim, with the panel over most of it. The editor's tab is the panel.
+	// Full-screen dim, with the framed panel over most of it. The editor's tab is the panel.
 	UBorder* Dim = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Dim"));
-	Dim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, bEditorMode ? 0.f : 0.55f));
-	Dim->SetPadding(bEditorMode ? FMargin(0.f) : FMargin(48.f, 32.f));
+	Dim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, bEditorMode ? 0.f : 0.6f));
+	Dim->SetPadding(bEditorMode ? FMargin(0.f) : FMargin(64.f, 40.f));
 	WidgetTree->RootWidget = Dim;
 
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
-	Panel->SetBrush(RoundedBrush(PanelColor, bEditorMode ? 0.f : 12.f, BorderColor, bEditorMode ? 0.f : 2.f));
-	Panel->SetPadding(FMargin(2.f));
+	Panel->SetBrush(BoxBrush(PanelColor, bEditorMode ? 0.f : 4.f, BorderColor, bEditorMode ? 0.f : 3.f));
+	Panel->SetPadding(FMargin(bEditorMode ? 2.f : 6.f));
 	Dim->SetContent(Panel);
 
 	UVerticalBox* Content = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Content"));
 	Panel->SetContent(Content);
 
-	// Planets, then the Tests tab.
+	// Tabs: the showcase places, the planets, then Tests.
 	UHorizontalBox* PlanetBar = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Planets"));
 	UVerticalBoxSlot* PlanetBarSlot = Content->AddChildToVerticalBox(PlanetBar);
-	PlanetBarSlot->SetPadding(FMargin(8.f, 8.f, 8.f, 6.f));
+	PlanetBarSlot->SetPadding(FMargin(6.f, 6.f, 6.f, 8.f));
 	PlanetButtons.Reset();
 	auto AddTab = [this, PlanetBar](FLBAMenuButton& Button)
 	{
 		UHorizontalBoxSlot* ButtonSlot = PlanetBar->AddChildToHorizontalBox(Button.Button);
 		ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		ButtonSlot->SetPadding(FMargin(4.f, 0.f));
+		ButtonSlot->SetPadding(FMargin(3.f, 0.f));
 	};
+	if (!Points.IsEmpty())
+	{
+		FLBAMenuButton& Button = AddButton(PlanetButtons, ELBAMenuAction::PointsTab, INDEX_NONE, LOCTEXT("Points", "Points of interest"), PointsIcon, true);
+		Button.bCurrent = Points.IsValidIndex(CurrentPoint);
+		AddTab(Button);
+	}
 	for (const ELBAPlanet Planet : Planets)
 	{
 		FLBAMenuButton& Button = AddButton(PlanetButtons, ELBAMenuAction::Planet, int32(Planet), ULBAIslandTravelSubsystem::GetPlanetName(Planet),
@@ -258,22 +299,24 @@ void ULBAIslandMenu::BuildTree()
 	Line->SetPadding(FMargin(0.f, 1.f));
 	Content->AddChildToVerticalBox(Line);
 
-	// Islands (or test levels) on the left, the selected island's scenes (or level's stations) on the right.
+	// The list (islands, test levels, headings) on the left, what the selected entry holds on the right.
 	UHorizontalBox* Body = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Body"));
-	Content->AddChildToVerticalBox(Body)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	UVerticalBoxSlot* BodySlot = Content->AddChildToVerticalBox(Body);
+	BodySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	BodySlot->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
 
 	USizeBox* IslandColumn = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("IslandColumn"));
-	IslandColumn->SetWidthOverride(bEditorMode ? 260.f : 340.f);
+	IslandColumn->SetWidthOverride(bEditorMode ? 260.f : 360.f);
 	Body->AddChildToHorizontalBox(IslandColumn);
 	UScrollBox* IslandScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("IslandScroll"));
 	IslandScroll->SetScrollWhenFocusChanges(EScrollWhenFocusChanges::AnimatedScroll);
 	IslandColumn->SetContent(IslandScroll);
 	IslandList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Islands"));
-	Cast<UScrollBoxSlot>(IslandScroll->AddChild(IslandList))->SetPadding(FMargin(8.f));
+	Cast<UScrollBoxSlot>(IslandScroll->AddChild(IslandList))->SetPadding(FMargin(6.f, 2.f, 10.f, 6.f));
 
 	UBorder* TreePanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TreePanel"));
-	TreePanel->SetBrushColor(TreeColor);
-	TreePanel->SetPadding(FMargin(12.f, 8.f));
+	TreePanel->SetBrush(BoxBrush(TreeColor, 3.f, BorderColor * FLinearColor(1.f, 1.f, 1.f, 0.5f), 1.f));
+	TreePanel->SetPadding(FMargin(10.f, 8.f));
 	Body->AddChildToHorizontalBox(TreePanel)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	SceneTree = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("Scenes"));
 	SceneTree->SetScrollWhenFocusChanges(EScrollWhenFocusChanges::AnimatedScroll);
@@ -281,8 +324,8 @@ void ULBAIslandMenu::BuildTree()
 
 	// Footer: controls, Quit (the game) or Play (the editor).
 	UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Footer"));
-	Content->AddChildToVerticalBox(Footer)->SetPadding(FMargin(16.f, 6.f, 8.f, 6.f));
-	UTextBlock* Hint = MakeText(WidgetTree, FText::GetEmpty(), 12, FLinearColor(0.6f, 0.6f, 0.6f), ETextJustify::Left);
+	Content->AddChildToVerticalBox(Footer)->SetPadding(FMargin(10.f, 8.f, 6.f, 2.f));
+	UTextBlock* Hint = MakeText(WidgetTree, FText::GetEmpty(), 14, IdleTextColor, ETextJustify::Left);
 	Hint->SetAutoWrapText(true);
 	FooterHint = Hint;
 	FooterHintLayout = INDEX_NONE;
@@ -312,7 +355,15 @@ void ULBAIslandMenu::BuildIslandList()
 	IslandButtons.Reset();
 	for (FLBAMenuButton& Button : PlanetButtons)
 	{
-		Button.bActive = Button.Handler->Action == ELBAMenuAction::TestsTab ? bShowTests : !bShowTests && Button.Handler->Value == int32(SelectedPlanet);
+		const ELBAMenuAction Action = Button.Handler->Action;
+		Button.bActive = Action == ELBAMenuAction::TestsTab ? bShowTests
+			: Action == ELBAMenuAction::PointsTab ? bShowPoints
+			: !bShowTests && !bShowPoints && Button.Handler->Value == int32(SelectedPlanet);
+	}
+	if (bShowPoints)
+	{
+		BuildPointGroupList();
+		return;
 	}
 	if (bShowTests)
 	{
@@ -330,7 +381,22 @@ void ULBAIslandMenu::BuildIslandList()
 	}
 	if (Islands.IsEmpty())
 	{
-		IslandList->AddChildToVerticalBox(MakeText(WidgetTree, LOCTEXT("NoIslands", "No island imported yet (Tools > LBA2 Importer)."), 14, FLinearColor::Gray, ETextJustify::Left));
+		UTextBlock* None = MakeText(WidgetTree, LOCTEXT("NoIslands", "No island imported yet (Tools > LBA2 Importer)."), 15, IdleTextColor, ETextJustify::Left);
+		None->SetAutoWrapText(true);
+		IslandList->AddChildToVerticalBox(None);
+	}
+}
+
+void ULBAIslandMenu::BuildPointGroupList()
+{
+	const TArray<FLBAPointOfInterest>& Points = LBAPointsOfInterest::Get();
+	for (int32 Index = 0; Index < PointGroups.Num(); ++Index)
+	{
+		const int32 Count = Points.FilterByPredicate([&](const FLBAPointOfInterest& Point) { return Point.Group.EqualTo(PointGroups[Index]); }).Num();
+		FLBAMenuButton& Button = AddButton(IslandButtons, ELBAMenuAction::PointGroup, Index, PointGroups[Index], PointsIcon, true, 0.f,
+			FText::Format(LOCTEXT("PlaceCount", "{0} {0}|plural(one=place,other=places)"), FText::AsNumber(Count)));
+		Button.bCurrent = Points.IsValidIndex(CurrentPoint) && Points[CurrentPoint].Group.EqualTo(PointGroups[Index]);
+		IslandList->AddChildToVerticalBox(Button.Button)->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
 	}
 }
 
@@ -343,8 +409,8 @@ void ULBAIslandMenu::BuildTestLevelList()
 		const FLBATestLevelInfo& Level = TestLevels[Index];
 		if (!Level.bFeatureLevel && !bCaption && Index > 0)
 		{
-			UTextBlock* Caption = MakeText(WidgetTree, LOCTEXT("Sandboxes", "TEST LEVELS AND SANDBOXES"), 10, IdleTextColor, ETextJustify::Left);
-			IslandList->AddChildToVerticalBox(Caption)->SetPadding(FMargin(12.f, 10.f, 0.f, 6.f));
+			UTextBlock* Caption = MakeText(WidgetTree, LOCTEXT("Sandboxes", "TEST LEVELS AND SANDBOXES"), 12, CaptionColor, ETextJustify::Left, true);
+			IslandList->AddChildToVerticalBox(Caption)->SetPadding(FMargin(8.f, 10.f, 0.f, 6.f));
 			bCaption = true;
 		}
 		const FText Subtitle = Level.bFeatureLevel
@@ -354,18 +420,14 @@ void ULBAIslandMenu::BuildTestLevelList()
 			Level.bFeatureLevel ? TestsIcon : SectionIcon, true, 0.f, Subtitle);
 		Button.bCurrent = Index == CurrentTestLevel;
 		Button.bFeature = Level.bFeatureLevel;
-		if (Level.bFeatureLevel)
-		{
-			FSlateFontInfo Font = Button.Label->GetFont();
-			Font.Size = 20;
-			Button.Label->SetFont(Font);
-		}
 		Button.Button->SetToolTipText(FText::FromString(Level.Level.ToSoftObjectPath().GetLongPackageName()));
 		IslandList->AddChildToVerticalBox(Button.Button)->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
 	}
 	if (TestLevels.IsEmpty())
 	{
-		IslandList->AddChildToVerticalBox(MakeText(WidgetTree, LOCTEXT("NoTests", "No test level yet (import the Tests layer)."), 14, FLinearColor::Gray, ETextJustify::Left));
+		UTextBlock* None = MakeText(WidgetTree, LOCTEXT("NoTests", "No test level yet (import the Tests layer)."), 15, IdleTextColor, ETextJustify::Left);
+		None->SetAutoWrapText(true);
+		IslandList->AddChildToVerticalBox(None);
 	}
 }
 
@@ -373,50 +435,82 @@ void ULBAIslandMenu::BuildSceneTree()
 {
 	SceneTree->ClearChildren();
 	SceneButtons.Reset();
-	if (bShowTests)
+	if (bShowPoints)
+	{
+		BuildPointList();
+	}
+	else if (bShowTests)
 	{
 		BuildStationList();
-		return;
 	}
+	else
+	{
+		for (FLBAMenuButton& Button : IslandButtons)
+		{
+			Button.bActive = Button.Handler->Value == SelectedIsland;
+		}
+		if (Islands.IsValidIndex(SelectedIsland))
+		{
+			const FLBAIslandInfo& Island = Islands[SelectedIsland];
+
+			// The island level's own start first, then its areas with their interiors (lba2remake's tree, see
+			// ULBASceneAsset::MenuParent). Scenes whose parent is not listed here hang from the island.
+			TMap<int32, TArray<const FLBASceneMenuEntry*>> Children;
+			if (Island.SceneIsland != INDEX_NONE)
+			{
+				TSet<int32> Listed;
+				for (const FLBASceneMenuEntry& Scene : Scenes)
+				{
+					if (Scene.Island == Island.SceneIsland)
+					{
+						Listed.Add(Scene.SceneIndex);
+					}
+				}
+				for (const FLBASceneMenuEntry& Scene : Scenes)
+				{
+					if (Scene.Island == Island.SceneIsland)
+					{
+						Children.FindOrAdd(Listed.Contains(Scene.Parent) ? Scene.Parent : INDEX_NONE).Add(&Scene);
+					}
+				}
+			}
+			const bool bCurrentSceneListed = Scenes.ContainsByPredicate([this, &Island](const FLBASceneMenuEntry& Scene)
+			{
+				return Scene.SceneIndex == CurrentScene && Scene.Island == Island.SceneIsland;
+			});
+			FLBAMenuButton& Start = AddButton(SceneButtons, ELBAMenuAction::IslandStart, SelectedIsland, Island.DisplayName, IslandIcon, false);
+			Start.bCurrent = SelectedIsland == CurrentIsland && !bCurrentSceneListed;
+			Cast<UScrollBoxSlot>(SceneTree->AddChild(Start.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 3.f));
+			AddScenes(Children, INDEX_NONE, 0);
+		}
+	}
+	UpdateNavigation();
+}
+
+void ULBAIslandMenu::BuildPointList()
+{
 	for (FLBAMenuButton& Button : IslandButtons)
 	{
-		Button.bActive = Button.Handler->Value == SelectedIsland;
+		Button.bActive = Button.Handler->Value == SelectedPointGroup;
 	}
-	if (!Islands.IsValidIndex(SelectedIsland))
+	if (!PointGroups.IsValidIndex(SelectedPointGroup))
 	{
 		return;
 	}
-	const FLBAIslandInfo& Island = Islands[SelectedIsland];
-
-	// The island level's own start first, then its areas with their interiors (lba2remake's tree, see
-	// ULBASceneAsset::MenuParent). Scenes whose parent is not listed here hang from the island.
-	TMap<int32, TArray<const FLBASceneMenuEntry*>> Children;
-	if (Island.SceneIsland != INDEX_NONE)
+	const TArray<FLBAPointOfInterest>& Points = LBAPointsOfInterest::Get();
+	for (int32 Index = 0; Index < Points.Num(); ++Index)
 	{
-		TSet<int32> Listed;
-		for (const FLBASceneMenuEntry& Scene : Scenes)
+		const FLBAPointOfInterest& Point = Points[Index];
+		if (!Point.Group.EqualTo(PointGroups[SelectedPointGroup]))
 		{
-			if (Scene.Island == Island.SceneIsland)
-			{
-				Listed.Add(Scene.SceneIndex);
-			}
+			continue;
 		}
-		for (const FLBASceneMenuEntry& Scene : Scenes)
-		{
-			if (Scene.Island == Island.SceneIsland)
-			{
-				Children.FindOrAdd(Listed.Contains(Scene.Parent) ? Scene.Parent : INDEX_NONE).Add(&Scene);
-			}
-		}
+		FLBAMenuButton& Button = AddButton(SceneButtons, ELBAMenuAction::Point, Index, Point.Name, Point.Scene != INDEX_NONE ? BuildingIcon : SectionIcon,
+			false, 0.f, Point.Description);
+		Button.bCurrent = Index == CurrentPoint;
+		Button.Button->SetToolTipText(FText::Format(LOCTEXT("PointTip", "lba.POI {0}"), FText::FromName(Point.Id)));
+		Cast<UScrollBoxSlot>(SceneTree->AddChild(Button.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
 	}
-	const bool bCurrentSceneListed = Scenes.ContainsByPredicate([this, &Island](const FLBASceneMenuEntry& Scene)
-	{
-		return Scene.SceneIndex == CurrentScene && Scene.Island == Island.SceneIsland;
-	});
-	FLBAMenuButton& Start = AddButton(SceneButtons, ELBAMenuAction::IslandStart, SelectedIsland, Island.DisplayName, IslandIcon, false);
-	Start.bCurrent = SelectedIsland == CurrentIsland && !bCurrentSceneListed;
-	Cast<UScrollBoxSlot>(SceneTree->AddChild(Start.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
-	AddScenes(Children, INDEX_NONE, 0);
 }
 
 void ULBAIslandMenu::BuildStationList()
@@ -435,17 +529,17 @@ void ULBAIslandMenu::BuildStationList()
 	FLBAMenuButton& Start = AddButton(SceneButtons, ELBAMenuAction::TestLevelStart, SelectedTestLevel, Level.DisplayName,
 		Level.bFeatureLevel ? TestsIcon : SectionIcon, false);
 	Start.bCurrent = bHere && CurrentStation.IsNone();
-	Cast<UScrollBoxSlot>(SceneTree->AddChild(Start.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+	Cast<UScrollBoxSlot>(SceneTree->AddChild(Start.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 3.f));
 	for (int32 Index = 0; Index < Level.Stations.Num(); ++Index)
 	{
 		const FLBATestStationInfo& Station = Level.Stations[Index];
 		FLBAMenuButton& Button = AddButton(SceneButtons, ELBAMenuAction::Station, Index, Station.DisplayName, SectionIcon, false, IndentPerLevel, Station.Description);
 		Button.bCurrent = bHere && Station.Tag == CurrentStation;
-		Cast<UScrollBoxSlot>(SceneTree->AddChild(Button.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+		Cast<UScrollBoxSlot>(SceneTree->AddChild(Button.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 3.f));
 	}
 	if (Level.Stations.IsEmpty())
 	{
-		UTextBlock* None = MakeText(WidgetTree, LOCTEXT("NoStations", "No station: place LBA Test Station actors to list places here."), 12, IdleTextColor, ETextJustify::Left);
+		UTextBlock* None = MakeText(WidgetTree, LOCTEXT("NoStations", "No station: place LBA Test Station actors to list places here."), 15, IdleTextColor, ETextJustify::Left);
 		Cast<UScrollBoxSlot>(SceneTree->AddChild(None))->SetPadding(FMargin(12.f, 8.f));
 	}
 }
@@ -463,8 +557,50 @@ void ULBAIslandMenu::AddScenes(const TMap<int32, TArray<const FLBASceneMenuEntry
 			Scene->bExterior ? SectionIcon : BuildingIcon, false, Depth * IndentPerLevel);
 		Button.bCurrent = Scene->SceneIndex == CurrentScene;
 		Button.Button->SetToolTipText(FText::Format(LOCTEXT("SceneTip", "Scene {0}"), FText::AsNumber(Scene->SceneIndex)));
-		Cast<UScrollBoxSlot>(SceneTree->AddChild(Button.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+		Cast<UScrollBoxSlot>(SceneTree->AddChild(Button.Button))->SetPadding(FMargin(0.f, 0.f, 0.f, 3.f));
 		AddScenes(Children, Scene->SceneIndex, Depth + 1);
+	}
+}
+
+void ULBAIslandMenu::UpdateNavigation()
+{
+	UButton* Left = nullptr;
+	for (const FLBAMenuButton& Button : IslandButtons)
+	{
+		if (!Left && Button.bActive)
+		{
+			Left = Button.Button;
+		}
+	}
+	if (!Left && !IslandButtons.IsEmpty())
+	{
+		Left = IslandButtons[0].Button;
+	}
+	UButton* Right = nullptr;
+	for (const FLBAMenuButton& Button : SceneButtons)
+	{
+		if (!Right && Button.bCurrent)
+		{
+			Right = Button.Button;
+		}
+	}
+	if (!Right && !SceneButtons.IsEmpty())
+	{
+		Right = SceneButtons[0].Button;
+	}
+	for (const FLBAMenuButton& Button : SceneButtons)
+	{
+		if (Left)
+		{
+			Button.Button->SetNavigationRuleExplicit(EUINavigation::Left, Left);
+		}
+	}
+	for (const FLBAMenuButton& Button : IslandButtons)
+	{
+		if (Right)
+		{
+			Button.Button->SetNavigationRuleExplicit(EUINavigation::Right, Right);
+		}
 	}
 }
 
@@ -472,62 +608,60 @@ FLBAMenuButton& ULBAIslandMenu::AddButton(TArray<FLBAMenuButton>& List, ELBAMenu
 	const TSoftObjectPtr<UTexture2D>& Icon, bool bTab, float Indent, const FText& Subtitle)
 {
 	UButton* Button = WidgetTree->ConstructWidget<UButton>();
-	Button->SetStyle(FlatButtonStyle());
-	Button->SetBackgroundColor(FLinearColor::Transparent);
+	Button->SetStyle(BarButtonStyle());
+	Button->SetBackgroundColor(ButtonColor);
 
-	const bool bPlanet = Action == ELBAMenuAction::Planet || Action == ELBAMenuAction::TestsTab;
-	UTextBlock* Text = MakeText(WidgetTree, Label, bPlanet || bTab ? 16 : 14, FLinearColor::White, bPlanet ? ETextJustify::Center : ETextJustify::Left);
+	const bool bTopTab = Action == ELBAMenuAction::Planet || Action == ELBAMenuAction::TestsTab || Action == ELBAMenuAction::PointsTab;
+	const bool bFooter = Action == ELBAMenuAction::Quit || Action == ELBAMenuAction::Play;
+	UTextBlock* Text = MakeText(WidgetTree, Label, bTopTab ? 17 : (bTab ? 18 : (bFooter ? 15 : 17)), FLinearColor::White, ETextJustify::Left, bTopTab || bTab);
 	UTexture2D* Texture = Icon.LoadSynchronous();
 	UImage* Image = nullptr;
 	if (Texture)
 	{
 		Image = WidgetTree->ConstructWidget<UImage>();
 		Image->SetBrushFromTexture(Texture);
-		Image->SetDesiredSizeOverride(FVector2D(bPlanet ? PlanetIconSize : IconSize));
+		Image->SetDesiredSizeOverride(FVector2D(bTopTab ? TabIconSize : IconSize));
 	}
 
 	// The label, with its subtitle under it.
 	UWidget* Name = Text;
+	UTextBlock* Under = nullptr;
 	if (!Subtitle.IsEmpty())
 	{
 		UVerticalBox* Lines = WidgetTree->ConstructWidget<UVerticalBox>();
 		Lines->AddChildToVerticalBox(Text);
-		UTextBlock* Under = MakeText(WidgetTree, Subtitle, 11, IdleTextColor, ETextJustify::Left);
+		Under = MakeText(WidgetTree, Subtitle, 14, CaptionColor, ETextJustify::Left);
 		Under->SetAutoWrapText(true);
-		Lines->AddChildToVerticalBox(Under)->SetPadding(FMargin(0.f, 1.f, 0.f, 0.f));
+		Lines->AddChildToVerticalBox(Under)->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
 		Name = Lines;
 	}
 
-	// Planets: icon over the name, like the remake's tabs. Others: icon, then the name.
-	UWidget* Content = Name;
-	if (bPlanet)
+	// Marker bar (where the player is), icon, then the name, on one line.
+	UHorizontalBox* Box = WidgetTree->ConstructWidget<UHorizontalBox>();
+	UBorder* Marker = WidgetTree->ConstructWidget<UBorder>();
+	Marker->SetBrushColor(FLinearColor::Transparent);
+	USizeBox* MarkerBox = WidgetTree->ConstructWidget<USizeBox>();
+	MarkerBox->SetWidthOverride(MarkerWidth);
+	MarkerBox->SetContent(Marker);
+	UHorizontalBoxSlot* MarkerSlot = Box->AddChildToHorizontalBox(MarkerBox);
+	MarkerSlot->SetVerticalAlignment(VAlign_Fill);
+	MarkerSlot->SetPadding(FMargin(Indent, 0.f, 8.f, 0.f));
+	if (Image)
 	{
-		UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>();
-		if (Image)
-		{
-			Box->AddChildToVerticalBox(Image)->SetHorizontalAlignment(HAlign_Center);
-		}
-		UVerticalBoxSlot* TextSlot = Box->AddChildToVerticalBox(Name);
-		TextSlot->SetHorizontalAlignment(HAlign_Center);
-		TextSlot->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
-		Content = Box;
-	}
-	else if (Image)
-	{
-		UHorizontalBox* Box = WidgetTree->ConstructWidget<UHorizontalBox>();
 		UHorizontalBoxSlot* ImageSlot = Box->AddChildToHorizontalBox(Image);
 		ImageSlot->SetVerticalAlignment(Subtitle.IsEmpty() ? VAlign_Center : VAlign_Top);
-		ImageSlot->SetPadding(FMargin(0.f, Subtitle.IsEmpty() ? 0.f : 3.f, 8.f, 0.f));
-		UHorizontalBoxSlot* NameSlot = Box->AddChildToHorizontalBox(Name);
-		NameSlot->SetVerticalAlignment(VAlign_Center);
-		NameSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		Content = Box;
+		ImageSlot->SetPadding(FMargin(0.f, Subtitle.IsEmpty() ? 0.f : 1.f, 10.f, 0.f));
 	}
-	Button->SetContent(Content);
-	if (UButtonSlot* ContentSlot = Cast<UButtonSlot>(Content->Slot))
+	UHorizontalBoxSlot* NameSlot = Box->AddChildToHorizontalBox(Name);
+	NameSlot->SetVerticalAlignment(VAlign_Center);
+	NameSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	Button->SetContent(Box);
+	if (UButtonSlot* ContentSlot = Cast<UButtonSlot>(Box->Slot))
 	{
-		ContentSlot->SetPadding(bPlanet ? FMargin(8.f, 8.f) : FMargin(12.f + Indent, bTab ? 10.f : 5.f, 12.f, bTab ? 10.f : 5.f));
-		ContentSlot->SetHorizontalAlignment(bPlanet ? HAlign_Center : HAlign_Fill);
+		const float Vertical = bTopTab ? 8.f : (bTab ? 9.f : 6.f);
+		ContentSlot->SetPadding(FMargin(0.f, Vertical, 12.f, Vertical));
+		ContentSlot->SetHorizontalAlignment(HAlign_Fill);
+		ContentSlot->SetVerticalAlignment(VAlign_Fill);
 	}
 
 	ULBAIslandMenuButtonHandler* Handler = NewObject<ULBAIslandMenuButtonHandler>(this);
@@ -539,6 +673,8 @@ FLBAMenuButton& ULBAIslandMenu::AddButton(TArray<FLBAMenuButton>& List, ELBAMenu
 	FLBAMenuButton& Entry = List.AddDefaulted_GetRef();
 	Entry.Button = Button;
 	Entry.Label = Text;
+	Entry.Subtitle = Under;
+	Entry.Marker = Marker;
 	Entry.Handler = Handler;
 	Entry.bTab = bTab;
 	return Entry;
@@ -558,6 +694,7 @@ void ULBAIslandMenu::ForEachButton(TFunctionRef<void(FLBAMenuButton&)> Visit)
 void ULBAIslandMenu::SelectPlanet(ELBAPlanet Planet)
 {
 	bShowTests = false;
+	bShowPoints = false;
 	SelectedPlanet = Planet;
 	// The player's island when it is on this planet, else the planet's first.
 	SelectedIsland = Islands.IsValidIndex(HomeIsland) && Islands[HomeIsland].Planet == Planet ? HomeIsland
@@ -575,6 +712,7 @@ void ULBAIslandMenu::SelectIsland(int32 Island)
 void ULBAIslandMenu::ShowTests()
 {
 	bShowTests = true;
+	bShowPoints = false;
 	if (!TestLevels.IsValidIndex(SelectedTestLevel))
 	{
 		SelectedTestLevel = TestLevels.IsEmpty() ? INDEX_NONE : 0;
@@ -589,22 +727,43 @@ void ULBAIslandMenu::SelectTestLevel(int32 Level)
 	BuildSceneTree();
 }
 
+void ULBAIslandMenu::ShowPoints()
+{
+	bShowPoints = true;
+	bShowTests = false;
+	BuildIslandList();
+	BuildSceneTree();
+}
+
+void ULBAIslandMenu::SelectPointGroup(int32 Group)
+{
+	SelectedPointGroup = Group;
+	BuildSceneTree();
+}
+
 void ULBAIslandMenu::CycleTab(int32 Step)
 {
-	const int32 NumTabs = Planets.Num() + (TestLevels.IsEmpty() ? 0 : 1);
+	// Tabs in order: the showcase places, the planets, Tests.
+	const bool bHasPoints = !LBAPointsOfInterest::Get().IsEmpty();
+	const int32 First = bHasPoints ? 1 : 0;
+	const int32 NumTabs = First + Planets.Num() + (TestLevels.IsEmpty() ? 0 : 1);
 	if (NumTabs == 0)
 	{
 		return;
 	}
-	const int32 Current = bShowTests ? Planets.Num() : Planets.IndexOfByKey(SelectedPlanet);
+	const int32 Current = bShowPoints ? 0 : (bShowTests ? First + Planets.Num() : First + Planets.IndexOfByKey(SelectedPlanet));
 	const int32 Next = (Current + Step + NumTabs) % NumTabs;
-	if (Next == Planets.Num())
+	if (bHasPoints && Next == 0)
+	{
+		ShowPoints();
+	}
+	else if (Next == First + Planets.Num())
 	{
 		ShowTests();
 	}
 	else
 	{
-		SelectPlanet(Planets[Next]);
+		SelectPlanet(Planets[Next - First]);
 	}
 }
 
@@ -633,14 +792,17 @@ UButton* ULBAIslandMenu::FindDefaultButton()
 	UButton* Target = nullptr;
 	ForEachButton([&Target](FLBAMenuButton& Button)
 	{
-		// The scene or station the player is at (or the level start), else their island or test level.
-		const ELBAMenuAction Action = Button.Handler->Action;
-		if (!Target && Button.bCurrent && (Action == ELBAMenuAction::Scene || Action == ELBAMenuAction::IslandStart
-			|| Action == ELBAMenuAction::Station || Action == ELBAMenuAction::TestLevelStart))
+		// The scene, station or place the player is at (or the level start), else their island or test level.
+		if (!Target && Button.bCurrent && IsListEntry(Button.Handler->Action))
 		{
 			Target = Button.Button;
 		}
 	});
+	// The showcase places open on their first place.
+	if (!Target && bShowPoints && !SceneButtons.IsEmpty())
+	{
+		Target = SceneButtons[0].Button;
+	}
 	for (const FLBAMenuButton& Button : IslandButtons)
 	{
 		if (!Target && Button.bActive)
@@ -691,15 +853,15 @@ void ULBAIslandMenu::UpdateFooterHint()
 	}
 	else if (Layout == ELBAControlsLayout::KeyboardMouse)
 	{
-		HintText = LOCTEXT("KeyboardHint", "M / Esc: close    Q / E: change tab");
+		HintText = LOCTEXT("KeyboardHint", "Enter: go    M / Esc: close    Q / E: change tab");
 	}
 	else if (Layout == ELBAControlsLayout::Gamepad)
 	{
-		HintText = LOCTEXT("GamepadHint", "Menu / B: close    LB / RB: change tab");
+		HintText = LOCTEXT("GamepadHint", "A: go    Menu / B: close    LB / RB: change tab");
 	}
 	else
 	{
-		HintText = LOCTEXT("Hint", "M / Start: close    Q / E, LB / RB: change tab");
+		HintText = LOCTEXT("Hint", "Enter / A: go    M / Start: close    Q / E, LB / RB: change tab");
 	}
 	FooterHint->SetText(HintText);
 }
@@ -730,11 +892,22 @@ void ULBAIslandMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			LastFocused = Button;
 			bAnyFocused = true;
 		}
+		// The choice is lit in amber with dark text, like the original's menus; the entry shown is a lighter bar; where the
+		// player is gets a gold marker bar (and gold text when not lit).
 		const bool bHighlighted = bFocused || (!bMayTakeFocus && Button->IsHovered());
-		Button->SetBackgroundColor(bHighlighted ? FocusColor : (Entry.bActive ? ActiveColor : FLinearColor::Transparent));
-		const bool bBright = !Entry.bTab || bHighlighted || Entry.bActive;
-		const FLinearColor TextColor = Entry.bCurrent ? CurrentColor : (Entry.bFeature ? FeatureColor : (bBright ? FLinearColor::White : IdleTextColor));
+		Button->SetBackgroundColor(bHighlighted ? FocusColor : (Entry.bActive ? ActiveColor : ButtonColor));
+		const bool bBright = !Entry.bTab || Entry.bActive;
+		const FLinearColor TextColor = bHighlighted ? FocusTextColor
+			: (Entry.bCurrent ? CurrentColor : (Entry.bFeature ? FeatureColor : (bBright ? FLinearColor::White : IdleTextColor)));
 		Entry.Label->SetColorAndOpacity(FSlateColor(TextColor));
+		if (Entry.Subtitle)
+		{
+			Entry.Subtitle->SetColorAndOpacity(FSlateColor(bHighlighted ? FocusTextColor : CaptionColor));
+		}
+		if (Entry.Marker)
+		{
+			Entry.Marker->SetBrushColor(Entry.bCurrent ? (bHighlighted ? FocusTextColor : CurrentColor) : FLinearColor::Transparent);
+		}
 	});
 	// Activating the window or clicking the backdrop hands focus to the game viewport, which would leave the
 	// keyboard and gamepad with nothing to navigate: take it back.
@@ -825,6 +998,21 @@ void ULBAIslandMenu::OnButtonClicked(ELBAMenuAction Action, int32 Value)
 
 	case ELBAMenuAction::Play:
 		Play();
+		return;
+
+	case ELBAMenuAction::PointsTab:
+		ShowPoints();
+		return;
+
+	case ELBAMenuAction::PointGroup:
+		SelectPointGroup(Value);
+		return;
+
+	case ELBAMenuAction::Point:
+		if (LBAPointsOfInterest::Get().IsValidIndex(Value))
+		{
+			GoTo(FLBATravelDestination::ToPointOfInterest(LBAPointsOfInterest::Get()[Value].Id));
+		}
 		return;
 
 	case ELBAMenuAction::Planet:

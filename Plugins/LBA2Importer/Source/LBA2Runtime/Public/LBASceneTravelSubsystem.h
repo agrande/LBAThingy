@@ -6,6 +6,7 @@
 class ALBACubeChangeVolume;
 class APawn;
 class ULBASceneAsset;
+struct FLBAPointOfInterest;
 class UWorld;
 struct FAssetData;
 
@@ -76,6 +77,15 @@ public:
 	bool TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround, const FString& PreferredLevel = FString(),
 		bool bToPlanet = false);
 
+	/**
+	 * Goes to a showcase place: an interior scene's hero start, or a spot of a level (the planet) given in one of its
+	 * sub-levels' coordinates, the camera looking its way.
+	 */
+	bool TravelToPointOfInterest(const FLBAPointOfInterest& Point);
+
+	/** Where a showcase spot's feet are in a world of its level (its frame sub-level applied); unset for interiors. */
+	static TOptional<FVector> FindPointOfInterestFeet(const UWorld* World, const FLBAPointOfInterest& Point);
+
 	/** A player pawn entered a cube change zone. */
 	void OnCubeChangeZone(ALBACubeChangeVolume* Zone, APawn* Pawn);
 
@@ -92,14 +102,23 @@ private:
 		FVector Feet = FVector::ZeroVector;
 		double Yaw = 0.0;
 		bool bSnapToGround = true;
+		/** Sub-level whose coordinates Feet and Yaw are in (its streaming transform is applied on arrival), empty: the level's. */
+		FString Frame;
+		/** The ground is looked for from this high above the feet (cm). */
+		double SnapAbove = 40.0;
 	};
+
+	/** Feet and yaw in the world: the arrival's frame sub-level turned into the level's coordinates. */
+	static void ResolveFrame(const UWorld* World, FArrival& Arrival);
+	/** Remembers the island variants being left (the current level, or a planet's islands) for the way back. */
+	void RememberLeftLevels(const UWorld* World);
 
 	/**
 	 * Picks the level to open for a scene: the preferred one if the scene is in it, else the current one if it is (on a
 	 * planet's level, its island level there), else the island variant last visited.
 	 */
 	FString ChooseSceneryLevel(const ULBASceneAsset* Scene, const UWorld* World, const FString& PreferredLevel) const;
-	static FVector SnapFeet(UWorld* World, const FVector& Feet, const AActor* Ignore);
+	static FVector SnapFeet(UWorld* World, const FVector& Feet, const AActor* Ignore, double Above = 40.0);
 
 	TOptional<FArrival> PendingArrival;
 	/** Island number -> scenery level last played on it (Citadel's storm or sunny variant...). */

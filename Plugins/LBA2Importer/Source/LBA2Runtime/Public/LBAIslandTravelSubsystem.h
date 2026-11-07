@@ -102,6 +102,8 @@ enum class ELBATravelKind : uint8
 	Scene,
 	/** A test level's start, or one of its stations. */
 	TestLevel,
+	/** A showcase place of the travel menu (LBAPointsOfInterest). */
+	PointOfInterest,
 };
 
 USTRUCT(BlueprintType)
@@ -128,9 +130,14 @@ struct LBA2RUNTIME_API FLBATravelDestination
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LBA", meta = (EditCondition = "Kind == ELBATravelKind::TestLevel", EditConditionHides))
 	FName Station;
 
+	/** Id of a showcase place (lba.POI lists them: CitadelBoat, TempleOfBu...). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "LBA", meta = (EditCondition = "Kind == ELBATravelKind::PointOfInterest", EditConditionHides))
+	FName PointOfInterest;
+
 	static FLBATravelDestination ToIsland(FName Island);
 	static FLBATravelDestination ToScene(int32 Scene, FName Island = NAME_None);
 	static FLBATravelDestination ToTestLevel(const TSoftObjectPtr<UWorld>& Level, FName Station = NAME_None);
+	static FLBATravelDestination ToPointOfInterest(FName Id);
 
 	/** Name for signs: the island's, the scene's (menu name), the station's or the level's (World: the level "none" means). */
 	FText Describe(const UWorld* World = nullptr) const;

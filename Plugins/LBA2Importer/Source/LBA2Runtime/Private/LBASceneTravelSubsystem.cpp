@@ -13,6 +13,7 @@
 #include "LBA2Settings.h"
 #include "LBAIslandTravelSubsystem.h"
 #include "LBAPlanet.h"
+#include "LBAPointsOfInterest.h"
 #include "LBASceneAsset.h"
 #include "LevelUtils.h"
 #include "LBATypes.h"
@@ -41,6 +42,28 @@ namespace
 				return;
 			}
 			Travel->TravelToScene(FCString::Atoi(*Args[0]));
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs PointOfInterestCommand(
+		TEXT("lba.POI"),
+		TEXT("lba.POI <id>: goes to a showcase place of the travel menu (CitadelBoat, TempleOfBu...). Without argument, lists them."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			ULBASceneTravelSubsystem* Travel = World && World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<ULBASceneTravelSubsystem>() : nullptr;
+			if (!Travel)
+			{
+				return;
+			}
+			const FLBAPointOfInterest* Point = Args.IsEmpty() ? nullptr : LBAPointsOfInterest::Find(*Args[0]);
+			if (!Point)
+			{
+				for (const FLBAPointOfInterest& Each : LBAPointsOfInterest::Get())
+				{
+					UE_LOG(LogLBA2, Display, TEXT("%s: %s"), *Each.Id.ToString(), *Each.Name.ToString());
+				}
+				return;
+			}
+			Travel->TravelToPointOfInterest(*Point);
 		}));
 
 	FString GetWorldPackage(const UWorld* World)
@@ -342,6 +365,96 @@ FString ULBASceneTravelSubsystem::ChooseSceneryLevel(const ULBASceneAsset* Scene
 	return Scene->SceneryLevels.IsEmpty() ? FString() : Scene->SceneryLevels[0].ToSoftObjectPath().GetLongPackageName();
 }
 
+void ULBASceneTravelSubsystem::RememberLeftLevels(const UWorld* World)
+{
+	const FString CurrentLevel = GetWorldPackage(World);
+	TArray<FString> LeftLevels = GetPlanetIslandLevels(CurrentLevel);
+	LeftLevels.Add(CurrentLevel);
+	for (const FString& Left : LeftLevels)
+	{
+		const int32 LeftIsland = GetLevelSceneIsland(Left);
+		if (LeftIsland != INDEX_NONE)
+		{
+			LastIslandLevels.Add(LeftIsland, Left);
+		}
+	}
+}
+
+void ULBASceneTravelSubsystem::ResolveFrame(const UWorld* World, FArrival& Arrival)
+{
+	if (Arrival.Frame.IsEmpty() || !World || Arrival.Frame == GetWorldPackage(World))
+	{
+		return;
+	}
+	for (const ULevelStreaming* Streaming : World->GetStreamingLevels())
+	{
+		if (Streaming && UWorld::RemovePIEPrefix(Streaming->GetWorldAssetPackageName()) == Arrival.Frame)
+		{
+			Arrival.Feet = Streaming->LevelTransform.TransformPosition(Arrival.Feet);
+			Arrival.Yaw = FRotator::NormalizeAxis(Arrival.Yaw + Streaming->LevelTransform.Rotator().Yaw);
+			Arrival.Frame.Reset();
+			return;
+		}
+	}
+	UE_LOG(LogLBA2, Warning, TEXT("%s is not a sub-level of %s: arriving in its coordinates."), *Arrival.Frame, *GetWorldPackage(World));
+	Arrival.Frame.Reset();
+}
+
+TOptional<FVector> ULBASceneTravelSubsystem::FindPointOfInterestFeet(const UWorld* World, const FLBAPointOfInterest& Point)
+{
+	if (Point.Scene != INDEX_NONE || !World || Point.Level != GetWorldPackage(World))
+	{
+		return {};
+	}
+	FArrival Arrival;
+	Arrival.Feet = Point.Feet;
+	Arrival.Frame = Point.Frame;
+	ResolveFrame(World, Arrival);
+	return Arrival.Feet;
+}
+
+bool ULBASceneTravelSubsystem::TravelToPointOfInterest(const FLBAPointOfInterest& Point)
+{
+	if (Point.Scene != INDEX_NONE)
+	{
+		return TravelToScene(Point.Scene);
+	}
+	UWorld* World = GetGameInstance()->GetWorld();
+	if (!World || Point.Level.IsEmpty())
+	{
+		return false;
+	}
+	RememberLeftLevels(World);
+	FArrival Arrival;
+	Arrival.LevelPackage = Point.Level;
+	Arrival.Feet = Point.Feet;
+	Arrival.Yaw = Point.Yaw;
+	Arrival.Frame = Point.Frame;
+	// Spots are given roughly in height: the ground is the first floor below 15 m above them.
+	Arrival.SnapAbove = 1500.0;
+	LastScene = INDEX_NONE;
+
+	APlayerController* Player = GetGameInstance()->GetFirstLocalPlayerController(World);
+	APawn* Pawn = Player ? Player->GetPawn() : nullptr;
+	if (Point.Level == GetWorldPackage(World) && Pawn)
+	{
+		ResolveFrame(World, Arrival);
+		const UCapsuleComponent* Capsule = Pawn->FindComponentByClass<UCapsuleComponent>();
+		const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 90.f;
+		const FVector FeetAt = SnapFeet(World, Arrival.Feet, Pawn, Arrival.SnapAbove);
+		const FRotator Rotation(0.0, Arrival.Yaw, 0.0);
+		Pawn->TeleportTo(FeetAt + FVector(0.0, 0.0, HalfHeight + 2.0), Rotation);
+		Player->SetControlRotation(Rotation);
+		ArrivalTime = World->GetTimeSeconds();
+		UE_LOG(LogLBA2, Log, TEXT("%s: teleported to %s"), *Point.Id.ToString(), *FeetAt.ToString());
+		return true;
+	}
+	UE_LOG(LogLBA2, Log, TEXT("%s: opening %s"), *Point.Id.ToString(), *Point.Level);
+	PendingArrival = Arrival;
+	UGameplayStatics::OpenLevel(World, FName(*Point.Level));
+	return true;
+}
+
 bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVector& Feet, int32 Beta, bool bSnapToGround, const FString& PreferredLevel,
 	bool bToPlanet)
 {
@@ -355,16 +468,7 @@ bool ULBASceneTravelSubsystem::TravelToSceneAt(int32 SceneIndex, const FIntVecto
 	// The island variant being left, then the one asked for, are remembered like a door taken from them: leaving an
 	// interior comes back to the same variant. Leaving a planet, its islands' levels are the variants left.
 	const FString CurrentLevel = GetWorldPackage(World);
-	TArray<FString> LeftLevels = GetPlanetIslandLevels(CurrentLevel);
-	LeftLevels.Add(CurrentLevel);
-	for (const FString& Left : LeftLevels)
-	{
-		const int32 LeftIsland = GetLevelSceneIsland(Left);
-		if (LeftIsland != INDEX_NONE)
-		{
-			LastIslandLevels.Add(LeftIsland, Left);
-		}
-	}
+	RememberLeftLevels(World);
 	if (!PreferredLevel.IsEmpty() && GetLevelSceneIsland(PreferredLevel) == Scene->Island)
 	{
 		LastIslandLevels.Add(Scene->Island, PreferredLevel);
@@ -452,20 +556,21 @@ bool ULBASceneTravelSubsystem::ConsumeArrival(UWorld* World, float PawnHalfHeigh
 		PendingArrival.Reset();
 		return false;
 	}
-	const FArrival Arrival = PendingArrival.GetValue();
+	FArrival Arrival = PendingArrival.GetValue();
 	PendingArrival.Reset();
 	ArrivalTime = World->GetTimeSeconds();
-	const FVector Feet = Arrival.bSnapToGround ? SnapFeet(World, Arrival.Feet, nullptr) : Arrival.Feet;
+	ResolveFrame(World, Arrival);
+	const FVector Feet = Arrival.bSnapToGround ? SnapFeet(World, Arrival.Feet, nullptr, Arrival.SnapAbove) : Arrival.Feet;
 	OutTransform = FTransform(FRotator(0.0, Arrival.Yaw, 0.0), Feet + FVector(0.0, 0.0, PawnHalfHeight + 2.0));
 	return true;
 }
 
-FVector ULBASceneTravelSubsystem::SnapFeet(UWorld* World, const FVector& Feet, const AActor* Ignore)
+FVector ULBASceneTravelSubsystem::SnapFeet(UWorld* World, const FVector& Feet, const AActor* Ignore, double Above)
 {
 	// From a little above the feet (a step), so arriving under a lintel or a roof does not land on top of it.
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(LBAArrival), false, Ignore);
 	FHitResult Hit;
-	if (World->LineTraceSingleByChannel(Hit, Feet + FVector(0.0, 0.0, 40.0), Feet - FVector(0.0, 0.0, 400.0), ECC_Pawn, Params))
+	if (World->LineTraceSingleByChannel(Hit, Feet + FVector(0.0, 0.0, Above), Feet - FVector(0.0, 0.0, FMath::Max(400.0, Above * 2.0)), ECC_Pawn, Params))
 	{
 		return Hit.ImpactPoint;
 	}
