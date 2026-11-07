@@ -709,7 +709,9 @@ How it holds together (the world is flat and still; only the view is round):
 
 Tests: `-LBA2Shots=globe` on Citadel (open the level with `?Globe`): the Dinofly flies out to sea and back, floats,
 shots from 500 m and 1.5 km up (the whole planet, both islands on it). 102 fps on average in standalone game (123
-with the sea disc alone).
+with the sea disc alone). The globe and belt runs advance a fixed 1/15 s per frame, as fast as frames render (about 33 s
+each instead of 162 and 210); `-LBA2ShotStep=0` plays in real time, which measuring the frame rate needs. Their landings
+end about 5 s sooner than in real time, so later shots are framed differently.
 `-LBA2GlobeTo=DESERT`: across to the desert until within its reach, looks back from
 above, lands. `-LBA2Shots=boat -LBA2BoatTo=DESERT` crosses by ferry, `-LBA2BoatTo=BELT` drives at the belt until
 it runs aground. `-LBA2Shots=belt`: the Dinofly flies to the belt and over it, the planet from above the pole, then

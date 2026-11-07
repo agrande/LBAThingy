@@ -192,9 +192,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	// Faster than real time: every frame advances the game (and these steps' clock) by a fixed 1/N s, as fast as frames
 	// render. The Dinofly's steps are all in game time (its flight substeps at 120 Hz), so it runs this way by default,
-	// at 1/15 s: its run takes 45 s instead of 150, and lands within a few meters of a real-time run (2026-10-31);
-	// -LBA2ShotStep=0 plays in real time.
-	int32 StepRate = bDinofly ? 15 : 0;
+	// at 1/15 s: its run takes 45 s instead of 150, and lands within a few meters of a real-time run (2026-10-31). So do the
+	// belt and globe flights: 34 s instead of 210, 33 s instead of 162, within about 1 m at each step's end, but their
+	// landings end about 5 s sooner and later shots are framed differently (2026-11-07).
+	// -LBA2ShotStep=0 plays in real time: frame rates and camera jerk mean nothing otherwise.
+	int32 StepRate = bDinofly || bBelt || bGlobe ? 15 : 0;
 	FParse::Value(FCommandLine::Get(), TEXT("LBA2ShotStep="), StepRate);
 	if (StepRate > 0)
 	{
@@ -1207,8 +1209,15 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 	}
 	if (GlobeStep >= NumSteps)
 	{
-		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe done: %.1f fps average over %d frames, worst frame %.1f ms"),
-			GlobeFrames / FMath::Max(GlobeFrameTime, 1e-3), GlobeFrames, GlobeWorstFrame * 1000.0);
+		if (FApp::UseFixedTimeStep())
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe done: %d frames at a fixed time step (-LBA2ShotStep=0 measures frame rates)"), GlobeFrames);
+		}
+		else
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe done: %.1f fps average over %d frames, worst frame %.1f ms"),
+				GlobeFrames / FMath::Max(GlobeFrameTime, 1e-3), GlobeFrames, GlobeWorstFrame * 1000.0);
+		}
 		FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
 		return false;
 	}
@@ -1299,7 +1308,7 @@ bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 
 	GlobeFrameTime += DeltaTime;
 	GlobeWorstFrame = FMath::Max(GlobeWorstFrame, double(DeltaTime));
-	if (DeltaTime > 0.05f)
+	if (DeltaTime > 0.05f && !FApp::UseFixedTimeStep())
 	{
 		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots globe slow frame (%s t=%.2f): %.1f ms"), Step.Name, StepTime, DeltaTime * 1000.f);
 	}
