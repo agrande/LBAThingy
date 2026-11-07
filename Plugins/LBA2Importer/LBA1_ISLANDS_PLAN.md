@@ -19,7 +19,7 @@ for what isn't replaced yet.
 | 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
 | 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
 | 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
-| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (72f2d74, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). 3c simple objects: generated fences, railings, sandbags, buoys + remake oil drums (shots `phase3c_objects_before_after.png`, `phase3c_objects_close.png`). Next: Proxim City's roofs |
+| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (72f2d74, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). 3c simple objects: generated fences, railings, sandbags, buoys + remake oil drums (shots `phase3c_objects_before_after.png`, `phase3c_objects_close.png`). Next: Phase 3 extended (houses as buildings with openings and frames, stairs as steps, roofs per house, palms), see that section |
 | 4 | Trees, rocks and paths | not started |
 | 5 | Rune stones on real islets | not started |
 
@@ -459,6 +459,108 @@ faces against it.
 4. Shots: `-Poses towns`, Proxim City 1-4.
 
 Also left from 3b: Old Burg's stepped gable edges under its slopes, and corner ramps (shapes 6-13) still drawn as cubes.
+
+### Phase 3 extended: houses as buildings (the user's review, 2026-11-07)
+
+The user's verdict after 3c: Phase 3 is far from done. Goal: **most houses get a decent 3D representation, with proper
+door and window frames** (that is what players look at), **all sorts of stairs work**, and recurring pieces still wrong or
+left as bricks get replaced (palm trees: LBA2 has palms). Phases 4 and 5 wait.
+
+**The user's decisions (2026-11-07):**
+- **Frames are 3D models built from LBA1's tiles**, not LBA2 bodies: LBA1 has a different architecture, and it keeps the
+  islands distinct.
+- **Principal stays closest to LBA1's architecture.**
+- **Proxima is the experimental island:** a blend of LBA1 and Citadel's architecture and style (it is close to Citadel,
+  shares some culture, and sits at the same latitude). It looks the strangest today and needs the most reinventing (see the
+  rune stones work, memory note `lba2-proxima-rune-stones`), so LBA2/Citadel pieces and freer changes are welcome there.
+- Rebellion: not discussed yet.
+
+**What the towns look like now** (`iso_42.png` vs `phase3c_objects_*`): a house is a box of tiled wall faces with its
+openings painted flat on them (arched doorways, round windows, signs), a roof as thatch slopes (Old Burg) or stepped bricks
+(Proxim City), stairs as textured slopes. From a low camera the doorways read as pictures, not holes.
+
+**Approach: an explicit building model first** (memory note `lba2-enclosure-process-lessons`: the interiors went slowly
+because rooms, walls and openings were never explicit objects). Per town scene, derive from the grid:
+- `FLBA1House`: footprint (connected wall cells under one roof, or one walled block), base and eave height, wall style,
+  roof kind (gable on the long side, flat/terrace, none), ridge height.
+- `FLBA1Opening`: wall side, position along the wall, width, height, kind (arched door, square door, window, round window,
+  cellar hatch, archway through), found from the layouts that draw them (below) and checked against collision (a door has
+  walkable air behind it or is a scene exit).
+- `FLBA1Stair`: start cell, direction, rise, run, width, kind (straight, against a wall, corner, down into a cellar).
+Draw the model as a top-down plan per scene (houses colored, openings and stairs marked) and check it against the iso
+render before making any geometry, as the grid plan tools do (`lba2-grid-plan-tools`). Overrides for what the rules miss.
+
+**Then geometry, in this order** (each its own round with a before/after sheet, regression scenes 42, 13, 11, 12, 59):
+1. **Walls with real openings.** Cut the openings through the wall faces (`EmitWalls` already merges faces: split around
+   openings), give the wall thickness (half a cell, as LBA2's Citadel houses), a dark recess or the door leaf behind.
+2. **Frames as kit models made from LBA1's tiles.** Stone arch frame, square frame with lintel, window frame with sill,
+   wooden door leaf: shapes generated per opening, textured and colored from the opening's own bricks (the arch stones,
+   the door planks). On Proxima, Citadel-style frames or LBA2 bodies may be blended in (`decor_CITADEL.png`).
+3. **Roofs per house.** The "Proxim City's roofs" route above, as part of the house model: gable over the footprint, gable
+   walls in stone, slab with eaves, ridge cap, eave kept above the tallest door. Old Burg's ramp roofs move to it too if it
+   looks better.
+4. **Stairs as steps.** Modeled steps (tread + riser per step, LBA1's 32 cm rise) with side walls/stringers where the
+   original draws them, collision kept as a ramp so Twinsen walks them (check with `-LBA2HeroAt` on each kind). Corner
+   ramps (shapes 6-13) as proper corners. Kinds seen: straight flights (Proxim City, the harbour), wide steps between
+   terraces (scene 42 front), cellar stairs (42, under a hatch), Rebellion's 59:117 and 59:82, 12:244, 12:14, 12:15.
+5. **Trees and remaining props.** Palms as LBA2 palms (44:206 is mapped to LBA2's pine today; find every palm piece, scene 42
+   has palms too), conical trees checked against LBA2's, benches, flower pots, wall plaques and signs (11:20, 12:14), the
+   brazier 11:48, then down the `left` list.
+
+**Pieces that draw openings and stairs** (counts over the towns' 15 scenes, from `pieces.json`):
+- arched doorways / gates 3x5x1: 13:126 (x10, Principal + Proxima), 11:239, 59:84; arches 3x3x1: 11:15 (x11), 11:153 (x11);
+  big arch 13:155 (3x9x1), 17:25 (3x7x1 portal).
+- door/window pillars 1x9x1: 11:148, 11:149, 11:151, 11:152 (x8-9 each), 12:182, 12:183, 44:207, 44:208.
+- round window 12:14 (2x4x1); wall plaques 11:19, 11:20.
+- stairs: 11:14 (1x3x3, x12), 12:244 (2x4x2), 12:15 (2x8x2), 12:19 (1x8x3), 59:117 (2x4x6), 59:82 (1x3x5); plus the ramp-shape
+  cells already drawn as slopes by `EmitSlopes`.
+Many doors are also painted inside plain column wall layouts, not separate pieces: the opening finder needs the wall art
+too (dark arch-shaped pixels in a wall face), not only these layouts. Survey that first.
+
+### The building model, prototype (2026-11-07)
+
+`Tools/lba1_houses.py` (run from `Tools/`, writes `Saved/LookDev/lba1_houses`): `model <scene>...` draws the model over the
+scene's iso render (`model_<scene>.png`; sheets `model_houses_sheet.png`, `model_blocks_sheet.png`). Also `houses`,
+`openings`, `explore` (top view, every placed layout boxed) and `layouts <scene> [ids]` (composed layouts sheet).
+
+**What the grids showed** (these settle the open question above: doors are separate pieces, not wall art):
+- **Houses are hollow shells.** Only the two walls the camera saw (+x, +z) exist; the roof floats over them; the back walls
+  and often the floor under the house were never drawn (Proxim City's houses are hollow 4 rows down into their terrace).
+  So a house must be found as a footprint and its back walls made.
+- **Roofs:** Proxim City's are solid 3x4x1 slices with the slope painted on (heights are flat), ridge cells empty between
+  the two slopes; Old Burg's (13) are small ramp layouts (1x2x1, 1x1x1) whose back slope is slivers on every third cell.
+  Some roof slices are buried under a terrace (42 x 19-21 z 0-10).
+- **Doorways are holes** in the wall with an arch piece over them (42:195, 42:198: 3x3x1) and jamb pillars (193, 197:
+  1x9x1). Closed doors and windows are pieces in the wall (42:191 arched wooden door, 42:102 small arched cellar door, 13:126,
+  13:154/155); plaques 42:103/104, 13:19. Some doors sit in a pit down steps (42's top-left house), some up steps (one side
+  of a house stands higher than the other: per wall, not per house).
+- **Flat-roofed blocks** (the harbour 11, the fortress 12, Rebellion's ruins 59) have the same pieces in terrace walls: no
+  houses there, only openings.
+- **Palms** are two layouts: a trunk (12:112, 1x7x1) and a crown (12:113 / 42:113, 5x2x5), so neither matched the kit's
+  "pine" entry. 12:111 / 42:111 (2x9x2) is the round conifer.
+
+**Rules as built:**
+1. Roof cells: layouts of at least 6 cells with 2 thatch bricks, or ramp layouts with one; plus thatch bricks; only those
+   with nothing over them. Columns joined across one cell (the ridge), 8-connected.
+2. Ridge axis: ramp shapes (2/5 rise along x, 3/4 along z), else the slices' thin side.
+3. Neighbouring roofs split where a falling row is followed by a rising one (cells of a shared row go by their own
+   direction), or, without ramps, at height valleys.
+4. Footprint: the roof's box, trimmed along the ridge to the rows that have both slopes (gaps up to 2 closed: slivers).
+5. Eave: the roof pieces' lowest row; floor: the street level just outside the +x and +z walls; per wall, its own base
+   (the street outside it) and 3 rows below it for pits; under the street, air is solid unless a hole above continues.
+6. Openings in a house wall: air holes (not touching the wall's ends or top) with the pieces around them as their frame;
+   other pieces alone are closed doors (reaching the base) or wall pieces.
+7. Other walls (blocks): every +x / +z plane with at least 6 exposed wall cells; air and pieces not reachable from the
+   plane's border (air with solid in front counts as solid: hollow terraces) are holes; air holes need a frame piece or wall
+   on both sides; holes on house walls are left to the house.
+
+**Results:** 42: 4 / 4 houses, all doors, closed doors and plaques right. 13: 12 houses of about 14; misses the house built
+into the big terrace (only its front half) and the steep two-part roof at x 5-10 z 15-28. Blocks: the harbour's and
+fortress's doorways, round windows, banners found.
+
+**Next in the model:** a piece-kind table (round window, arched door, plaque, banner, cellar door: the kind decides the
+frame; today a round window just above a walkway reads as "closed door"); stairs (`FLBA1Stair`); then port to C++
+(`LBAPlanetDistricts`, per district rather than per scene) and the geometry steps above.
 
 ## Phase 4: trees, rocks and paths
 
