@@ -285,7 +285,7 @@ struct FLBAPaletteShadingSettings
 	FLBACartoonWaterSettings Cartoon;
 	FLBAPlanetView Planet;		// globe mode: how the view bends onto the planet (LBAPlanet.ush)
 	FLBAPlanetSun Sun;			// globe mode: the sun of each surface's own place (LBAPlanetSunRelight)
-	FLBASeaRegions SeaRegions;	// globe mode: the sea's colors by place and its own sunset (LBASeaRegionLevel, LBAPlanetSeaSunset)
+	FLBASeaRegions SeaRegions;	// globe mode: the sea's colors by latitude and its own sunset (LBASeaRegionLevel, LBAPlanetSeaSunset)
 };
 
 // Viewport UV of the point at a horizontal world offset from a translated world position; false off screen.
@@ -410,7 +410,7 @@ float LBALightToRow(float Ratio, FLBAPaletteShadingSettings S, float HighlightRa
 
 // Cartoon water, before fog. Display: this pixel's light; BaseColor: the sea color.
 float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 HeightFog, float3 BaseColor, float3 WorldNormal,
-	uint Index, Texture3D Lut, Texture2D Shades, Texture2D SeaTexture, Texture2D SeaRegionTexture, Texture2D SeaRegions,
+	uint Index, Texture3D Lut, Texture2D Shades, Texture2D SeaTexture, Texture2D SeaRegionTexture,
 	float HighlightRange, FLBAPaletteShadingSettings S)
 {
 	const FLBACartoonWaterSettings C = S.Cartoon;
@@ -453,9 +453,9 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 		const float TexelsPerPixel = Footprint * TexelsPerCm;
 		const float Wobble = C.Wobble * saturate(1.5 - TexelsPerPixel);
 		const float2 Texels = (P + C.Drift * Time + Bend * Wobble) * TexelsPerCm;
-		// Globe mode: paler toward the belt, turquoise around the desert.
+		// Globe mode: paler toward the belt, turquoise toward the pole.
 		int FirstSlot = 0;
-		const float Level = LBAPlanetBent(S.Planet) ? LBASeaRegionLevel(SeaRegions, S.SeaRegions, P, Footprint, FirstSlot) : 0.0;
+		const float Level = LBAPlanetBent(S.Planet) ? LBASeaRegionLevel(S.Planet, S.SeaRegions, P, FirstSlot) : 0.0;
 		TexIndex = LBANearestPaletteIndex(Lut, LBASeaColor(SeaTexture, int(Width), Texels, TexelsPerPixel, C, SeaRegionTexture, Level, FirstSlot));
 	}
 	float3 Color = LBAShadeColor(Shades, TexIndex, uint(round(Row)));
@@ -481,7 +481,7 @@ float3 LBACartoonWater(float2 ViewportUV, float Depth, float3 Display, float4 He
 }
 
 float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor, float3 BaseColor, float Depth, float Stencil, float CustomDepth,
-	float ShadingModel, float3 WorldNormal, Texture3D Lut, Texture2D Shades, Texture2D SeaTexture, Texture2D SeaRegionTexture, Texture2D SeaRegions,
+	float ShadingModel, float3 WorldNormal, Texture3D Lut, Texture2D Shades, Texture2D SeaTexture, Texture2D SeaRegionTexture,
 	Texture3D DitherTexture, SamplerState DitherSampler, Texture2D DitherRamp, SamplerState DitherRampSampler,
 	Texture2D HalftoneRamp, SamplerState HalftoneRampSampler,
 	FLBAPaletteShadingSettings S)
@@ -562,7 +562,7 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 	if (bWater && S.DebugView < 0.5)
 	{
 		float3 Cartoon = LBACartoonWater(ViewportUV, Depth, Display, HeightFog, BaseColor, WorldNormal,
-			LBANearestPaletteIndex(Lut, BaseColor), Lut, Shades, SeaTexture, SeaRegionTexture, SeaRegions, HighlightRange, S);
+			LBANearestPaletteIndex(Lut, BaseColor), Lut, Shades, SeaTexture, SeaRegionTexture, HighlightRange, S);
 		// Globe mode: in its own place's sunset, not only in the camera's.
 		BRANCH
 		if (LBAPlanetBent(S.Planet) && S.SeaRegions.Sunset.a > 0.0)

@@ -414,7 +414,8 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 	// v31: globe mode's bend (MPC_LBA_Planet's PlanetBend and PlanetView). v32: pre-drawn art (ArtStencil, CustomDepth).
 	// v33: globe mode's sun of each surface's place (MPC_LBA_Planet's PlanetSun*). v35: day sky high up (PlanetSkyDay*).
 	// v36: globe mode's sea by place, ice and turquoise (SeaRegionTexture, SeaRegions, PlanetSea*), and its own sunset.
-	constexpr int32 Version = 36;
+	// v37: by latitude, no SeaRegions mask.
+	constexpr int32 Version = 37;
 
 	CreateDitherTextures();
 	UMaterialParameterCollection* PlanetCollection = GetPlanetParameters();
@@ -510,10 +511,9 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("HalftoneRamp"), TextureObject(TEXT("HalftoneRamp"), HalftoneRamp, 960) },
 		// The island's sea texture, set per level (LBAEnvironment), for cartoon water.
 		{ TEXT("SeaTexture"), TextureObject(TEXT("SeaTexture"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1080) },
-		// Globe mode's sea by place: the island's sea texture recolored toward ice and turquoise (set per level,
-		// LBAEnvironment), and the planet's mask of where (set in play, ULBAPlanetSubsystem).
+		// Globe mode's sea by latitude: the island's sea texture recolored toward ice and turquoise (set per level,
+		// LBAEnvironment).
 		{ TEXT("SeaRegionTexture"), TextureObject(TEXT("SeaRegionTexture"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1100) },
-		{ TEXT("SeaRegions"), TextureObject(TEXT("SeaRegions"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1140) },
 		{ TEXT("PlanetBend"), Planet(TEXT("PlanetBend"), 1200) },
 		{ TEXT("PlanetView"), Planet(TEXT("PlanetView"), 1280) },
 		{ TEXT("PlanetSunPlaces"), Planet(TEXT("PlanetSunPlaces"), 1360) },
@@ -676,7 +676,7 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.SeaRegions.Ice = PlanetSeaIce;\n"
 		"S.SeaRegions.Turquoise = PlanetSeaTurquoise;\n"
 		"S.SeaRegions.Sunset = PlanetSeaSunset;\n"
-		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, CustomDepth.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture, SeaRegionTexture, SeaRegions,\n"
+		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, CustomDepth.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture, SeaRegionTexture,\n"
 		"    Dither, DitherSampler, DitherRamp, DitherRampSampler, HalftoneRamp, HalftoneRampSampler, S);"), DitherDotsPerSide);
 
 	UMaterialEditingLibrary::ConnectMaterialProperty(Custom, TEXT(""), MP_EmissiveColor);
@@ -851,7 +851,7 @@ UMaterialParameterCollection* FLBARenderingAssets::GetPlanetParameters()
 		// High up, the day's sky the palette shading shows (PlanetSkyDayZenith's alpha 0: off).
 		{ TEXT("PlanetSkyDayZenith"), FLinearColor::Transparent },
 		{ TEXT("PlanetSkyDayHorizon"), FLinearColor::Transparent },
-		// The sea by place: ice toward the belt, turquoise around the desert, its own sunset (LBASeaRegionLevel,
+		// The sea by latitude: ice toward the belt, turquoise toward the pole, its own sunset (LBASeaRegionLevel,
 		// LBAPlanetSeaSunset; PlanetSeaIce's and PlanetSeaTurquoise's z 0, PlanetSeaSunset's alpha 0: off).
 		{ TEXT("PlanetSeaFrame"), FLinearColor::Transparent },
 		{ TEXT("PlanetSeaIce"), FLinearColor::Transparent },

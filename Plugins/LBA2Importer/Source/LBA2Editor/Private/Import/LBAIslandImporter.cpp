@@ -1301,7 +1301,7 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 		Preset.SeaColor = FLinearColor::FromSRGBColor(Xpl->Palette[SeaIndex]);
 		Preset.SeaTexture = SeaTexture;
 		Preset.SeaTileSize = 8192.f * Scale;
-		// The globe's sea pales to ice toward the Hamalayi and turns turquoise around the desert (LBASeaRegions).
+		// The globe's sea pales to ice toward the Hamalayi and turns turquoise toward the pole (LBASeaRegions).
 		if (Preset.bWater && LBAPlanetBuilder::IsPlaced(Island.Name))
 		{
 			Preset.SeaRegionTexture = LBASeaRegions::BuildAtlas(Context, TextureFolder, Island.Name, SkySea, Xpl->Palette);

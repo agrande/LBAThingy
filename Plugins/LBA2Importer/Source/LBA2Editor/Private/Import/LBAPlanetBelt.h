@@ -34,9 +34,6 @@ class UWorld;
  */
 namespace LBAPlanetBelt
 {
-	/**
-	 * Builds the belt for a planet of Radius (cm) into Folder; a null level when the holomap can't be read. OutLand: the
-	 * middle of each of its land cells on the map (cm, the sea regions measure from them).
-	 */
-	TSoftObjectPtr<UWorld> Build(FLBAImportContext& Context, const FString& Planet, double Radius, const FString& Folder, TArray<FVector2D>* OutLand = nullptr);
+	/** Builds the belt for a planet of Radius (cm) into Folder; a null level when the holomap can't be read. */
+	TSoftObjectPtr<UWorld> Build(FLBAImportContext& Context, const FString& Planet, double Radius, const FString& Folder);
 }

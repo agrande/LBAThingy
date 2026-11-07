@@ -8,7 +8,6 @@ class APostProcessVolume;
 class UDirectionalLightComponent;
 class UExponentialHeightFogComponent;
 class UMaterialInstanceDynamic;
-class UTexture;
 
 /** Parameters of the palette look material that describe a level's height fog (HeightFog* in LBAPaletteShading.ush). */
 struct LBA2RUNTIME_API FLBAHeightFogParameters
@@ -48,8 +47,6 @@ public:
 
 	/** Overrides a look parameter (see lba.Look.Set); an empty Value removes the override. */
 	void SetParameterOverride(FName Name, const TArray<float>& Value);
-	/** Overrides a texture parameter of both looks; null removes the override. */
-	void SetTextureOverride(FName Name, UTexture* Texture);
 
 private:
 	void ApplyControls();
@@ -57,8 +54,6 @@ private:
 	void ApplyOverrides(UMaterialInstanceDynamic* Instance) const;
 
 	TMap<FName, TArray<float>> ParameterOverrides;
-	UPROPERTY(Transient)
-	TMap<FName, TObjectPtr<UTexture>> TextureOverrides;
 
 	struct FLookBlendable
 	{

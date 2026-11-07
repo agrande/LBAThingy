@@ -11,7 +11,6 @@
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBAPlanetBelt.h"
 #include "Import/LBAPlanetStubs.h"
-#include "Import/LBASeaRegions.h"
 #include "Import/LBARenderingAssets.h"
 #include "Import/LBAWater.h"
 #include "WaterWaves.h"
@@ -46,8 +45,6 @@ namespace
 		 * sun's -74.7 degrees 0.63). Unset: turned so its level's sun is the planet's.
 		 */
 		TOptional<double> Heading;
-		/** Its sea turns turquoise around it, like its oasis (LBASeaRegions). */
-		bool bTurquoiseSea = false;
 	};
 
 	struct FPlanetPreset
@@ -71,7 +68,7 @@ namespace
 		// desert at the pole to the belt.
 		static const TArray<FPlanetPreset> Presets =
 		{
-			{ TEXT("TWINSUN"), 32000.0, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0, true } }, true, true },
+			{ TEXT("TWINSUN"), 32000.0, { { TEXT("CITABAU"), 0, true, 1.55f, 2.0 }, { TEXT("DESERT"), 2, true, 1.35f, -20.0 } }, true, true },
 		};
 		return Presets;
 	}
@@ -694,22 +691,10 @@ void LBAPlanetBuilder::AddIsland(FLBAImportContext& Context, const FLBAIsland& I
 	}
 	// The island's coastline and sea changed: every opened island's sea level, which leaves it dry.
 	BuildSeaLevels(Context, Asset, PlanetFolder);
-	TArray<FVector2D> BeltLand;
 	if (Planet->bBelt)
 	{
-		Asset->BeltLevel = LBAPlanetBelt::Build(Context, Planet->Name, Radius, PlanetFolder, &BeltLand);
+		Asset->BeltLevel = LBAPlanetBelt::Build(Context, Planet->Name, Radius, PlanetFolder);
 	}
-	// The sea pales to ice toward the belt and turns turquoise around some islands.
-	TArray<FName> TurquoiseIslands;
-	for (const FPlanetIslandPreset& Listed : Planet->Islands)
-	{
-		if (Listed.bTurquoiseSea)
-		{
-			TurquoiseIslands.Add(Listed.Island);
-		}
-	}
-	Asset->SeaRegions = LBASeaRegions::BuildMask(Context, Planet->Name, *Asset, BeltLand, TurquoiseIslands, PlanetFolder);
-	Asset->SeaRegionsExtent = float(LBASeaRegions::MaskExtent);
 	if (Planet->bStubs)
 	{
 		Asset->StubLevel = LBAPlanetStubs::Build(Context, Planet->Name, Asset, Radius, PlanetFolder);
