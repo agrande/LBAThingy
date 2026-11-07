@@ -19,7 +19,7 @@ for what isn't replaced yet.
 | 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
 | 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
 | 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
-| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). Next: 3b simple houses |
+| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls built: tiling wall faces (shots `phase3b_walls_before_after.png`, 2026-11-07). Next: 3b roofs |
 | 4 | Trees, rocks and paths | not started |
 | 5 | Rune stones on real islets | not started |
 
@@ -253,6 +253,37 @@ Citabau too: not a stub island matter. The bricks' collision is still what Twins
 - **Unity build.** A file-level name can clash with a local in another file of the same unity blob (C4459). This happened
   with `PlanetLevel` and `Scale`. Give locals distinct names.
 
+### What was built (2026-11-07): 3b walls
+
+- **Which cells are walls.** A wall brick (`FDistricts::IsWallBrick`) has both sides at least 90 % opaque and no top (at most
+  10 %): the middle of a wall, whose top a brick above always hides. A cell is a wall when such a brick is placed by a
+  one-column layout (1 x N x 1). That layout's bricks from the bottom up are its **style** (`FTown::WallStyles`: Principal's
+  stone 537, 538), and the cell keeps its row (`WallRow`). Survey (towns' 15 scenes): 8,480 wall-brick cells, 7,100 of them in
+  column layouts (5,239 in 537/538, 708 in 1, 476 in 1029/1030). The others (2x9x2, 5x4x1 palisades, 3x5x1 arches...) stay bricks.
+  Caps (2, 844: they have a top) stay bricks too.
+- **Drawing.** `LBAPlanetTowns`' `EmitWalls`: per scene, per side and slice, open faces of the same style and phase (row less
+  height) greedily merged into rectangles, UVs by position (a cell along, a row up), into the scene mesh as one section per
+  style (`MI_LBA1_<ISLAND>_Wall_<first brick>_<rows>`, 24 x 15-per-row tile, wrapping). A face is open where `CellsOf(Town,
+  true)` has no brick beside it, the rule `EmitVisual` uses, and wall cells keep their brick there, so the bricks next to a
+  wall still hide their faces against it. Wall bricks are left out of the atlas. Collision unchanged.
+- **Art.** Every side shows the sprite's brighter side (+Z, the left half), lit by the engine. Before, the +X and back sides
+  showed the dark side, whose ramp-11 pixels `MovePlantShadows` had moved to the plant ramp: near-black green.
+  Measured (harbour, median sRGB): shaded sides (24,38,26) -> (49,74,77), lit sides (81,110,111) -> (76,109,110); LBA1's own
+  faces have the same ratio (537: 97,115,116 lit, 43,57,55 shaded).
+- **Quays** continue a wall's style downward (alternating 537/538) instead of repeating its lowest brick.
+- Counts: 17 styles on Principal (5,420 wall triangles), 14 on Proxima (1,448), 11 on Rebellion (548).
+- Checks: 157 tests pass; globe 152.2 fps.
+
+### Notes for the roofs (3b, next)
+
+- Proxima's and Old Burg's thatch roofs are many small slope pieces (survey: 42:189 x30 3x4x1, 42:190 x29 3x3x1, 13:204 x37
+  1x2x1, 13:209 x54 1x1x1...), whose bricks carry ramp collision shapes (2 to 5). Drawn as cubes with the sprite's art they
+  make the sawtooth seen in `phase3b_walls_before_after.png` (Old Burg 2).
+- Idea: cells of a ramp shape with thatch art become sloped quads along the ramp (shape gives the direction), merged like the
+  walls, with a tiling thatch texture unprojected from the slope's sprite; the ridge pieces (13:225) as a ridge beam.
+- Aiming on `L_TWINSUN`: the Poses formula below is wrong (see there). Close poses ringed around town actors' bound centers
+  are in `Saved/LookDev/lba1_review/p3b_close_poses.txt` (Proxim City, the harbour, Port Belooga, Old Burg).
+
 ## Phase 4: trees, rocks and paths
 
 - Scatter LBA2 trees and rocks on grass benches. Measure the density on Citabau rather than guessing.
@@ -266,22 +297,23 @@ main islands), so the slabs sit inside real land with a coast.
 
 ## Checks after each phase
 
-- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a (2026-11-07).
+- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a, 152.2 after 3b walls (2026-11-07). Another session's CPU-heavy job
+  (a Python script at 100 % of a core) brought the same build to 101-119 fps: check the machine is idle before trusting a number.
 - **Tests:** `LBA2.Enclosure` 157 tests pass; `-LBA2Shots=belt` holds Twinsen at 3.7 m (2026-11-07).
 - **Street level:** `shots.ps1 -Map /Game/LBA2/Planets/L_TWINSUN -Poses hero -Extra "-LBA2HeroAt=6286,56485,0"`
 - **Comparison:** the same camera poses as `Saved/LookDev/lba1_review/a` and `b`, side by side.
 
 ### Poses
 
-Stub level coordinates ("map") to `L_TWINSUN` world, in cm:
+Stub level coordinates ("map") to `L_TWINSUN` world, in cm (fitted 2026-11-07 from the town actors dumped in both levels;
+the older formula, with +36832/+39232 after a map offset, was about 45 m off):
 ```
-a = map.x + 15874;  b = map.y + 12773
-world.x = 0.6537 a - 0.7567 b + 36832
-world.y = 0.7567 a + 0.6537 b + 39232
+world.x = 0.6537 map.x - 0.7567 map.y + 33033
+world.y = 0.7567 map.x + 0.6537 map.y + 57228
 world yaw = map yaw + 49.18
 ```
-Actor positions come from dumping `L_TWINSUN_Stubs` with a headless python script. On 2026-11-07 this formula didn't land on
-kit instances' dumped positions (cameras aimed with it saw sea or other streets): use it with care. What worked: shoot
+Actor positions come from dumping either level with a headless python script (`unreal.EditorLoadingAndSavingUtils.load_map`,
+then `get_all_level_actors`, `get_actor_bounds`). Town actors' bound centers are good aim points. Also: shoot
 `-Map /Game/LBA2/Planets/L_TWINSUN_Stubs` itself, where poses are map coordinates as dumped (unbent and unlit, enough to judge
 shapes). Useful world poses, `x,y,z,pitch,yaw`:
 - Harbour from the south-east: `14529,54368,2200,-16,139.2`
@@ -301,6 +333,8 @@ shapes). Useful world poses, `x,y,z,pitch,yaw`:
 - A camera inside a hill shows only slivers of back faces. That is the pose's fault, not a bug.
 - The whitish sea at low angles happens around Citadel too; it isn't an LBA1 islands problem.
 - Other sessions share this checkout: commit by path, and check peers before building or importing.
+- Run `p3_round.ps1` and `shots.ps1` from PowerShell: Git Bash rewrites `/Game/...` into `C:/Program Files/Git/Game/...`, and the
+  game then loads nothing and shoots nothing. Shots of a map are named after it (`L_TWINSUN_Stubs_00.png`).
 - Keep vertex jitter under a quarter of a cell. At 0.3 about 0.006 % of cells fold a triangle; `AddTriangleFacing` turns it
   up, so on a cliff it is culled from the side, and the sea plane under the mountain shows through the hole. Fixed in the stubs
   and the belt (0.2) on 2026-11-07. Citadel isn't jittered, so sea seen on its cliffs from afar (the user's report, same day)

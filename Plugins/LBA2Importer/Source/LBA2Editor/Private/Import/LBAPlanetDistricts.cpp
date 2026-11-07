@@ -664,6 +664,42 @@ const LBAPlanetDistricts::FGroundShares* LBAPlanetDistricts::FDistricts::GetGrou
 	return Result.GetPtrOrNull();
 }
 
+bool LBAPlanetDistricts::FDistricts::IsWallBrick(int32 Brick) const
+{
+	if (Brick == 0)
+	{
+		return false;
+	}
+	if (const bool* Known = WallBricks.Find(Brick))
+	{
+		return *Known;
+	}
+	bool& Result = WallBricks.Add(Brick, false);
+	FLBABrickSprite Sprite;
+	if (!Data->LoadBrick(Brick, Sprite))
+	{
+		return false;
+	}
+	// The sprite's faces: the top diamond, and under its lower edges the +Z (left) and +X (right) sides, 15 pixels high.
+	int32 Pixels[3] = {}, Opaque[3] = {};
+	for (int32 Y = 0; Y < FLBABrickSprite::Height; ++Y)
+	{
+		for (int32 X = 0; X < FLBABrickSprite::Width; ++X)
+		{
+			const float Edge = 24.f - FMath::Abs(X + 0.5f - 24.f) * 0.5f;
+			const int32 Face = Y + 0.5f <= Edge ? 0 : Y + 0.5f < Edge + 15.f ? (X < 24 ? 1 : 2) : INDEX_NONE;
+			if (Face != INDEX_NONE)
+			{
+				++Pixels[Face];
+				Opaque[Face] += Sprite.Pixels[Y * FLBABrickSprite::Width + X] != 0 ? 1 : 0;
+			}
+		}
+	}
+	constexpr float Full = 0.9f, Empty = 0.1f;
+	Result = Opaque[1] >= Full * Pixels[1] && Opaque[2] >= Full * Pixels[2] && Opaque[0] <= Empty * Pixels[0];
+	return Result;
+}
+
 bool LBAPlanetDistricts::FDistricts::HasIsland(const FString& Island) const
 {
 	return Districts.ContainsByPredicate([&Island](const TUniquePtr<FDistrict>& District) { return District->Island == Island; });
@@ -1014,6 +1050,20 @@ bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out,
 	Out.Scenes.Init(INDEX_NONE, Out.Size.X * Out.Size.Z);
 	Out.Pieces.Reset();
 	Out.Replaced.Init(false, Out.Bricks.Num());
+	Out.WallStyles.Reset();
+	Out.WallStyle.Init(INDEX_NONE, Out.Bricks.Num());
+	Out.WallRow.Init(0, Out.Bricks.Num());
+	// A one-column layout's style: its bricks from the bottom up.
+	auto StyleOf = [&Out](const FLBALayout& Layout)
+	{
+		TArray<int32> Bricks;
+		for (const FLBALayoutBlock& Block : Layout.Blocks)
+		{
+			Bricks.Add(Block.Brick);
+		}
+		const int32 Found = Out.WallStyles.IndexOfByKey(Bricks);
+		return Found != INDEX_NONE ? Found : Out.WallStyles.Add(MoveTemp(Bricks));
+	};
 
 	// Each column from the scene drawn over it, but the sea's (its water and the sea floor under it).
 	auto IsSea = [&District](int32 X, int32 Z)
@@ -1044,10 +1094,18 @@ bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out,
 				Out.Scenes[Column] = Offset.Key;
 				for (int32 Y = 0; Y < LBA::GridSizeY; ++Y)
 				{
-					if (const FLBALayoutBlock* Block = LBA1::GetBlock(Library, Grid.Get(X, Y, Z)))
+					const FLBAGridCell& GridCell = Grid.Get(X, Y, Z);
+					if (const FLBALayoutBlock* Block = LBA1::GetBlock(Library, GridCell))
 					{
-						Out.Bricks[Out.Index(TX, Y + Up, TZ)] = Block->Brick;
-						Out.Shapes[Out.Index(TX, Y + Up, TZ)] = Block->Shape;
+						const int32 Index = Out.Index(TX, Y + Up, TZ);
+						Out.Bricks[Index] = Block->Brick;
+						Out.Shapes[Index] = Block->Shape;
+						const FLBALayout* Layout = Library.Layouts.IsValidIndex(GridCell.Layout) ? &Library.Layouts[GridCell.Layout] : nullptr;
+						if (Layout && Layout->SizeX == 1 && Layout->SizeZ == 1 && Layout->SizeY <= MAX_uint8 && IsWallBrick(Block->Brick))
+						{
+							Out.WallStyle[Index] = StyleOf(*Layout);
+							Out.WallRow[Index] = uint8(GridCell.Block);
+						}
 					}
 				}
 			}
@@ -1118,8 +1176,23 @@ bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out,
 				}
 				for (int32 Y = Floor; Y < Bottom && Bottom < Out.Size.Y; ++Y)
 				{
-					Out.Bricks[Out.Index(X, Y, Z)] = Out.Bricks[Out.Index(X, Bottom, Z)];
-					Out.Shapes[Out.Index(X, Y, Z)] = 1;
+					const int32 Index = Out.Index(X, Y, Z);
+					const int32 BottomIndex = Out.Index(X, Bottom, Z);
+					Out.Bricks[Index] = Out.Bricks[BottomIndex];
+					Out.Shapes[Index] = 1;
+					// A wall goes on down as its style repeats.
+					const int32 Style = Out.WallStyle[BottomIndex];
+					if (Style != INDEX_NONE)
+					{
+						const TArray<int32>& Bricks = Out.WallStyles[Style];
+						const int32 Row = ((int32(Out.WallRow[BottomIndex]) - (Bottom - Y)) % Bricks.Num() + Bricks.Num()) % Bricks.Num();
+						if (IsWallBrick(Bricks[Row]))
+						{
+							Out.Bricks[Index] = Bricks[Row];
+							Out.WallStyle[Index] = Style;
+							Out.WallRow[Index] = uint8(Row);
+						}
+					}
 				}
 			}
 		}

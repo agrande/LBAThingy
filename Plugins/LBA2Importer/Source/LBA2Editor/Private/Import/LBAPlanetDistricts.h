@@ -105,6 +105,16 @@ namespace LBAPlanetDistricts
 		/** Per cell (Index): a piece's, drawn by its model rather than as a brick (its brick stays: the collision). */
 		TBitArray<> Replaced;
 
+		/**
+		 * Walls (Phase 3b): a wall style is a one-column layout's bricks from the bottom up (Principal's stone wall: 537, 538).
+		 * A cell of a wall brick (FDistricts::IsWallBrick) placed by such a layout is drawn as part of a tiling wall
+		 * (LBAPlanetTowns), not as its brick, which stays for collision and for hiding the faces of the bricks beside it.
+		 */
+		TArray<TArray<int32>> WallStyles;
+		/** Per cell (Index): its wall style (INDEX_NONE: not a wall) and its row in it. */
+		TArray<int32> WallStyle;
+		TArray<uint8> WallRow;
+
 		int32 Index(int32 X, int32 Y, int32 Z) const { return (Z * Size.X + X) * Size.Y + Y; }
 		/** Where cell 0, 0, 0 is in the frame (cm, as FPlaced::FrameToMap takes it). */
 		FVector GetOrigin() const;
@@ -138,11 +148,18 @@ namespace LBAPlanetDistricts
 		 */
 		const FGroundShares* GetGroundShares(int32 Brick) const;
 
+		/**
+		 * A brick that is the middle of a wall: both its sides drawn opaque and no top (a brick over it always hides it), as
+		 * Principal's stone 537 and 538.
+		 */
+		bool IsWallBrick(int32 Brick) const;
+
 	private:
 		struct FDistrict;
 		TUniquePtr<LBA1::FData> Data;
 		FString Directory;
 		mutable TMap<int32, TOptional<FGroundShares>> GroundBricks;
+		mutable TMap<int32, bool> WallBricks;
 		TArray<TUniquePtr<FDistrict>> Districts;
 	};
 }

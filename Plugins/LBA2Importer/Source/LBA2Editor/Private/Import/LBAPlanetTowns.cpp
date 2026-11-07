@@ -29,6 +29,191 @@ namespace LBAPlanetTownsPrivate
 	constexpr double StepCm = LBA1::CellHeight * Scale;
 	/** How far (cells) a town's kinds of ground soften into each other. */
 	constexpr int32 KindsSoften = 3;
+
+	/** A brick sprite's side, unsheared: one cell along, one up (pixels). */
+	constexpr int32 FaceW = FLBABrickSprite::Width / 2;
+	constexpr int32 FaceH = 15;
+
+	/** The palette index of a brick sprite's side (0: +Z, the sprite's left half; 1: +X) at U along it and V down it. */
+	uint8 SidePixel(const FLBABrickSprite& Sprite, int32 Side, int32 U, int32 V)
+	{
+		const int32 X = Side == 0 ? U : FaceW + U;
+		const int32 Top = FMath::FloorToInt(12.f + (Side == 0 ? X : FLBABrickSprite::Width - 1 - X) * 0.5f);
+		const int32 Index = (Top + V) * FLBABrickSprite::Width + X;
+		return Sprite.Pixels.IsValidIndex(Index) ? Sprite.Pixels[Index] : 0;
+	}
+
+	/**
+	 * A wall style's tile: one cell wide, a cell high per row, its rows from the bottom up. Every side of a wall shows the
+	 * same art, the brighter of the sprites' two sides (the lit one: the engine shades the others), its holes the mean color.
+	 */
+	TArray<FColor> MakeWallTile(const LBA1::FData& Data, const TArray<FColor>& Palette, TConstArrayView<int32> Bricks, int32& OutWidth, int32& OutHeight)
+	{
+		TArray<FLBABrickSprite> Sprites;
+		for (const int32 Brick : Bricks)
+		{
+			FLBABrickSprite& Sprite = Sprites.AddDefaulted_GetRef();
+			if (Data.LoadBrick(Brick, Sprite))
+			{
+				LBAPlanetGround::MovePlantShadows(Sprite);
+			}
+			Sprite.Pixels.SetNumZeroed(FLBABrickSprite::Width * FLBABrickSprite::Height);
+		}
+		auto ColorOf = [&Palette](uint8 Index) { return Palette.IsValidIndex(Index) ? Palette[Index] : FColor::Black; };
+		float Brightness[2] = {};
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			for (const FLBABrickSprite& Sprite : Sprites)
+			{
+				for (int32 V = 0; V < FaceH; ++V)
+				{
+					for (int32 U = 0; U < FaceW; ++U)
+					{
+						const uint8 Index = SidePixel(Sprite, Side, U, V);
+						Brightness[Side] += Index ? FLinearColor(ColorOf(Index)).GetLuminance() : 0.f;
+					}
+				}
+			}
+		}
+		const int32 Side = Brightness[1] > Brightness[0] ? 1 : 0;
+		OutWidth = FaceW;
+		OutHeight = FaceH * Sprites.Num();
+		TArray<FColor> Pixels;
+		Pixels.Init(FColor::Black, OutWidth * OutHeight);
+		TBitArray<> Holes(false, Pixels.Num());
+		FLinearColor Sum = FLinearColor::Black;
+		int32 Count = 0;
+		for (int32 Row = 0; Row < Sprites.Num(); ++Row)
+		{
+			for (int32 V = 0; V < FaceH; ++V)
+			{
+				for (int32 U = 0; U < FaceW; ++U)
+				{
+					const int32 At = ((Sprites.Num() - 1 - Row) * FaceH + V) * OutWidth + U;
+					const uint8 Index = SidePixel(Sprites[Row], Side, U, V);
+					if (Index == 0)
+					{
+						Holes[At] = true;
+						continue;
+					}
+					Pixels[At] = ColorOf(Index);
+					Sum += FLinearColor(Pixels[At]);
+					++Count;
+				}
+			}
+		}
+		const FColor Mean = Count > 0 ? (Sum / float(Count)).ToFColor(false) : FColor(70, 70, 70);
+		for (TConstSetBitIterator<> It(Holes); It; ++It)
+		{
+			Pixels[It.GetIndex()] = Mean;
+		}
+		return Pixels;
+	}
+
+	/**
+	 * A town's walls (FTown::WallStyle) drawn from one scene's columns, as few quads as cover their open faces (a face is open
+	 * where Cells, the bricks drawn, has none beside it): per side and slice, cells of the same style and phase merged into
+	 * rectangles. Their UVs tile the style's texture by position (a cell along, a row up), so merged faces keep the art's size.
+	 */
+	void EmitWalls(const LBAPlanetDistricts::FTown& Town, const LBABrickMesh::FCells& Cells, int32 Scene, TFunctionRef<int32(int32 Style)> SectionOf,
+		FLBAMeshBuilder& Builder)
+	{
+		// The face's normal axis and sign, and the axes along it and up it (cell axes: 0 x, 1 y up, 2 z).
+		struct FSide
+		{
+			int32 N, U, V, Sign;
+		};
+		const FSide Sides[6] = { { 0, 2, 1, 1 }, { 0, 2, 1, -1 }, { 2, 0, 1, 1 }, { 2, 0, 1, -1 }, { 1, 0, 2, 1 }, { 1, 0, 2, -1 } };
+		auto Position = [](const FIntVector& Cell) { return FVector3f(Cell.X * CellCm, Cell.Z * CellCm, Cell.Y * StepCm); };
+		TArray<int32> Mask;
+		for (const FSide& Side : Sides)
+		{
+			const int32 SizeU = Town.Size[Side.U];
+			const int32 SizeV = Town.Size[Side.V];
+			const bool bVertical = Side.N != 1;
+			FIntVector Axis = FIntVector::ZeroValue;
+			Axis[Side.N] = Side.Sign;
+			const FVector3f Normal(float(Axis.X), float(Axis.Z), float(Axis.Y));
+			Mask.SetNumUninitialized(SizeU * SizeV);
+			for (int32 Slice = 0; Slice < Town.Size[Side.N]; ++Slice)
+			{
+				// A key per open wall face: its style and phase (its row less its height, so rows line up up the merged face).
+				bool bAny = false;
+				for (int32 V = 0; V < SizeV; ++V)
+				{
+					for (int32 U = 0; U < SizeU; ++U)
+					{
+						FIntVector Cell;
+						Cell[Side.N] = Slice;
+						Cell[Side.U] = U;
+						Cell[Side.V] = V;
+						const int32 Index = Town.Index(Cell.X, Cell.Y, Cell.Z);
+						const int32 Style = Town.WallStyle[Index];
+						int32 Key = INDEX_NONE;
+						if (Style != INDEX_NONE && Town.Scenes[Cell.Z * Town.Size.X + Cell.X] == Scene
+							&& Cells.BrickAt(Cell.X + Axis.X, Cell.Y + Axis.Y, Cell.Z + Axis.Z) == 0)
+						{
+							const int32 Period = Town.WallStyles[Style].Num();
+							const int32 Phase = bVertical ? ((int32(Town.WallRow[Index]) - Cell.Y) % Period + Period) % Period : 0;
+							Key = Style * 256 + Phase;
+							bAny = true;
+						}
+						Mask[V * SizeU + U] = Key;
+					}
+				}
+				for (int32 V = 0; bAny && V < SizeV; ++V)
+				{
+					for (int32 U = 0; U < SizeU; ++U)
+					{
+						const int32 Key = Mask[V * SizeU + U];
+						if (Key == INDEX_NONE)
+						{
+							continue;
+						}
+						int32 Width = 1;
+						while (U + Width < SizeU && Mask[V * SizeU + U + Width] == Key)
+						{
+							++Width;
+						}
+						int32 Height = 1;
+						for (bool bRow = true; bRow && V + Height < SizeV; Height += bRow ? 1 : 0)
+						{
+							for (int32 K = 0; K < Width && bRow; ++K)
+							{
+								bRow = Mask[(V + Height) * SizeU + U + K] == Key;
+							}
+						}
+						for (int32 J = 0; J < Height; ++J)
+						{
+							for (int32 K = 0; K < Width; ++K)
+							{
+								Mask[(V + J) * SizeU + U + K] = INDEX_NONE;
+							}
+						}
+						const int32 Style = Key / 256;
+						const float Period = float(Town.WallStyles[Style].Num());
+						const float Phase = float(Key % 256);
+						FLBAVertex Corners[4];
+						const FIntPoint Steps[4] = { { 0, 0 }, { Width, 0 }, { Width, Height }, { 0, Height } };
+						for (int32 C = 0; C < 4; ++C)
+						{
+							FIntVector Corner;
+							Corner[Side.N] = Slice + (Side.Sign > 0 ? 1 : 0);
+							Corner[Side.U] = U + Steps[C].X;
+							Corner[Side.V] = V + Steps[C].Y;
+							Corners[C].Position = Position(Corner);
+							Corners[C].Normal = Normal;
+							// The tile's rows run down the texture: row r's bottom is at -r / Period.
+							Corners[C].UV = FVector2f(float(Corner[Side.U]), -(Corner[Side.V] + Phase) / Period);
+						}
+						const int32 Section = SectionOf(Style);
+						Builder.AddTriangleFacing(Section, Corners[0], Corners[1], Corners[2], Normal);
+						Builder.AddTriangleFacing(Section, Corners[0], Corners[2], Corners[3], Normal);
+					}
+				}
+			}
+		}
+	}
 }
 
 void LBAPlanetTowns::EmitGround(const LBAPlanetDistricts::FDistricts& Districts, const LBAPlanetKit::FTable& Kit, TConstArrayView<LBAPlanetDistricts::FPlaced> Placed, const FVector& Pivot,
@@ -120,7 +305,7 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		}
 		for (int32 Index = 0; Index < Town.Bricks.Num(); ++Index)
 		{
-			if (Town.Bricks[Index] != 0 && !Town.Replaced[Index])
+			if (Town.Bricks[Index] != 0 && !Town.Replaced[Index] && Town.WallStyle[Index] == INDEX_NONE)
 			{
 				Used.Add(Town.Bricks[Index]);
 			}
@@ -205,18 +390,44 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 	}
 	Context.FinishPendingBuilds();
 
+	// The walls' materials, one per style over the island's towns (T_LBA1_<ISLAND>_Wall_<first brick>_<rows>).
+	TMap<FString, UMaterialInterface*> WallMaterials;
+	auto WallMaterialOf = [&](const TArray<int32>& Bricks) -> UMaterialInterface*
+	{
+		const FString Key = FString::JoinBy(Bricks, TEXT(","), [](int32 Brick) { return FString::FromInt(Brick); });
+		if (UMaterialInterface** Found = WallMaterials.Find(Key))
+		{
+			return *Found;
+		}
+		int32 Width = 0, Height = 0;
+		const TArray<FColor> TilePixels = MakeWallTile(Data, Palette, Bricks, Width, Height);
+		UTexture2D* Texture = Context.CreateTexture(TownFolder, FString::Printf(TEXT("T_LBA1_%s_Wall_%d_%d"), *Island, Bricks[0], Bricks.Num()), Width, Height, TilePixels, true);
+		UMaterialInterface* Material = Texture ? Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Texture, TownFolder) : Atlas.FillMaterial;
+		return WallMaterials.Add(Key, Material);
+	};
+
 	int32 Built = 0;
+	int32 WallTriangles = 0;
 	for (const FPiece& Piece : Pieces)
 	{
 		const LBAPlanetDistricts::FTown& Town = Towns[Piece.Town];
 		const LBAPlanetDistricts::FPlaced& District = *TownPlaces[Piece.Town];
 		FLBAMeshBuilder Builder;
 		const int32 Scene = Piece.Scene;
-		LBABrickMesh::EmitVisual(CellsOf(Town, true), Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material), Scale,
+		const LBABrickMesh::FCells Visual = CellsOf(Town, true);
+		LBABrickMesh::EmitVisual(Visual, Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material), Scale,
 			Context.GetProjectSettings().BackFaces, [&Town, &Districts, Scene](const FIntVector& Cell, int32)
 			{
-				return Town.Scenes[Cell.Z * Town.Size.X + Cell.X] == Scene && !Districts.GetGroundShares(Town.Bricks[Town.Index(Cell.X, Cell.Y, Cell.Z)]);
+				const int32 Index = Town.Index(Cell.X, Cell.Y, Cell.Z);
+				return Town.Scenes[Cell.Z * Town.Size.X + Cell.X] == Scene && !Districts.GetGroundShares(Town.Bricks[Index]) && Town.WallStyle[Index] == INDEX_NONE;
 			});
+		const int32 BrickTriangles = Builder.NumTriangles();
+		EmitWalls(Town, Visual, Scene, [&](int32 Style)
+		{
+			UMaterialInterface* Material = WallMaterialOf(Town.WallStyles[Style]);
+			return Builder.GetSection(FName(Material->GetName()), Material);
+		}, Builder);
+		WallTriangles += Builder.NumTriangles() - BrickTriangles;
 		if (Builder.IsEmpty())
 		{
 			continue;
@@ -251,6 +462,7 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		UE_LOG(LogLBA2, Display, TEXT("LBA1 town %s on %s: scene %d, %d triangles"), *District.Name, *Island, Scene, Triangles);
 		++Built;
 	}
+	UE_LOG(LogLBA2, Display, TEXT("LBA1 towns on %s: %d wall styles, %d wall triangles"), *Island, WallMaterials.Num(), WallTriangles);
 
 	// The kit's models, instanced per model over the island's towns.
 	FLBARemakeAssets Remake(Context);
