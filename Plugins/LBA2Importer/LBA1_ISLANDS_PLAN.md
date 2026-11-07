@@ -19,7 +19,7 @@ for what isn't replaced yet.
 | 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
 | 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
 | 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
-| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls built: tiling wall faces (shots `phase3b_walls_before_after.png`, 2026-11-07). Next: 3b roofs |
+| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (72f2d74, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). Next: simple objects as primitives, or Proxim City's roofs |
 | 4 | Trees, rocks and paths | not started |
 | 5 | Rune stones on real islets | not started |
 
@@ -274,15 +274,47 @@ Citabau too: not a stub island matter. The bricks' collision is still what Twins
 - Counts: 17 styles on Principal (5,420 wall triangles), 14 on Proxima (1,448), 11 on Rebellion (548).
 - Checks: 157 tests pass; globe 152.2 fps.
 
-### Notes for the roofs (3b, next)
+### What was built (2026-11-07): 3b roofs, as ramps
 
-- Proxima's and Old Burg's thatch roofs are many small slope pieces (survey: 42:189 x30 3x4x1, 42:190 x29 3x3x1, 13:204 x37
-  1x2x1, 13:209 x54 1x1x1...), whose bricks carry ramp collision shapes (2 to 5). Drawn as cubes with the sprite's art they
-  make the sawtooth seen in `phase3b_walls_before_after.png` (Old Burg 2).
-- Idea: cells of a ramp shape with thatch art become sloped quads along the ramp (shape gives the direction), merged like the
-  walls, with a tiling thatch texture unprojected from the slope's sprite; the ridge pieces (13:225) as a ridge beam.
-- Aiming on `L_TWINSUN`: the Poses formula below is wrong (see there). Close poses ringed around town actors' bound centers
-  are in `Saved/LookDev/lba1_review/p3b_close_poses.txt` (Proxim City, the harbour, Port Belooga, Old Burg).
+- **Ramps are slopes.** Every town cell of a ramp shape (2 to 5: Old Burg's thatch roofs, stairs, grass slopes; 1,665 cells
+  in scenes 12, 13, 24, 25, 42, 44 and 59) is drawn along its collision surface instead of as a cube (`EmitSlopes` in `LBAPlanetTowns`). Its UVs
+  are the iso projection of the slope into its brick's sprite (`IsoPixel`: x right-down, z left-down, 24 x 12 pixels a cell,
+  15 a step), so it shows exactly what the camera saw. The sprites go whole into their own atlas
+  (`T_LBA1_<ISLAND>_Slopes`, grown 2 pixels so edges don't sample transparency): a slope's art spans the sprite's top and
+  sides, which the brick atlas packs apart.
+- **Ramps facing away** (2 and 3: the iso camera saw them edge on, their sprites are slivers) show the art of the facing
+  ramp (4, 5; the mirror shape first) whose mean color is nearest, read along the slope.
+- Ramp sides, where open, are a flat fill of the brick's side color (`BrickFill`). Collision unchanged.
+- Shots: `Saved/LookDev/lba1_review/phase3b_roofs_before_after.png`. Old Burg's roofs are continuous thatch; stairs are slopes
+  with their steps' art.
+- Checks: 157 tests pass; globe 155.1 fps.
+- **Left:** stepped stone gable edges under the slopes (the wall cells under a roof); corner ramps (6 to 13, ~100 cells) stay cubes.
+
+### Proxim City's roofs (not solved)
+
+Its thatch roofs are not ramps: solid cells whose art draws a slope, one step up per cell, in 3 x 3 and 3 x 4 pieces
+(42:186 and 42:188 facing the camera, 42:190 the edge-on back, x58), interleaved with composite slices of slope plus the wall
+under the eave (42:187 x6) and gable ends (42:189 x30). Tried and reverted (2026-11-07): fitting each solid piece with a ramp
+plane plus its cube-like bricks (intersection over union in the piece's composed sprite, at least 0.7, the plane climbing 3
+steps or more). It finds the three pure slopes (0.78-0.89) but:
+- per-cell sprites leave holes in the fitted slopes, because a piece's slope art straddles the cells' sprites (the projection
+  must read the piece's composed image instead);
+- the composite slices (42:187: 0.62, 42:189: 0.34) don't fit, so every other slice of a roof stays a staircase;
+- palisades (24:59, 24:60 and Rebellion's copies) and a Principal 1x8x3 piece fit too (0.71-0.78). The real roof pieces have
+  blank filler cells (brick 223) around their slope, a third of their cells; those don't.
+Better next try: whole roofs per house (a gable over the footprint of a connected run of thatch cells, ridge along its
+long side, a tiling thatch texture unprojected from 42:186), or remake-style roof models in the kit table.
+
+### Simple objects left as bricks (survey, 2026-11-07)
+
+Ranked by cells (count x size), not ground, not walls, not in the kit:
+- palisade 24:59 (5x4x1, x71) and 24:60, Rebellion's 59:59/59:60: brown log walls with jagged tops;
+- picket fences 12:143 (1x3x4, x82), 13:144 (4x3x1, x59); iron railings 12:152 (x100), 12:153 (x84);
+- boulder rows 17:68 (x59), 12:67, 12:69, 17:74-77 (left to Phase 4's rocks);
+- sandbags 11:172 (2x1x1, x165), 11:173 (1x1x2, x146); wooden platform 11:231 (3x1x3, x88); crate stacks 11:177 (2x3x2, x55);
+- life buoys 11:104 (x11); tree trunks 12:112; arches and doorways 13:126, 11:239, 59:84 (walls with art, fine as bricks).
+Most suit preference 3 (generated primitives: posts and rails for fences and railings, boxes for sandbags and platforms,
+a torus for buoys), with colors from their sprites.
 
 ## Phase 4: trees, rocks and paths
 

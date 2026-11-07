@@ -8,6 +8,7 @@
 #include "Formats/LBA1.h"
 #include "Formats/LBAIso.h"
 #include "Formats/LBAXpl.h"
+#include "Import/LBABodyConverter.h"
 #include "Import/LBABrickMesh.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMaterialLibrary.h"
@@ -214,6 +215,269 @@ namespace LBAPlanetTownsPrivate
 			}
 		}
 	}
+
+	/** A ramp: the collision shapes 2 to 5, rising one step over a cell toward +x (2), +z (3), -z (4) or -x (5). */
+	bool IsRamp(int32 Shape)
+	{
+		return Shape >= 2 && Shape <= 5;
+	}
+
+	/** A ramp's height (0..1 of a step) at a point of its cell, as its collision (LBAIsoImporter's RampHeight). */
+	float RampHeight(int32 Shape, float X, float Z)
+	{
+		return Shape == 2 ? X : Shape == 3 ? Z : Shape == 4 ? 1.f - Z : Shape == 5 ? 1.f - X : 1.f;
+	}
+
+	/** Ramps 4 and 5 face the iso camera (from +x, +z): their sprites hold the slope's art. 2 and 3 it saw edge on. */
+	bool FacesCamera(int32 Shape)
+	{
+		return Shape == 4 || Shape == 5;
+	}
+
+	/** A point of a ramp's cell (x, z) along its slope (0 low, 1 high) and across it; and back for another ramp. */
+	FVector2f AlongRamp(int32 Shape, float X, float Z)
+	{
+		return Shape == 2 ? FVector2f(X, Z) : Shape == 3 ? FVector2f(Z, X) : Shape == 4 ? FVector2f(1.f - Z, X) : FVector2f(1.f - X, Z);
+	}
+	FVector2f FromAlongRamp(int32 Shape, const FVector2f& Along)
+	{
+		return Shape == 2 ? Along : Shape == 3 ? FVector2f(Along.Y, Along.X) : Shape == 4 ? FVector2f(Along.Y, 1.f - Along.X) : FVector2f(1.f - Along.X, Along.Y);
+	}
+
+	/** Where the iso camera drew a point of a cell (x, y up, z, 0..1) in its brick's sprite (pixels; as the cube faces map). */
+	FVector2f IsoPixel(float X, float Y, float Z)
+	{
+		return FVector2f(24.f + 24.f * X - 24.f * Z, 12.f * X + 12.f * Z + 15.f * (1.f - Y));
+	}
+
+	/**
+	 * Ramps drawn as slopes (rather than cubes, whose faces stretch a slope's art into a sawtooth). Their sprites, whole, in an
+	 * atlas of their own: a slope's art spans the sprite's top and sides, which the brick atlas packs apart.
+	 */
+	struct FSlopeAtlas
+	{
+		static constexpr int32 Pad = 2;
+		static constexpr int32 CellW = FLBABrickSprite::Width + 2 * Pad;
+		static constexpr int32 CellH = FLBABrickSprite::Height + 2 * Pad;
+		TMap<int32, FIntPoint> Cells;
+		int32 Width = 0;
+		int32 Height = 0;
+		UMaterialInterface* Material = nullptr;
+		/** A ramp facing away (brick * 16 + shape): the facing ramp whose art its slope shows (brick, shape). */
+		TMap<int32, FIntPoint> Partners;
+
+		/** Atlas UV of a point of a brick's sprite (pixels). */
+		FVector2f UV(const FIntPoint& Cell, const FVector2f& Pixel) const
+		{
+			return FVector2f((Cell.X + Pad + Pixel.X) / Width, (Cell.Y + Pad + Pixel.Y) / Height);
+		}
+	};
+
+	/**
+	 * The slope atlas of an island's ramps (Ramps: brick * 16 + shape), its colors as the brick atlas's; each sprite grown by
+	 * its padding so a slope's edges, on the sprite's outline, don't sample transparency. A ramp facing away is given the
+	 * facing ramp (the mirror shape first) whose mean color is nearest its own.
+	 */
+	TArray<FColor> MakeSlopeAtlas(const LBA1::FData& Data, const TArray<FColor>& Palette, const TSet<int32>& Ramps, FSlopeAtlas& Atlas)
+	{
+		TArray<int32> Bricks;
+		for (const int32 Ramp : Ramps)
+		{
+			Bricks.AddUnique(Ramp / 16);
+		}
+		Bricks.Sort();
+		const int32 Columns = FMath::Max(1, FMath::CeilToInt(FMath::Sqrt(float(Bricks.Num()))));
+		Atlas.Width = Columns * FSlopeAtlas::CellW;
+		Atlas.Height = FMath::Max(1, FMath::DivideAndRoundUp(Bricks.Num(), Columns)) * FSlopeAtlas::CellH;
+		TArray<FColor> Pixels;
+		Pixels.Init(FColor(0, 0, 0, 0), Atlas.Width * Atlas.Height);
+		TMap<int32, FLinearColor> Means;
+		for (int32 Index = 0; Index < Bricks.Num(); ++Index)
+		{
+			const FIntPoint Cell((Index % Columns) * FSlopeAtlas::CellW, (Index / Columns) * FSlopeAtlas::CellH);
+			Atlas.Cells.Add(Bricks[Index], Cell);
+			FLBABrickSprite Sprite;
+			if (!Data.LoadBrick(Bricks[Index], Sprite))
+			{
+				continue;
+			}
+			LBAPlanetGround::MovePlantShadows(Sprite);
+			FLinearColor Sum = FLinearColor::Black;
+			int32 Count = 0;
+			for (int32 Y = 0; Y < FLBABrickSprite::Height; ++Y)
+			{
+				for (int32 X = 0; X < FLBABrickSprite::Width; ++X)
+				{
+					const uint8 Pixel = Sprite.Pixels.IsValidIndex(Y * FLBABrickSprite::Width + X) ? Sprite.Pixels[Y * FLBABrickSprite::Width + X] : 0;
+					if (Pixel != 0 && Palette.IsValidIndex(Pixel))
+					{
+						FColor Color = Palette[Pixel];
+						Color.A = 255;
+						Pixels[(Cell.Y + FSlopeAtlas::Pad + Y) * Atlas.Width + Cell.X + FSlopeAtlas::Pad + X] = Color;
+						Sum += FLinearColor(Color);
+						++Count;
+					}
+				}
+			}
+			Means.Add(Bricks[Index], Count > 0 ? Sum / float(Count) : FLinearColor::Black);
+			// Grown by the padding, a pixel at a time.
+			for (int32 Grow = 0; Grow < FSlopeAtlas::Pad; ++Grow)
+			{
+				const TArray<FColor> Before = Pixels;
+				for (int32 Y = 0; Y < FSlopeAtlas::CellH; ++Y)
+				{
+					for (int32 X = 0; X < FSlopeAtlas::CellW; ++X)
+					{
+						FColor& Here = Pixels[(Cell.Y + Y) * Atlas.Width + Cell.X + X];
+						for (const FIntPoint Step : { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) })
+						{
+							const FIntPoint At(X + Step.X, Y + Step.Y);
+							if (Here.A == 0 && At.X >= 0 && At.Y >= 0 && At.X < FSlopeAtlas::CellW && At.Y < FSlopeAtlas::CellH
+								&& Before[(Cell.Y + At.Y) * Atlas.Width + Cell.X + At.X].A != 0)
+							{
+								Here = Before[(Cell.Y + At.Y) * Atlas.Width + Cell.X + At.X];
+							}
+						}
+					}
+				}
+			}
+		}
+		for (const int32 Ramp : Ramps)
+		{
+			const int32 Brick = Ramp / 16;
+			const int32 Shape = Ramp % 16;
+			if (FacesCamera(Shape))
+			{
+				continue;
+			}
+			const int32 Mirror = Shape == 2 ? 5 : 4;
+			FIntPoint Best(INDEX_NONE, INDEX_NONE);
+			float BestDistance = MAX_flt;
+			for (const int32 Other : Ramps)
+			{
+				const int32 OtherShape = Other % 16;
+				if (!FacesCamera(OtherShape))
+				{
+					continue;
+				}
+				const FLinearColor Difference = Means.FindRef(Brick) - Means.FindRef(Other / 16);
+				const float Distance = FMath::Square(Difference.R) + FMath::Square(Difference.G) + FMath::Square(Difference.B) + (OtherShape == Mirror ? 0.f : 1e-4f);
+				if (Distance < BestDistance)
+				{
+					BestDistance = Distance;
+					Best = FIntPoint(Other / 16, OtherShape);
+				}
+			}
+			if (Best.X != INDEX_NONE)
+			{
+				Atlas.Partners.Add(Ramp, Best);
+			}
+		}
+		return Pixels;
+	}
+
+	/**
+	 * A scene's ramps as slopes: the top along the collision's surface, its art where the iso camera saw it (a facing ramp's
+	 * own sprite, or its partner's read along the slope); the sides, where open, a flat fill of the brick's side color.
+	 */
+	void EmitSlopes(const LBAPlanetDistricts::FTown& Town, const LBABrickMesh::FCells& Cells, int32 Scene, const FSlopeAtlas& Slopes,
+		const FLBAIsoImporter::FAtlas& Atlas, FLBAMeshBuilder& Builder)
+	{
+		int32 Section = INDEX_NONE;
+		int32 FillSection = INDEX_NONE;
+		auto Position = [](float X, float Y, float Z) { return FVector3f(X * CellCm, Z * CellCm, Y * StepCm); };
+		for (int32 Z = 0; Z < Town.Size.Z; ++Z)
+		{
+			for (int32 X = 0; X < Town.Size.X; ++X)
+			{
+				if (Town.Scenes[Z * Town.Size.X + X] != Scene)
+				{
+					continue;
+				}
+				for (int32 Y = 0; Y < Town.Size.Y; ++Y)
+				{
+					const int32 Brick = Cells.BrickAt(X, Y, Z);
+					const int32 Shape = Cells.ShapeAt(X, Y, Z);
+					const int32 Index = Town.Index(X, Y, Z);
+					if (!Brick || !IsRamp(Shape) || Town.WallStyle[Index] != INDEX_NONE)
+					{
+						continue;
+					}
+					FIntPoint Art(Brick, Shape);
+					const FIntPoint* Partner = FacesCamera(Shape) ? nullptr : Slopes.Partners.Find(Brick * 16 + Shape);
+					if (Partner)
+					{
+						Art = *Partner;
+					}
+					const FIntPoint* ArtCell = Slopes.Cells.Find(Art.X);
+					if (!ArtCell)
+					{
+						continue;
+					}
+					// The slope: corners (0,0), (1,0), (1,1), (0,1) in x, z.
+					const FVector2f Steps[4] = { { 0.f, 0.f }, { 1.f, 0.f }, { 1.f, 1.f }, { 0.f, 1.f } };
+					FLBAVertex Top[4];
+					const FVector2f Gradient(RampHeight(Shape, 1.f, 0.f) - RampHeight(Shape, 0.f, 0.f), RampHeight(Shape, 0.f, 1.f) - RampHeight(Shape, 0.f, 0.f));
+					const FVector3f Normal = FVector3f(-Gradient.X * StepCm / CellCm, -Gradient.Y * StepCm / CellCm, 1.f).GetSafeNormal();
+					for (int32 C = 0; C < 4; ++C)
+					{
+						const float H = RampHeight(Shape, Steps[C].X, Steps[C].Y);
+						Top[C].Position = Position(X + Steps[C].X, Y + H, Z + Steps[C].Y);
+						Top[C].Normal = Normal;
+						const FVector2f ArtXZ = Art.Y == Shape ? Steps[C] : FromAlongRamp(Art.Y, AlongRamp(Shape, Steps[C].X, Steps[C].Y));
+						Top[C].UV = Slopes.UV(*ArtCell, IsoPixel(ArtXZ.X, RampHeight(Art.Y, ArtXZ.X, ArtXZ.Y), ArtXZ.Y));
+					}
+					Section = Section != INDEX_NONE ? Section : Builder.GetSection(TEXT("Slopes"), Slopes.Material);
+					Builder.AddTriangleFacing(Section, Top[0], Top[1], Top[2], Normal);
+					Builder.AddTriangleFacing(Section, Top[0], Top[2], Top[3], Normal);
+
+					// The open sides, following the slope's heights along their top edge.
+					const TStaticArray<FColor, 3>* Colors = Atlas.FaceColors.Find(Brick);
+					struct FSide
+					{
+						FIntVector Dir;
+						FVector2f A, B;
+					};
+					const FSide Sides[4] = { { { 1, 0, 0 }, { 1.f, 0.f }, { 1.f, 1.f } }, { { -1, 0, 0 }, { 0.f, 0.f }, { 0.f, 1.f } },
+						{ { 0, 0, 1 }, { 0.f, 1.f }, { 1.f, 1.f } }, { { 0, 0, -1 }, { 0.f, 0.f }, { 1.f, 0.f } } };
+					for (const FSide& Side : Sides)
+					{
+						if (Cells.BrickAt(X + Side.Dir.X, Y, Z + Side.Dir.Z) != 0)
+						{
+							continue;
+						}
+						const float HA = RampHeight(Shape, Side.A.X, Side.A.Y);
+						const float HB = RampHeight(Shape, Side.B.X, Side.B.Y);
+						if (HA + HB <= 0.f)
+						{
+							continue;
+						}
+						const FVector3f Outward(float(Side.Dir.X), float(Side.Dir.Z), 0.f);
+						const FColor Color = Colors ? (*Colors)[Side.Dir.X != 0 ? 1 : 2] : FColor(128, 128, 128);
+						FLBAVertex V[4];
+						V[0].Position = Position(X + Side.A.X, Y, Z + Side.A.Y);
+						V[1].Position = Position(X + Side.B.X, Y, Z + Side.B.Y);
+						V[2].Position = Position(X + Side.B.X, Y + HB, Z + Side.B.Y);
+						V[3].Position = Position(X + Side.A.X, Y + HA, Z + Side.A.Y);
+						for (FLBAVertex& Vertex : V)
+						{
+							Vertex.Normal = Outward;
+							Vertex.Color = LBABodyConverter::ToVertexColor(Color, 0.45f);
+						}
+						FillSection = FillSection != INDEX_NONE ? FillSection : Builder.GetSection(TEXT("BrickFill"), Atlas.FillMaterial);
+						if (HB > 0.f)
+						{
+							Builder.AddTriangleFacing(FillSection, V[0], V[1], V[2], Outward);
+						}
+						if (HA > 0.f)
+						{
+							Builder.AddTriangleFacing(FillSection, V[0], HB > 0.f ? V[2] : V[1], V[3], Outward);
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 void LBAPlanetTowns::EmitGround(const LBAPlanetDistricts::FDistricts& Districts, const LBAPlanetKit::FTable& Kit, TConstArrayView<LBAPlanetDistricts::FPlaced> Placed, const FVector& Pivot,
@@ -295,6 +559,8 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 	TArray<LBAPlanetDistricts::FTown> Towns;
 	TArray<const LBAPlanetDistricts::FPlaced*> TownPlaces;
 	TSet<int32> Used;
+	// The ramps drawn as slopes: brick * 16 + shape.
+	TSet<int32> Ramps;
 	for (const LBAPlanetDistricts::FPlaced& District : Placed)
 	{
 		LBAPlanetDistricts::FTown Town;
@@ -308,6 +574,10 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 			if (Town.Bricks[Index] != 0 && !Town.Replaced[Index] && Town.WallStyle[Index] == INDEX_NONE)
 			{
 				Used.Add(Town.Bricks[Index]);
+				if (IsRamp(Town.Shapes[Index]) && !Data.IsBlankBrick(Town.Bricks[Index]))
+				{
+					Ramps.Add(Town.Bricks[Index] * 16 + Town.Shapes[Index]);
+				}
 			}
 		}
 		Towns.Add(MoveTemp(Town));
@@ -339,6 +609,15 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 	if (!Atlas.Texture || !Atlas.Material)
 	{
 		return 0;
+	}
+	FSlopeAtlas Slopes;
+	if (Ramps.Num() > 0)
+	{
+		const TArray<FColor> SlopePixels = MakeSlopeAtlas(Data, Palette, Ramps, Slopes);
+		if (UTexture2D* Texture = Context.CreateTexture(TownFolder, FString::Printf(TEXT("T_LBA1_%s_Slopes"), *Island), Slopes.Width, Slopes.Height, SlopePixels, false))
+		{
+			Slopes.Material = Context.GetMaterials().GetTextured(ELBAMaterial::Brick, Texture, TownFolder);
+		}
 	}
 
 	// Per scene (the columns drawn from it): its collision from the bricks' shapes first (the render mesh cooks its own
@@ -416,11 +695,16 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		const int32 Scene = Piece.Scene;
 		const LBABrickMesh::FCells Visual = CellsOf(Town, true);
 		LBABrickMesh::EmitVisual(Visual, Atlas, Builder, Builder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Brick), Atlas.Material), Scale,
-			Context.GetProjectSettings().BackFaces, [&Town, &Districts, Scene](const FIntVector& Cell, int32)
+			Context.GetProjectSettings().BackFaces, [&Town, &Districts, &Slopes, Scene](const FIntVector& Cell, int32)
 			{
 				const int32 Index = Town.Index(Cell.X, Cell.Y, Cell.Z);
-				return Town.Scenes[Cell.Z * Town.Size.X + Cell.X] == Scene && !Districts.GetGroundShares(Town.Bricks[Index]) && Town.WallStyle[Index] == INDEX_NONE;
+				return Town.Scenes[Cell.Z * Town.Size.X + Cell.X] == Scene && !Districts.GetGroundShares(Town.Bricks[Index]) && Town.WallStyle[Index] == INDEX_NONE
+					&& !(Slopes.Material && IsRamp(Town.Shapes[Index]));
 			});
+		if (Slopes.Material)
+		{
+			EmitSlopes(Town, Visual, Scene, Slopes, Atlas, Builder);
+		}
 		const int32 BrickTriangles = Builder.NumTriangles();
 		EmitWalls(Town, Visual, Scene, [&](int32 Style)
 		{
