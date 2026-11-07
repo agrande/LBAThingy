@@ -30,9 +30,6 @@ namespace LBAPlanetDistrictsPrivate
 		{ TEXT("Principal"), 37, TEXT("Water tower") },
 		{ TEXT("Proxima"), 42, TEXT("Proxim City") },
 		{ TEXT("Proxima"), 44, TEXT("Near the inventor's house") },
-		{ TEXT("Proxima"), 45, TEXT("Upper rune stone") },
-		{ TEXT("Proxima"), 46, TEXT("Lower rune stone") },
-		{ TEXT("Proxima"), 47, TEXT("Before the upper rune stone") },
 		{ TEXT("Rebellion"), 59, TEXT("Rebellion harbour") },
 	};
 
@@ -283,6 +280,8 @@ struct LBAPlanetDistricts::FDistricts::FDistrict
 	/** Its scenes and where their frames are in its frame (units), and per cell the scene drawn there (INDEX_NONE: none). */
 	TArray<TPair<int32, FIntVector>> Offsets;
 	TArray<int32> SceneOf;
+	/** Where LBA1's ferry docks (frame cm, x and z), in the ferry ports. */
+	TArray<FVector2D> Docks;
 	/** The scenes' sea level (cells in the frame), when it has water. */
 	bool bSea = false;
 	int32 SeaY = 0;
@@ -591,6 +590,13 @@ bool LBAPlanetDistricts::FDistricts::Load(const FString& InDirectory, double Rad
 		for (const TPair<int32, FIntVector>& Offset : Offsets)
 		{
 			District->Scenes.Add(Offset.Key);
+			for (const LBA1::FActor& Actor : Scenes[Offset.Key].Actors)
+			{
+				if (Actor.File3D == LBA1::FerryFile3D)
+				{
+					District->Docks.Add(FVector2D(Offset.Value.X + Actor.Position.X, Offset.Value.Z + Actor.Position.Z) / 8.0);
+				}
+			}
 		}
 		if (!District->Build(*Data, Offsets, Markers, Radius))
 		{
@@ -818,6 +824,10 @@ TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FS
 		const FQuat Rotation(FVector::UpVector, FMath::Atan2(AlongX.Y, AlongX.X));
 		const FVector Pivot(FVector2D(District->Low) * CellCm + District->Pivot, District->bSea ? District->SeaY * StepCm : 0.0);
 		Place.FrameToMap = FTransform(Rotation, FVector(At, 0.0) - Rotation.RotateVector(Pivot));
+		for (const FVector2D& Dock : District->Docks)
+		{
+			Place.Docks.Add(FVector2D(Place.FrameToMap.TransformPosition(FVector(Dock, 0.0))));
+		}
 		Places.Add({ Turn, At });
 		int32 OnLand = 0, On = 0, WetOnSea = 0, Wet = 0;
 		for (int32 Y = 0; Y < Ground.SizeY; ++Y)

@@ -40,7 +40,7 @@ LBA1_STEP = lba1.BRICK_Y / UNITS_PER_M       # 0.32 m
 # LBA1's outdoor scenes per stub island (by LBA1 scene number; its interiors are left to L5).
 OUTDOOR = {
     "Principal": [11, 12, 13, 17, 18, 19, 25, 24, 37],
-    "Proxima": [42, 44, 45, 46, 47],
+    "Proxima": [42, 44],  # the rune stones (45-47) are sites, not towns: rune_sites.py, LBAPlanetSites
     "Rebellion": [59],
 }
 # The fit: how far from the markers' mean (m) and from heading 0 (degrees) a district may go, and how much it costs.

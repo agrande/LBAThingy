@@ -12,6 +12,7 @@
 #include "Import/LBAPlanetDistricts.h"
 #include "Import/LBAPlanetGround.h"
 #include "Import/LBAPlanetKit.h"
+#include "Import/LBAPlanetSites.h"
 #include "Import/LBAPlanetTowns.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
@@ -545,6 +546,12 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 	{
 		Kit.Load(Districts.GetData(), Context.GetProjectSettings().bUseRemakeModels ? GetDefault<ULBA2ImporterSettings>()->RemakeDirectory.Path : FString());
 	}
+	// Places reached by road (Proxima's rune stones) and the ferry's ways into LBA1's harbours (LBAPlanetSites).
+	LBAPlanetSites::FSites Sites;
+	if (bDistricts)
+	{
+		Sites.Load(Districts.GetData(), Radius);
+	}
 	UMaterialInterface* GroundMaterial = LBAPlanetGround::Build(Context, bDistricts ? &Districts.GetData() : nullptr, Folder);
 	if (!GroundMaterial)
 	{
@@ -647,6 +654,20 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		for (FGrid* Grid : { &Hint, &Sand, &Greens, &Browns, &Pale })
 		{
 			Blur(*Grid, 4.0);
+		}
+		// The sites' land: islets, causeways, rocks.
+		Sites.Find(Name, { Origin, Cell, SizeX, SizeY }, Land);
+		const bool bSites = !Sites.GetSites().IsEmpty();
+		if (bSites)
+		{
+			Sites.AddLand(LandField.Values);
+			LandCells = 0;
+			for (int32 Index = 0; Index < Cells; ++Index)
+			{
+				Land[Index] = LandField.Values[Index] > 0.f;
+				Sea[Index] = !Land[Index];
+				LandCells += Land[Index] ? 1 : 0;
+			}
 		}
 		// Distances in cm from here on.
 		FGrid Inland = DistanceOutOf(Land, SizeX, SizeY);
@@ -804,6 +825,12 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			}
 		}
 
+		// The sites' shapes: low causeways and islets, the rocks and their holes.
+		if (bSites)
+		{
+			Sites.ShapeHeights(Heights.Values, Land);
+		}
+
 		// LBA1's districts: their pads in the ground, the coast and the shelf around them again.
 		TArray<bool> Pad;
 		TArray<bool> Kinded;
@@ -824,6 +851,13 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			Pad = MoveTemp(Ground.Pad);
 			Kinded = MoveTemp(Ground.Kinded);
 			Kinds = MoveTemp(Ground.Kinds);
+			// Room for the ferry to come into LBA1's harbours.
+			TArray<FVector2D> Docks;
+			for (const LBAPlanetDistricts::FPlaced& District : Placed)
+			{
+				Docks.Append(District.Docks);
+			}
+			Sites.OpenHarbours(Name, Docks, Land, Pad);
 			for (int32 Index = 0; Index < Cells; ++Index)
 			{
 				Sea[Index] = !Land[Index];
@@ -862,6 +896,13 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			OnCoast[Index] = true;
 			const double Height = CoastHeightPerField * LandField.Values[Index];
 			Heights.Values[Index] = float(Land[Index] ? FMath::Clamp(Height, 2.0, double(Heights.Values[Index])) : FMath::Max(Height, -CoastSeaDepth));
+		}
+
+		// The roads to the sites, graded in.
+		TArray<float> RoadShare, VergeShare;
+		if (bSites)
+		{
+			Sites.LayRoads(Heights.Values, Land, Pad, RoadShare, VergeShare);
 		}
 
 		// The ground: grass or earth on the benches by the painting (patches of earth among the grass), painted sand,
@@ -922,6 +963,12 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 		{
 			for (int32 X = 0; X < SizeX; ++X)
 			{
+				if (!RoadShare.IsEmpty() && (RoadShare[Y * SizeX + X] > 0.f || VergeShare[Y * SizeX + X] > 0.f))
+				{
+					EarthShare(X, Y) = RoadShare[Y * SizeX + X];
+					GrassShare(X, Y) = VergeShare[Y * SizeX + X];
+					continue;
+				}
 				if (!Kinded.IsEmpty() && Kinded[Y * SizeX + X])
 				{
 					const LBAPlanetDistricts::FGroundShares& Shares = Kinds[Y * SizeX + X];
@@ -1007,6 +1054,25 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				Builder.AddTriangleFacing(Section, A, D, C, FVector3f::UpVector);
 			}
 		}
+		// The sites: the rocks with their bores, and the boulders.
+		if (bSites)
+		{
+			FLBAVertex Rock;
+			Rock.Color = FVector4f(0.f, 0.f, 0.f, 0.f);
+			Rock.UV = FVector2f(0.f, 0.f);
+			FLBAVertex Grass = Rock;
+			Grass.Color = FVector4f(1.f, 0.f, 0.f, 0.f);
+			FLBAVertex Dark = Rock;
+			Dark.UV = FVector2f(1.f, 0.f);
+			Sites.EmitRocks(Pivot, Rock, Grass, Dark, Builder, GroundSection);
+			FLBAVertex PaleStone = Rock;
+			PaleStone.Color = FVector4f(0.f, 0.f, 0.f, 1.f);
+			Sites.EmitStones(Heights.Values, Pivot, PaleStone, Builder, GroundSection);
+			for (const LBAPlanetSites::FBoulder& Boulder : Sites.GetBoulders())
+			{
+				LBAPlanetSites::FSites::EmitBoulder(Boulder, Pivot, Rock, Builder, GroundSection);
+			}
+		}
 		// LBA1's ground over its pads, on LBA1's cells, in the same textures from the same pivot: where it meets the ground
 		// around it, nothing shows.
 		LBAPlanetTowns::EmitGround(Districts, Kit, Placed, Pivot, Builder, GroundSection);
@@ -1060,6 +1126,11 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				Note->Text = Text;
 #endif
 			}
+		}
+		// What stands by the stones.
+		if (bSites)
+		{
+			Sites.SpawnProps(Context, World, Heights.Values);
 		}
 		// Their towns on the pads, LBA1's bricks in 3D.
 		if (!Placed.IsEmpty())

@@ -80,6 +80,8 @@ namespace LBAPlanetDistricts
 		double LandOnLand = 0.0;
 		double WaterOnSea = 0.0;
 		double LandArea = 0.0;
+		/** Where LBA1's ferry docks on the map (cm): its ferry ports (LBAPlanetSites opens a way in from the sea). */
+		TArray<FVector2D> Docks;
 	};
 
 	/** A district's bricks in its frame: cells (x, y up, z) from Low (frame cells: 64 cm across, 32 cm up). */

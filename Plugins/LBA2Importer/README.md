@@ -706,8 +706,8 @@ How it holds together (the world is flat and still; only the view is round):
   harbour (7 scenes: the harbour, Outside the fortress, Old Burg, Ruins, Outside the library, Military camp, Peg Leg
   Street; 7,500 m2 of land on the south coast, turned 9 degrees, 11 m from its markers, 74 % of its land on painted
   land and 94 % of its water on the sea; Old Burg's streets stand 3.5-5 m over the harbour), Port Belooga and the Water
-  tower (each alone, reached by ferry or a path; within 6 m of their markers); Proxim City (2 scenes, 10 m off) and its
-  three rune stone scenes, islets in the sea where their markers are; Rebellion harbour (moved 29 m from its markers,
+  tower (each alone, reached by ferry or a path; within 6 m of their markers); Proxim City (2 scenes, 10 m off; its
+  rune stones are sites, below); Rebellion harbour (moved 29 m from its markers,
   out of the bay's water onto its shore). Each district gets a note in the stub level
   (`District_<island>_<name>`) and a log line with its fit and its LBA1 frame's transform to the map.
 - **LBA1's towns in 3D** (`LBAPlanetTowns`, L4; `/Game/LBA2/Planets/Towns`): each district's bricks in its
@@ -728,6 +728,15 @@ How it holds together (the world is flat and still; only the view is round):
   wouldn't. The bricks' collision stays under all of it. One mesh per scene (`SM_LBA1_Scene_NNN` + `_Collision`,
   2,400-30,000 triangles each, 207,064 in all), its actor `Town_<island>_Scene_NNN` tagged `LBA_Stub` in the stubs'
   level. Twinsen walks the harbour's streets. Globe test on `L_TWINSUN`: 128.0 fps (130.6 without the stub islands).
+- **Places reached by road, and the ferry's way in** (`LBAPlanetSites`, Phase 5 of `LBA1_ISLANDS_PLAN.md`, prototype
+  `Tools/rune_sites.py`): Proxima's rune stones. The Marked Stone (LBA1 scene 46, the Hamalayi side) stands on a round
+  islet past a sheer rock with a bore through it, the road from Proxim City ending at the rock (the buggy parked there);
+  the Eclipse Stone (scene 45, the desert side) at the end of a causeway off the south lobe, 117 m of road from the town.
+  Each starts at its LBA1 holomap marker and moves to the nearest tip of painted land; islets and causeways go into the
+  stub's land before its coast is drawn. The rock is a mesh of its own in the stub's ground mesh (fluted sides, a grassy
+  top, an arched bore with dark rims), the stones generated slabs. Roads: cheapest path over the ground, graded to 12 %,
+  earth with grass verges and generated boulders along both edges. Harbours: from where LBA1's ferry docks (its FILE3D
+  27), the stub's land within 9 m of the widest water way out to the open sea is cleared, so the ferry can come in.
 - **LBA1's town kit** (`LBAPlanetKit`, Phase 3 of `LBA1_ISLANDS_PLAN.md`): a recurring piece (a whole layout, known by
   its size and bricks in any scene's library) is drawn as a model rather than as bricks. `Resources/Models/lba1_kit.json`
   names one example of each piece (`scene:layout`, as `Tools/lba1_kit_survey.py` labels `pieces_big.png`) and its model:

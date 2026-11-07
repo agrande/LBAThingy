@@ -44,11 +44,22 @@ namespace LBA1
 		FIntVector Info = FIntVector::ZeroValue;
 	};
 
+	/** File3D of the ferry, docked in the ferry ports (Citadel 6, Principal 24, Proxima 42, desert 39). */
+	constexpr int32 FerryFile3D = 27;
+
+	/** An actor of a scene (the hero not counted): its 3D model (FILE3D.HQR entry, 65535 for a sprite) and where it stands (units). */
+	struct FActor
+	{
+		int32 File3D = 0;
+		FIntVector Position = FIntVector::ZeroValue;
+	};
+
 	struct FScene
 	{
 		int32 Index = INDEX_NONE;
 		/** The text bank, which is the island: 0 Citadel, 1 Principal, 2 desert, 3 Proxima, 4 Rebellion... */
 		int32 Bank = 0;
+		TArray<FActor> Actors;
 		TArray<FZone> Zones;
 
 		bool Load(const TArray<uint8>& Data, int32 InIndex);

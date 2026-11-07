@@ -21,7 +21,7 @@ for what isn't replaced yet.
 | 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
 | 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (72f2d74, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). 3c simple objects: generated fences, railings, sandbags, buoys + remake oil drums (shots `phase3c_objects_before_after.png`, `phase3c_objects_close.png`). Next: Phase 3 extended (houses as buildings with openings and frames, stairs as steps, roofs per house, palms), see that section |
 | 4 | Trees, rocks and paths | not started |
-| 5 | Rune stones: two road trips out of Proxim City | planned with the user (2026-11-07), not started; see that section |
+| 5 | Rune stones: two road trips out of Proxim City | built (2026-11-07, `LBAPlanetSites`); also the ferry's way into LBA1's harbours. Shots `Saved/LookDev/lba1_review/phase5_runestones_sheet.png`, `phase5_harbour_before_after.png` (before: `phase5_before.png`) |
 
 Show the user each phase's shots before starting the next, and check every look change against reference shots with
 measured colors (memory note `lba2-compare-with-original`).
@@ -689,15 +689,57 @@ joined to the island. Scene 47's cliff is a flat wall standing in the water. Sho
   `54899,36478,15000,-89,139.2`. These top views aren't turned like the painting: check which way is north before
   judging.
 
+### What was built (2026-11-07)
+
+`Import/LBAPlanetSites.{h,cpp}`, called from `LBAPlanetStubs` (prototype of the placement and roads: `Tools/rune_sites.py`).
+
+- **Placement:** each stone's tip is the main land nearest its marker (3 m in from the coast), the way out from there toward
+  the marker. Marked Stone: islet 96 m from Proxim City, 3 m from its marker; Eclipse Stone: 105 m, 6 m from its marker.
+  Scenes 45-47 are no longer districts (`LBAPlanetDistricts.cpp`, `Tools/district_pads.py`).
+- **Land:** islets (4.5 m), causeways (5 m wide) and the rock go into the land field before the coast is drawn, so the
+  coast, shelf and ground kinds treat them as any other land. Causeways and islets are low (0.6 m).
+- **The rock and its hole:** the slot-and-lid plan failed: on the 1 m grid the lid's edges made tents and slits at the
+  faces (a 2 m hole in a 6.5 m face is finer than a cell). The rock is now a mesh of its own inside the stub's ground mesh
+  (`EmitRocks`): a 16 x 14 m wandering ellipse, sheer fluted sides drawn in a little toward the top and spread at the
+  foot, a ragged grassy top 6.5 m up, a bore 2.3 m wide with a half-round roof straight through, a dark rim at each
+  mouth (LBA1's dark ground kind). The ground under it is flattened, sloping from the near mouth's ground to the
+  causeway's. Same material, so steep is rock streaked from above like the cliffs; its triangles are the island's
+  collision, so Twinsen walks through. Through the bore the stone shows on its islet, as in LBA1.
+- **LBA2 pieces tried:** Otringal's vault (decor 111 and its dark twin 143) is closed at one end, not a way through.
+  Citadel's dark slab (decor 12) made a poor stone; the stones are generated instead (`EmitStones`: a rounded slab
+  1.4 x 0.5 x 2.6 m, pale stone kind, but its sides are steep, so the material draws them as rock).
+- **Roads:** cheapest path from Proxim City's pad edge (length weighted by grade; a cliff costs 60 per cm climbed and the
+  road cuts a ramp through it), Chaikin-smoothed, graded to 12 % (smoothed, clamped from both ends, met halfway), laid in
+  over 2.5 m shoulders; earth 3 m wide, grass verges 1 m, then on along the causeways. Marked: 28 m of road to the rock
+  (Proxim City's east edge is close); Eclipse: 117 m. 273 generated boulders (dented icosahedra, 0.3-0.5 m) every 1.1 m on
+  both sides and round the islets.
+- **Props:** the buggy (Citadel decor 85) parked by the road's end at the rock. LBA2 has no motorbike body: none at the
+  Eclipse Stone.
+- **Harbours (the user's request on the way):** LBA1's ferry docks (FILE3D 27 actors, now read by `LBA1::FScene`) are
+  `FPlaced::Docks`. From each, the cheapest way to the open sea over water (land costs 30 times more, narrow water up to 8
+  times), and the stub's land within 9 m of it is cleared (never a pad's). Proxima: 158 m2 cleared, the sand spit that
+  narrowed the basin's mouth to about 10 m is gone. Principal: 1 m2 (already open). Rebellion has no LBA1 ferry.
+- **Checks:** `LBA2.Enclosure` 157 pass; the belt holds Twinsen at 3.7 m; globe 156.8 fps (150.6 after 3c). Twinsen stands
+  and walks in the bore and on the Eclipse islet (`-Poses hero -Extra "-LBA2HeroAt=56492,37098,13.8,300"`, the fourth
+  value the height to look down from).
+- **World poses:** Marked rock front `54550,36620,400,-3,13.8`, side `55894,39526,900,-15,-76.2`, behind the islet
+  `59647,37874,400,-5,193.8`; Eclipse from behind its tip `44184,38092,1100,-25,142.5`; harbour from above
+  `49033,35946,6000,-89,139.2`. Map positions are in the import log ("road to the ...").
+
+Open: the stones have no runes yet (LBA1's sprite 60); the rock's sides are rather regular from far away; the painting's
+crumb next to the Marked causeway is still an islet of its own; no Twinsen run along a whole road yet.
+
 ### Pitfalls
 
 - Don't infer lore from item texts. A first draft of this plan claimed the stones were reached with the Proto-Pack; the
   user checked, and it was wrong. Ask, or look at the scenes' actors, instead.
 - Other sessions edit `LBAPlanetDistricts` and `LBAPlanetTowns` for Phase 3: message them before touching those files.
+- A heightfield can't make a hole smaller than a few cells in a steep face: build such shapes as their own mesh.
+- MSVC's C4456 (a local hiding another) fails the build: watch lambda and loop variable names in long functions.
 
 ## Checks after each phase
 
-- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a, 152.2 after 3b walls, 150.6 after 3c (2026-11-07). Another session's CPU-heavy job
+- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a, 152.2 after 3b walls, 150.6 after 3c, 156.8 after Phase 5 (2026-11-07). Another session's CPU-heavy job
   (a Python script at 100 % of a core) brought the same build to 101-119 fps: check the machine is idle before trusting a number.
 - **Tests:** `LBA2.Enclosure` 157 tests pass; `-LBA2Shots=belt` holds Twinsen at 3.7 m (2026-11-07).
 - **Street level:** `shots.ps1 -Map /Game/LBA2/Planets/L_TWINSUN -Poses hero -Extra "-LBA2HeroAt=6286,56485,0"`

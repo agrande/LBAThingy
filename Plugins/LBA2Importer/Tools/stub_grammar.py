@@ -157,7 +157,9 @@ def survey():
     return col, land, labels, extent, islands
 
 
-def grow(isl, col, landtex, labels, extent):
+def grow(isl, col, landtex, labels, extent, edits=None):
+    """edits (optional): an object with land(mx, my, land) -> land and heights(mx, my, h, land) -> h, applied after the
+    painting's land and after the benches (Tools/rune_sites.py's landmarks)."""
     seed = zlib.crc32(isl["name"].encode())
     x0 = -extent + isl["xs"][0] * SURVEY - MARGIN; y0 = -extent + isl["ys"][0] * SURVEY - MARGIN
     sx = int(np.ceil(((isl["xs"][1] - isl["xs"][0] + 1) * SURVEY + 2 * MARGIN) / CELL)) + 1
@@ -172,6 +174,8 @@ def grow(isl, col, landtex, labels, extent):
     own = blur(own, 2.0)
     paint = np.stack([blur(sample(col[..., k], mx, my), 3.5) for k in range(3)], -1)
     land = soft * own > 0.5
+    if edits:
+        land = edits.land(mx, my, land)
     area = land.sum() * CELL ** 2
     hint, sand, green, brown, pale = (blur(a, 4.0) for a in height_hint(paint))
     inland = ndimage.distance_transform_edt(land) * CELL
@@ -235,6 +239,8 @@ def grow(isl, col, landtex, labels, extent):
         h = h + (lv - lo) * np.clip(blur(sd, EDGE_SMOOTHING) / width, 0, 1) * land
     # Rolling ground: benches aren't level floors (LBA2: a third of the land at 5-30 deg).
     h = np.maximum(h + ROLL * noise(land.shape, 14, seed + 6) * np.clip(inland / 4, 0, 1), SHORE_MIN) * land
+    if edits:
+        h = edits.heights(mx, my, h, land)
     # Under the sea: the shelf, as before.
     h = np.where(land, h, -np.minimum(8.0, 0.3 + 0.6 * offshore))
 
