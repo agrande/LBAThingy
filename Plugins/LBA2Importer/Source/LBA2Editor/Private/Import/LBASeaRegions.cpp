@@ -103,12 +103,12 @@ namespace
 	/** Distance (cells) of every cell of a Size x Size grid to the nearest set cell; huge without any. */
 	TArray<double> DistanceTo(const TArray<bool>& Set, int32 Size)
 	{
-		constexpr double Far = 1e12;
+		constexpr double NoSeed = 1e12;
 		TArray<double> Grid;
 		Grid.SetNumUninitialized(Size * Size);
 		for (int32 Index = 0; Index < Grid.Num(); ++Index)
 		{
-			Grid[Index] = Set[Index] ? 0.0 : Far;
+			Grid[Index] = Set[Index] ? 0.0 : NoSeed;
 		}
 		TArray<double> F, D, Z;
 		TArray<int32> V;
@@ -139,11 +139,11 @@ namespace
 	/** Fills the cells whose centers are inside a closed polygon (map cm). */
 	void FillPolygon(const TArray<FVector2D>& Polygon, int32 Size, double Extent, TArray<bool>& Out)
 	{
-		const double Cell = 2.0 * Extent / Size;
+		const double TexelSize = 2.0 * Extent / Size;
 		TArray<double> Crossings;
 		for (int32 Y = 0; Y < Size; ++Y)
 		{
-			const double CY = -Extent + (Y + 0.5) * Cell;
+			const double CY = -Extent + (Y + 0.5) * TexelSize;
 			Crossings.Reset();
 			for (int32 Index = 0; Index < Polygon.Num(); ++Index)
 			{
@@ -157,8 +157,8 @@ namespace
 			Crossings.Sort();
 			for (int32 Pair = 0; Pair + 1 < Crossings.Num(); Pair += 2)
 			{
-				const int32 First = FMath::Max(FMath::CeilToInt32((Crossings[Pair] + Extent) / Cell - 0.5), 0);
-				const int32 Last = FMath::Min(FMath::FloorToInt32((Crossings[Pair + 1] + Extent) / Cell - 0.5), Size - 1);
+				const int32 First = FMath::Max(FMath::CeilToInt32((Crossings[Pair] + Extent) / TexelSize - 0.5), 0);
+				const int32 Last = FMath::Min(FMath::FloorToInt32((Crossings[Pair + 1] + Extent) / TexelSize - 0.5), Size - 1);
 				for (int32 X = First; X <= Last; ++X)
 				{
 					Out[Y * Size + X] = true;
@@ -245,9 +245,9 @@ UTexture2D* LBASeaRegions::BuildAtlas(FLBAImportContext& Context, const FString&
 			ChainLuma.Add(Luma(Palette[Index]));
 		}
 
-		for (int32 Step = 1; Step <= Steps; ++Step)
+		for (int32 StepIndex = 1; StepIndex <= Steps; ++StepIndex)
 		{
-			const float Share = float(Step) / Steps;
+			const float Share = float(StepIndex) / Steps;
 			TArray<uint8>& Remap = Remaps.AddDefaulted_GetRef();
 			Remap.SetNumUninitialized(256);
 			for (int32 Index = 0; Index < 256; ++Index)
@@ -298,7 +298,7 @@ UTexture2D* LBASeaRegions::BuildMask(FLBAImportContext& Context, const FString& 
 {
 	const int32 Size = MaskSize;
 	const double Extent = MaskExtent;
-	const double Cell = 2.0 * Extent / Size;
+	const double TexelSize = 2.0 * Extent / Size;
 	TArray<bool> Belt, Turquoise, Others;
 	Belt.Init(false, Size * Size);
 	Turquoise.Init(false, Size * Size);
@@ -307,8 +307,8 @@ UTexture2D* LBASeaRegions::BuildMask(FLBAImportContext& Context, const FString& 
 	// The belt's land cells (a couple of meters apart), each spread over the texels around it so no gaps remain.
 	for (const FVector2D& Point : BeltLand)
 	{
-		const int32 X = FMath::FloorToInt32((Point.X + Extent) / Cell);
-		const int32 Y = FMath::FloorToInt32((Point.Y + Extent) / Cell);
+		const int32 X = FMath::FloorToInt32((Point.X + Extent) / TexelSize);
+		const int32 Y = FMath::FloorToInt32((Point.Y + Extent) / TexelSize);
 		for (int32 DY = -1; DY <= 1; ++DY)
 		{
 			for (int32 DX = -1; DX <= 1; ++DX)
@@ -346,7 +346,7 @@ UTexture2D* LBASeaRegions::BuildMask(FLBAImportContext& Context, const FString& 
 	const TArray<double> FromBelt = DistanceTo(Belt, Size);
 	const TArray<double> FromTurquoise = DistanceTo(Turquoise, Size);
 	const TArray<double> FromOthers = DistanceTo(Others, Size);
-	auto Meters = [Cell](double Cells) { return uint8(FMath::Clamp(FMath::RoundToInt32(Cells * Cell / 100.0), 0, 255)); };
+	auto Meters = [TexelSize](double Cells) { return uint8(FMath::Clamp(FMath::RoundToInt32(Cells * TexelSize / 100.0), 0, 255)); };
 	TArray<FColor> Pixels;
 	Pixels.SetNumUninitialized(Size * Size);
 	double Strait = TNumericLimits<double>::Max();
@@ -370,6 +370,6 @@ UTexture2D* LBASeaRegions::BuildMask(FLBAImportContext& Context, const FString& 
 		Texture->PostEditChange();
 	}
 	UE_LOG(LogLBA2, Display, TEXT("LBA2 planet %s sea regions: %d x %d texels of %.2f m over %.0f m around the pole, %d belt land points, %d turquoise islands, %.0f m of sea between them and the others"),
-		*Planet, Size, Size, Cell / 100.0, 2.0 * Extent / 100.0, BeltLand.Num(), NumTurquoise, Strait < 1e9 ? Strait * Cell / 100.0 : -1.0);
+		*Planet, Size, Size, TexelSize / 100.0, 2.0 * Extent / 100.0, BeltLand.Num(), NumTurquoise, Strait < 1e9 ? Strait * TexelSize / 100.0 : -1.0);
 	return Texture;
 }
