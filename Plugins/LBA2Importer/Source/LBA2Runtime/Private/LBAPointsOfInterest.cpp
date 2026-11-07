@@ -4,7 +4,7 @@
 
 namespace
 {
-	const TCHAR* PlanetLevel = TEXT("/Game/LBA2/Planets/L_TWINSUN");
+	const TCHAR* TwinsunLevel = TEXT("/Game/LBA2/Planets/L_TWINSUN");
 	/** Citadel is the planet's home island, laid at identity. */
 	const TCHAR* CitadelFrame = TEXT("/Game/LBA2/Islands/CITABAU/L_CITABAU");
 	/** The stub islands (and their LBA1 towns) and the belt are laid in map coordinates around the pole. */
@@ -19,7 +19,7 @@ namespace
 		Point.Group = Group;
 		Point.Name = Name;
 		Point.Description = Description;
-		Point.Level = PlanetLevel;
+		Point.Level = TwinsunLevel;
 		Point.Frame = Frame;
 		Point.Feet = Feet;
 		Point.Yaw = Yaw;
