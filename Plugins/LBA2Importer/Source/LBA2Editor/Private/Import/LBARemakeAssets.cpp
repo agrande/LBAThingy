@@ -490,6 +490,12 @@ FLBARemakeAssets::FGridResult FLBARemakeAssets::ProcessGrid(FLBAGrid& Grid, cons
 				{
 					Variant.Blocks.Add(FCString::Atoi(*B));
 				}
+				// A key may list fewer blocks than its size: the remake reads the missing ones as "any brick".
+				const int32 CellCount = Variant.NX * Variant.NY * Variant.NZ;
+				while (Variant.Blocks.Num() < CellCount)
+				{
+					Variant.Blocks.Add(-1);
+				}
 			}
 			else if (Library.Layouts.IsValidIndex(LayoutIndex))
 			{
