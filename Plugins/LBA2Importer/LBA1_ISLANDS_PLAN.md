@@ -244,9 +244,7 @@ Citabau too: not a stub island matter. The bricks' collision is still what Twins
   `scene:layout`. Then build the wall boxes and show them. Do the roofs after that.
 - **Frame.** Cell x→X and z→Y, y up. `CellCm` = 64 cm, `StepCm` = 32 cm, then `District.FrameToMap`. This is the same
   convention as the kit's placement code in `LBAPlanetTowns.cpp`.
-- **One round.** `Saved/LookDev/lba1_review/p3_round.ps1 -Name <n> -Poses "<poses>" -Labels "a;b;..."` builds, imports,
-  shoots and makes a sheet. It isn't versioned. It shoots `L_TWINSUN`; switch `-Map` to `/Game/LBA2/Planets/L_TWINSUN_Stubs`
-  to aim with map coordinates (see Poses). The 3a final sheet used these stubs-level poses on Principal's harbour:
+- **One round.** `Tools/lba1_round.ps1` (it was `Saved/LookDev/lba1_review/p3_round.ps1`; see "How to continue"). The 3a final sheet used these stubs-level poses on Principal's harbour:
   `-22597,17495,500,-29.1,0;-21882,17179,628,-29.1,90;-16762,20188,628,-29.1,180;-21634,16135,628,-29.1,270;-15364,17764,980,-29.1,135`.
 - **Import.** Run `-run=LBA2Import -Layers=Islands -Islands=CITABAU,CITADEL,DESERT`; it rebuilds the planet's stubs too.
   About 37 `GetFullName` null warnings in the log were there before 3a.
@@ -276,8 +274,8 @@ Citabau too: not a stub island matter. The bricks' collision is still what Twins
 
 ### What was built (2026-11-07): 3b roofs, as ramps
 
-- **Ramps are slopes.** Every town cell of a ramp shape (2 to 5: Old Burg's thatch roofs, stairs, grass slopes; 1,665 cells
-  in scenes 12, 13, 24, 25, 42, 44 and 59) is drawn along its collision surface instead of as a cube (`EmitSlopes` in `LBAPlanetTowns`). Its UVs
+- **Ramps are slopes.** Every town cell of a ramp shape (2 to 5: Old Burg's thatch roofs, stairs, grass slopes; 2,039 cells
+  in the towns' 15 scenes) is drawn along its collision surface instead of as a cube (`EmitSlopes` in `LBAPlanetTowns`). Its UVs
   are the iso projection of the slope into its brick's sprite (`IsoPixel`: x right-down, z left-down, 24 x 12 pixels a cell,
   15 a step), so it shows exactly what the camera saw. The sprites go whole into their own atlas
   (`T_LBA1_<ISLAND>_Slopes`, grown 2 pixels so edges don't sample transparency): a slope's art spans the sprite's top and
@@ -315,6 +313,55 @@ Ranked by cells (count x size), not ground, not walls, not in the kit:
 - life buoys 11:104 (x11); tree trunks 12:112; arches and doorways 13:126, 11:239, 59:84 (walls with art, fine as bricks).
 Most suit preference 3 (generated primitives: posts and rails for fences and railings, boxes for sandbags and platforms,
 a torus for buoys), with colors from their sprites.
+
+### How to continue Phase 3 (written 2026-11-07, after 3b)
+
+Two open items, either can go first: **simple objects as primitives**, and **Proxim City's roofs**. Show the user each one's
+before/after sheet before the next.
+
+**Tools** (all in `Tools/`, run from the plugin folder):
+- `lba1_round.ps1 -Name <n> [-Poses towns|"x,y,z,pitch,yaw;..."] [-Labels "a;b"] [-NoBuild] [-NoImport] [-Map ...]`: build,
+  Islands import, shots on `L_TWINSUN`, sheet `Saved/LookDev/lba1_review/<n>_sheet.png`. `-Poses towns` is 12 close views
+  ringed around the towns (Proxim City 1-4, the harbour 1-4, Port Belooga 1-2, Old Burg 1-2). **Run it from PowerShell.** For
+  a before/after: `-NoBuild -NoImport` on the current import first, then the full round; sheet the two folders side by side.
+- `lba1_town_survey.py iso <scene>` (how a house is built), `bricks`, `walls`, `ramps`, `section <scene>`, `left` (pieces
+  still drawn as bricks, by cells).
+- `lba1_slope_fit.py <scene>:<layout>...` or `all`: the ramp-plane fit tried on Proxim City's roofs, with its results.
+- `lba1_kit_survey.py` (pieces sheets, `pieces.json`), `lba2_decor_sheet.py` (LBA2 decor bodies to pick from).
+- `dump_level_actors.py` (headless; env `LBA2_DUMP_MAP`, `LBA2_DUMP_PREFIX`): actors' positions and bounds, to aim cameras.
+- Checks: tests `UnrealEditor-Cmd <uproject> "-ExecCmds=Automation RunTests LBA2.Enclosure; Now; Quit" -unattended -nop4
+  -nosplash -nullrhi` (157 pass); globe fps `Tools/shots.ps1 -Map /Game/LBA2/Planets/L_TWINSUN -Poses globe -Extra
+  "-LBA2ShotStep=0"`, last line "globe done: N fps" in `Saved/Logs/LBAThingy.log` (155.1 after 3b), on an idle machine.
+
+**Where the code is.** `Import/LBAPlanetDistricts` builds a town's cells (`FDistricts::MakeTown`: bricks, shapes, kit pieces
+`Pieces`/`Replaced`, wall styles). `Import/LBAPlanetTowns` draws them per scene: `EmitVisual` (cubes, from `LBABrickMesh`),
+`EmitWalls`, `EmitSlopes`, `EmitGround` (terrain), and instances kit models (`Kit_<island>_<model>`). `Import/LBAPlanetKit` reads
+`Resources/Models/lba1_kit.json` (a piece by example `scene:layout` to an LBA2 decor body or a remake GLB). A cell drawn by
+something else keeps its brick for collision; hide it from `CellsOf(Town, true)` (as `Replaced` does) or skip its faces in
+`EmitVisual`'s KeepFace (as walls and ramps do), not both blindly: a brick left in the visual cells still hides its neighbors'
+faces against it.
+
+**Simple objects as primitives** (suggested route):
+1. Add a generated model kind to the kit: e.g. `"primitive": "fence" | "railing" | "box" | "torus"` in `lba1_kit.json`, a
+   field in `LBAPlanetKit::FModel`, and in `LBAPlanetTowns`' instancer build its `UStaticMesh` once per model with
+   `FLBAMeshBuilder` (`Towns/SM_LBA1_Kit_<name>`, the color material with vertex colors) instead of finding an asset. The
+   placement code (footprint center, `every`, `yaw`, `fit`) already works for any mesh.
+2. Shapes from the piece's size (posts at each cell along the long side, two rails; a box the piece's size; a torus 1 cell
+   across), colors from its sprites' mean colors (moved to the home palette, as `MakeTownPalette`).
+3. Start with the most visible: picket fences (12:143 along z, 13:144 along x), iron railings (12:152, 12:153), sandbags
+   (11:172, 11:173), life buoys (11:104). Palisades (24:59, 24:60): maybe a row of log cylinders with jagged tops.
+4. Shots: Proxim City and Port Belooga (fences), the harbour (sandbags, buoys, railings).
+
+**Proxim City's roofs** (suggested route, see "Proxim City's roofs" above for what failed):
+1. `lba1_town_survey.py iso 42` and `section 42`: the roofs are 1-cell-deep slices along z (42:186/188 facing, 42:190 back,
+   42:187 slope over wall, 42:189 gable end), slopes rising along x one step per cell, ridges along z.
+2. Per house: the connected cells of those layouts (or of thatch-colored bricks) give a footprint and a ridge height. Emit two
+   slope quads and the gable triangles; hide the layouts' cells from the visual cells (collision kept).
+3. Texture: the facing slope's art read through the iso projection, from the composed image of 42:186 (not per-cell sprites:
+   the art straddles them), tiled along the ridge; the back slope uses the same art mirrored, as `EmitSlopes` does.
+4. Shots: `-Poses towns`, Proxim City 1-4.
+
+Also left from 3b: Old Burg's stepped gable edges under its slopes, and corner ramps (shapes 6-13) still drawn as cubes.
 
 ## Phase 4: trees, rocks and paths
 
@@ -365,7 +412,7 @@ shapes). Useful world poses, `x,y,z,pitch,yaw`:
 - A camera inside a hill shows only slivers of back faces. That is the pose's fault, not a bug.
 - The whitish sea at low angles happens around Citadel too; it isn't an LBA1 islands problem.
 - Other sessions share this checkout: commit by path, and check peers before building or importing.
-- Run `p3_round.ps1` and `shots.ps1` from PowerShell: Git Bash rewrites `/Game/...` into `C:/Program Files/Git/Game/...`, and the
+- Run `lba1_round.ps1` and `shots.ps1` from PowerShell: Git Bash rewrites `/Game/...` into `C:/Program Files/Git/Game/...`, and the
   game then loads nothing and shoots nothing. Shots of a map are named after it (`L_TWINSUN_Stubs_00.png`).
 - Keep vertex jitter under a quarter of a cell. At 0.3 about 0.006 % of cells fold a triangle; `AddTriangleFacing` turns it
   up, so on a cliff it is culled from the side, and the sea plane under the mountain shows through the hole. Fixed in the stubs
