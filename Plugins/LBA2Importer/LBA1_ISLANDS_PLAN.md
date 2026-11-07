@@ -231,6 +231,28 @@ Citabau too: not a stub island matter. The bricks' collision is still what Twins
 - Not done in 3a: iron railings (12:152, 12:153 x184: remake iron fence models?), picket fences, life buoys, the brown palisade
   (24:59), roof slopes, walls. The sign board model (1 m) is smaller than LBA1's (1.3 m).
 
+### Notes for 3b, the simple houses (written 2026-11-07, before starting)
+
+- **What to reuse.** 3a already lets a cell's look change while its collision stays bricks. `FTown::Replaced` marks cells
+  that aren't drawn. `CellsOf(Town, bVisual)` returns 0 for them only when drawing; collision passes false. `EmitGround`
+  lays terrain under a replaced cell, and the atlas leaves replaced bricks out. Houses can mark their wall and roof cells
+  the same way and add their own geometry. The difference: a house isn't one layout, it's a span of wall bricks across
+  many layouts. So the merge has to work on cells by brick family, after `MakeTown` has filled the bricks, not by layout
+  key.
+- **Order of work.** First survey which bricks are walls and which are roof slopes: plan item 2 lists the big counts
+  (x2742, x708, x259; roof slopes x37, x33, x32). `Tools/lba1_kit_survey.py`'s pieces sheet labels each piece
+  `scene:layout`. Then build the wall boxes and show them. Do the roofs after that.
+- **Frame.** Cell x→X and z→Y, y up. `CellCm` = 64 cm, `StepCm` = 32 cm, then `District.FrameToMap`. This is the same
+  convention as the kit's placement code in `LBAPlanetTowns.cpp`.
+- **One round.** `Saved/LookDev/lba1_review/p3_round.ps1 -Name <n> -Poses "<poses>" -Labels "a;b;..."` builds, imports,
+  shoots and makes a sheet. It isn't versioned. It shoots `L_TWINSUN`; switch `-Map` to `/Game/LBA2/Planets/L_TWINSUN_Stubs`
+  to aim with map coordinates (see Poses). The 3a final sheet used these stubs-level poses on Principal's harbour:
+  `-22597,17495,500,-29.1,0;-21882,17179,628,-29.1,90;-16762,20188,628,-29.1,180;-21634,16135,628,-29.1,270;-15364,17764,980,-29.1,135`.
+- **Import.** Run `-run=LBA2Import -Layers=Islands -Islands=CITABAU,CITADEL,DESERT`; it rebuilds the planet's stubs too.
+  About 37 `GetFullName` null warnings in the log were there before 3a.
+- **Unity build.** A file-level name can clash with a local in another file of the same unity blob (C4459). This happened
+  with `PlanetLevel` and `Scale`. Give locals distinct names.
+
 ## Phase 4: trees, rocks and paths
 
 - Scatter LBA2 trees and rocks on grass benches. Measure the density on Citabau rather than guessing.
