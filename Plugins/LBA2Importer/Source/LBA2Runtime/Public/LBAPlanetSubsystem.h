@@ -14,6 +14,7 @@ class ULevelStreaming;
 class ULevelStreamingDynamic;
 class UDirectionalLightComponent;
 class UExponentialHeightFogComponent;
+class UMaterialParameterCollectionInstance;
 class USkyAtmosphereComponent;
 class USkyLightComponent;
 class UVolumetricCloudComponent;
@@ -52,11 +53,15 @@ class UVolumetricCloudComponent;
  *   lba.Globe.ShowClouds 1    the opened island's clouds (to compare)
  *   lba.Globe.ShowFog 1       the opened island's height fog (to compare)
  *   lba.Globe.Haze 0          no haze paling the sky towards the sea's horizon
+ *   lba.Globe.SurfaceSun 0    every surface lit by the sun of the camera's place (to compare)
  *
  * The bent view is a true sphere with the camera on top, so the sun (a directional light, far away) is where it is seen
  * from the camera's place on the planet: the opened island's sun and character lights turn as the camera travels, lit
  * flat ground staying as bright as in its level (UpdateSun; lba.Globe.Sun*). Towards the belt it goes down, and the
- * sky turns orange: it is always sunset on the Hamalayi (lba.Globe.Sunset*).
+ * sky turns orange: it is always sunset on the Hamalayi (lba.Globe.Sunset*). High up the camera leaves the air that
+ * makes the sky orange: above the Dinofly's ceiling it fades back to the day's (lba.Globe.SkySunset*). The
+ * one sun lights the whole view as if everything stood at the camera's place, so the palette shading gives each
+ * surface the sun of its own place instead (LBAPlanetSunRelight, lba.Globe.SurfaceSun), its orange paler on high ground.
  */
 UCLASS()
 class LBA2RUNTIME_API ULBAPlanetSubsystem : public UTickableWorldSubsystem
@@ -112,6 +117,8 @@ private:
 	void LoadIslands();
 	/** Turns the sun and the character lights to where the sun is seen from the view's place on the planet. */
 	void UpdateSun(bool bCameraCut);
+	/** Writes what each surface needs to be lit by the sun of its own place (LBAPlanetSunRelight in LBAPlanet.ush). */
+	void UpdateSurfaceSun(UMaterialParameterCollectionInstance& Instance) const;
 	/** The opened island has clouds, and they are off (lba.Globe.ShowClouds): the sky has to make up for them. */
 	bool IsSkyClear() const;
 	void DrawDebug() const;
@@ -157,6 +164,19 @@ private:
 	/** The place the sun is seen from: the view, smoothed so that the camera swinging around Twinsen doesn't move it. */
 	FVector2D SunView = FVector2D::ZeroVector;
 	bool bHasSunView = false;
+	/** The sun follows the camera (lba.Globe.Sun); then, as UpdateSun last found them, for each surface's own sun: */
+	bool bSunFollows = false;
+	/** The pole and where the sun stands overhead (flat world), the furthest it goes from overhead (radians), the sine of the level's sun elevation. */
+	FVector2D SunPole = FVector2D::ZeroVector;
+	FVector2D SunOverhead = FVector2D::ZeroVector;
+	float SunMaxAngle = 0.f;
+	float SunLevelSine = 1.f;
+	/** Towards the renderer's sun, and the sunset its light and the sky are in. */
+	FVector CameraToSun = FVector::UpVector;
+	float CameraSunset = 0.f;
+	/** The day's sky the palette shading shows high up: at the top (alpha: how much of it) and at the horizon (alpha: how far down it is, radians). */
+	FLinearColor SkyDayZenith = FLinearColor::Transparent;
+	FLinearColor SkyDayHorizon = FLinearColor::Transparent;
 	/** The opened island's sea level (Water plugin oceans) is the sea (lba.Globe.Sea); the sea disc lies under it. */
 	bool bWaterSea = false;
 	TWeakObjectPtr<ULevelStreaming> SeaStream;

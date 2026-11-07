@@ -113,6 +113,27 @@ namespace
 		TEXT("How much the sun's intensity makes up for its elevation: 1 keeps lit flat ground as bright as in the opened island's level, 0 leaves the intensity."));
 	TAutoConsoleVariable<float> CVarGlobeSunSmoothing(TEXT("lba.Globe.SunSmoothing"), 0.5f,
 		TEXT("How slowly the sun follows the camera (seconds)."));
+	// Above the Dinofly's ceiling (60 m) and the belt's crest (62 m): in play the sunset stays.
+	TAutoConsoleVariable<float> CVarGlobeSkySunsetFrom(TEXT("lba.Globe.SkySunsetFrom"), 60.f,
+		TEXT("Climbing, where the camera starts leaving the sunset's air: its sky fades back to the day's (m above the sea)."));
+	TAutoConsoleVariable<float> CVarGlobeSkySunsetTo(TEXT("lba.Globe.SkySunsetTo"), 150.f,
+		TEXT("Where the camera has left the sunset's air: the sky is the day's (m above the sea)."));
+	TAutoConsoleVariable<int32> CVarGlobeSurfaceSun(TEXT("lba.Globe.SurfaceSun"), 1,
+		TEXT("1: each surface is lit by the sun of its own place on the planet (LBAPlanetSunRelight), 0: by the camera's place's, like the renderer (to compare)."));
+	TAutoConsoleVariable<float> CVarGlobeSurfaceSkyLight(TEXT("lba.Globe.SurfaceSkyLight"), 0.4f,
+		TEXT("For each surface's own sun: the sky light's share of lit flat ground's light in the day (the rest is the sun's)."));
+	// Measured with the light the renderer gives (scene color / base color): the belt's walls up close (1.99,0.84,0.33)
+	// against the model's (1.28,1.0,0.8), Citadel's harbour by day (0.33,0.80,0.98) against (0.97,1.0,1.03).
+	TAutoConsoleVariable<FString> CVarGlobeSunsetLight(TEXT("lba.Globe.SunsetLight"), TEXT("4.6,1.05,0.43"),
+		TEXT("For each surface's own sun: the renderer's light in the sunset relative to the day's, beyond the model's sun and sky light (R,G,B; semicolons or spaces also separate them)."));
+	// The renderer's sunset sun is SunsetSunGain stronger, but so low that the belt's benches and folds shade each other:
+	// no more of it reaches surfaces than by day (SunsetLight makes up the rest). SunsetSunGain burnt the belt seen from Citadel.
+	TAutoConsoleVariable<float> CVarGlobeSurfaceSunsetGain(TEXT("lba.Globe.SurfaceSunsetGain"), 1.f,
+		TEXT("For each surface's own sun: how much stronger the sunset sun is than the day's in the light it gives (shadows included)."));
+	TAutoConsoleVariable<int32> CVarGlobeSurfaceSunDebug(TEXT("lba.Globe.SurfaceSunDebug"), 0,
+		TEXT("For calibrating each surface's own sun, shown / 4: 1 the light the renderer gives (scene color / base color), 2 the model's for the surface's place, 3 what that multiplies its light by."));
+	TAutoConsoleVariable<float> CVarGlobeSunsetTintHeight(TEXT("lba.Globe.SunsetTintHeight"), 60.f,
+		TEXT("How high the sunset sun's orange reaches (m): above a surface, the air that reddens it falls by e over this height."));
 	TAutoConsoleVariable<int32> CVarGlobeBelt(TEXT("lba.Globe.Belt"), 1,
 		TEXT("0: the planet's belt (Twinsun's Hamalayi mountains) isn't streamed in (for the next level opened)."));
 	TAutoConsoleVariable<int32> CVarGlobeStubs(TEXT("lba.Globe.Stubs"), 1,
@@ -755,6 +776,7 @@ void ULBAPlanetSubsystem::UpdateView(const FVector& ViewLocation, bool bCameraCu
 		// Lumen's reflections see the sky (or the world) below the flat horizon by themselves.
 		const float SkyBelow = bLumen ? 0.f : CVarGlobeSeaSkyBelow.GetValueOnGameThread();
 		Instance->SetVectorParameterValue(TEXT("PlanetSkyBelow"), FLinearColor(SkyBelow, SkyBelow, SkyBelow, 0.f));
+		UpdateSurfaceSun(*Instance);
 	}
 	PreviousSea = Sea;
 }
@@ -774,7 +796,10 @@ void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
 	FRotator Rotation = LevelSunRotation;
 	float SunScale = 1.f;
 	float Sunset = 0.f;
-	if (CVarGlobeSun.GetValueOnGameThread() != 0)
+	// High up, the camera leaves the air that turns the sky orange: it fades back to the day's.
+	float SkyDay = 0.f;
+	bSunFollows = CVarGlobeSun.GetValueOnGameThread() != 0;
+	if (bSunFollows)
 	{
 		const FVector2D Viewed(View.X, View.Y);
 		const float Smoothing = CVarGlobeSunSmoothing.GetValueOnGameThread();
@@ -802,16 +827,32 @@ void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
 		const FVector SunsetToSun(ToPoleAlong.X * FMath::Cos(SunsetElevation), ToPoleAlong.Y * FMath::Cos(SunsetElevation), FMath::Sin(SunsetElevation));
 		const FVector ToSun = FMath::Lerp(DayToSun, SunsetToSun, double(Sunset)).GetSafeNormal();
 		Rotation = (-ToSun).Rotation();
+		SkyDay = FMath::SmoothStep(CVarGlobeSkySunsetFrom.GetValueOnGameThread(), CVarGlobeSkySunsetTo.GetValueOnGameThread(), float(View.Z - SeaLevel) / 100.f);
 
 		const double LevelSine = -LevelSunRotation.Vector().Z;
 		// Only ever down: a sun lower than the level's, turned up, burns the walls facing it (the belt's went white).
 		SunScale = float(FMath::Min(FMath::Pow(FMath::Max(LevelSine, 0.01) / ToSun.Z, double(CVarGlobeSunGroundLight.GetValueOnGameThread())), 1.0));
 		SunScale *= FMath::Lerp(1.f, CVarGlobeSunsetSunGain.GetValueOnGameThread(), Sunset);
+
+		// For each surface's own sun (LBAPlanetSunRelight): the same, from its own place.
+		SunPole = FVector2D(Pole.X, Pole.Y);
+		SunOverhead = FVector2D(Overhead.X, Overhead.Y);
+		SunMaxAngle = float(MaxAngle);
+		SunLevelSine = float(LevelSine);
+		CameraToSun = ToSun;
 	}
 	else
 	{
 		bHasSunView = false;
 	}
+	CameraSunset = Sunset;
+	// High up, the palette shading shows the day's sky instead of the sunset's (LBAPaletteShading): the clear sky measured
+	// from Citadel's coast at 5 degrees pitch, from top to horizon (sRGB), the horizon as far down as the bend puts it.
+	const double Height = FMath::Max(View.Z - SeaLevel, 0.0);
+	SkyDayZenith = FLinearColor::FromSRGBColor(FColor(20, 120, 170));
+	SkyDayZenith.A = Sunset > 0.f ? SkyDay : 0.f;
+	SkyDayHorizon = FLinearColor::FromSRGBColor(FColor(112, 189, 220));
+	SkyDayHorizon.A = float(FMath::Acos(Radius / (Radius + Height)));
 	Sun->SetWorldRotation(Rotation);
 	Sun->SetIntensity(LevelSunIntensity * SunScale);
 	const FLinearColor SunColor = LevelSunColor * FMath::Lerp(FLinearColor::White, SunsetSunTint, Sunset);
@@ -870,6 +911,36 @@ void ULBAPlanetSubsystem::UpdateSun(bool bCameraCut)
 			SkyAtmosphere->SetMieAnisotropy(HazeGlow);
 		}
 	}
+}
+
+void ULBAPlanetSubsystem::UpdateSurfaceSun(UMaterialParameterCollectionInstance& Instance) const
+{
+	Instance.SetVectorParameterValue(TEXT("PlanetSkyDayZenith"), SkyDayZenith);
+	Instance.SetVectorParameterValue(TEXT("PlanetSkyDayHorizon"), SkyDayHorizon);
+	// Off: PlanetSunTint's alpha 0.
+	if (!bSunFollows || CVarGlobeSurfaceSun.GetValueOnGameThread() == 0)
+	{
+		Instance.SetVectorParameterValue(TEXT("PlanetSunTint"), FLinearColor::Transparent);
+		return;
+	}
+	FLinearColor SunsetLight(4.6f, 1.05f, 0.43f);
+	TArray<FString> Channels;
+	// Any of , ; or spaces between the channels (-ExecCmds splits on commas).
+	const TCHAR* Separators[] = { TEXT(","), TEXT(";"), TEXT(" ") };
+	if (CVarGlobeSunsetLight.GetValueOnGameThread().ParseIntoArray(Channels, Separators, UE_ARRAY_COUNT(Separators)) == 3)
+	{
+		SunsetLight = FLinearColor(FCString::Atof(*Channels[0]), FCString::Atof(*Channels[1]), FCString::Atof(*Channels[2]));
+	}
+	const float SkyLightShare = FMath::Clamp(CVarGlobeSurfaceSkyLight.GetValueOnGameThread(), 0.01f, 1.f);
+	Instance.SetVectorParameterValue(TEXT("PlanetSunPlaces"), FLinearColor(float(SunPole.X), float(SunPole.Y), float(SunOverhead.X), float(SunOverhead.Y)));
+	Instance.SetVectorParameterValue(TEXT("PlanetSunAngles"), FLinearColor(FMath::DegreesToRadians(CVarGlobeSunsetFrom.GetValueOnGameThread()),
+		FMath::DegreesToRadians(CVarGlobeSunsetTo.GetValueOnGameThread()), FMath::DegreesToRadians(CVarGlobeSunsetElevation.GetValueOnGameThread()), SunMaxAngle));
+	Instance.SetVectorParameterValue(TEXT("PlanetSunLight"), FLinearColor(SunLevelSine, CVarGlobeSunGroundLight.GetValueOnGameThread(),
+		CVarGlobeSurfaceSunsetGain.GetValueOnGameThread(), CVarGlobeSunsetTintHeight.GetValueOnGameThread() * 100.f));
+	Instance.SetVectorParameterValue(TEXT("PlanetSunTint"), FLinearColor(SunsetSunTint.R, SunsetSunTint.G, SunsetSunTint.B, SkyLightShare));
+	const int32 Debug = CVarGlobeSurfaceSunDebug.GetValueOnGameThread();
+	Instance.SetVectorParameterValue(TEXT("PlanetSunAmbient"), FLinearColor(SunsetLight.R, SunsetLight.G, SunsetLight.B, Debug > 0 ? -float(Debug) : SunsetLightTint - DayLightTint));
+	Instance.SetVectorParameterValue(TEXT("PlanetSunCamera"), FLinearColor(float(CameraToSun.X), float(CameraToSun.Y), float(CameraToSun.Z), CameraSunset));
 }
 
 void ULBAPlanetSubsystem::DrawDebug() const

@@ -177,3 +177,100 @@ float3 LBAPlanetUnbendVector(FLBAPlanetView P, float3 World, float3 Vector)
 	const float Sin = length(Up.xy);
 	return Vector * Cos + cross(Axis, Vector) * Sin + Axis * dot(Axis, Vector) * (1.0 - Cos);
 }
+
+// Post-process side: each surface's own sun ---------------------------------------------------------------------------
+//
+// The renderer has one sun, the one seen from the camera's place (ULBAPlanetSubsystem::UpdateSun): it lights the whole
+// view as if every surface stood where the camera is, so from the belt's sunset Citadel's cliffs went dark orange, and
+// from Citadel the belt stayed in its daylight. Light belongs to the surface: LBAPlanetSunRelight gives each surface the
+// sun of its own place, as the ratio of a simple model of the light there (sky light + sun on its normal) to the same
+// model for the camera's place. Where the two places agree it is 1, so near surfaces keep their real light and shadows.
+// The model, in the light that shows a base color as it is (lit flat ground in the opened island's level is 1):
+//
+//   light = (Ambient + (1 - Ambient) / sin(the level's sun elevation) * the sun's intensity scale (UpdateSun's)
+//           * max(N . to the sun, 0) * the sun's color) * SunsetLight ^ sunset
+//
+// SunsetLight is measured: the light the renderer gives the belt's walls up close, relative to the model's, against
+// the same for Citadel's harbour by day (the sunset sky light is far more orange and brighter than its sun alone).
+//
+// The sun's color reddens with the sunset, less on high surfaces: low sunlight is orange because of the air it crossed,
+// and higher up there is less of it (the share left above the surface, exp(-height / SunsetTintHeight)). Only its hue:
+// kept as bright as the sunset's, the palette's steep highlights would burn the paler walls white.
+//
+//   PlanetSunPlaces   xy: the pole, zw: where the sun stands overhead (flat world, cm)
+//   PlanetSunAngles   angles from the pole where the sunset begins (x) and is complete (y); z: the sunset sun's
+//                     elevation; w: the furthest the day sun goes from overhead (radians)
+//   PlanetSunLight    x: sin of the level's sun elevation, y: SunGroundLight, z: SurfaceSunsetGain, w: SunsetTintHeight (cm)
+//   PlanetSunTint     rgb: the sunset sun's tint, a: the sky light's share of lit flat ground (0: relighting off)
+//   PlanetSunAmbient  rgb: SunsetLight, a: how much more of the light's color the look takes in the sunset (its
+//                     LightTint; negative: a debug view, lba.Globe.SurfaceSunDebug)
+//   PlanetSunCamera   xyz: towards the renderer's sun, w: the sunset its light and sky are in (UpdateSun)
+//   PlanetSkyDayZenith   rgb: the day's sky at the top, shown high up instead of the sunset's; a: how much of it
+//   PlanetSkyDayHorizon  rgb: the day's sky at the horizon; a: how far below level the horizon is (radians)
+
+struct FLBAPlanetSun
+{
+	float4 Places;
+	float4 Angles;
+	float4 Light;
+	float4 Tint;
+	float4 Ambient;
+	float4 Camera;
+	float4 SkyZenith;
+	float4 SkyHorizon;
+};
+
+bool LBAPlanetSunOn(FLBAPlanetSun Sun)
+{
+	return Sun.Tint.a > 0.0;
+}
+
+// Towards the sun at a place of the flat world, and how far into the sunset it is (as UpdateSun for the camera).
+float3 LBAPlanetSunAt(FLBAPlanetSun Sun, float Radius, float2 Place, out float Sunset)
+{
+	const float2 ToOverhead = Sun.Places.zw - Place;
+	const float Angle = min(length(ToOverhead) / Radius, Sun.Angles.w);
+	const float2 Along = ToOverhead / max(length(ToOverhead), 1e-3);
+	const float3 Day = float3(Along * sin(Angle), cos(Angle));
+	const float2 ToPole = Sun.Places.xy - Place;
+	Sunset = smoothstep(Sun.Angles.x, Sun.Angles.y, length(ToPole) / Radius);
+	const float2 PoleAlong = ToPole / max(length(ToPole), 1e-3);
+	const float3 Dusk = float3(PoleAlong * cos(Sun.Angles.z), sin(Sun.Angles.z));
+	return normalize(lerp(Day, Dusk, Sunset));
+}
+
+// The model's light (see above) on a normal. Sunset: how far into the sunset the sun's strength and the sky are;
+// Reddening: the sun's color.
+float3 LBAPlanetSunModel(FLBAPlanetSun Sun, float3 ToSun, float Sunset, float Reddening, float3 Normal)
+{
+	const float LevelSine = max(Sun.Light.x, 0.01);
+	const float Ground = min(pow(LevelSine / max(ToSun.z, 1e-3), Sun.Light.y), 1.0);
+	const float Gain = lerp(1.0, Sun.Light.z, Sunset);
+	const float Share = saturate(Sun.Tint.a);
+	const float3 Luma = float3(0.2126, 0.7152, 0.0722);
+	const float3 Sunlit = lerp(1.0, Sun.Tint.rgb, Sunset);
+	const float3 Paler = lerp(1.0, Sun.Tint.rgb, Reddening);
+	const float3 Color = Paler * dot(Sunlit, Luma) / max(dot(Paler, Luma), 1e-3);
+	return (Share + (1.0 - Share) / LevelSine * Ground * Gain * saturate(dot(Normal, ToSun)) * Color) * pow(max(Sun.Ambient.rgb, 1e-3), Sunset);
+}
+
+// What the light of a surface at Flat (flat world position, LBAPlanetUnbend) with a flat world Normal is multiplied by
+// to be its own place's; SunsetDelta: how much further into the sunset that place is than the camera's.
+float3 LBAPlanetSunRelight(FLBAPlanetView P, FLBAPlanetSun Sun, float3 Flat, float3 Normal, out float SunsetDelta, out float3 OwnLight)
+{
+	SunsetDelta = 0.0;
+	OwnLight = 1.0;
+	if (!LBAPlanetBent(P) || !LBAPlanetSunOn(Sun))
+	{
+		return 1.0;
+	}
+	float Sunset;
+	const float3 ToSun = LBAPlanetSunAt(Sun, max(P.Bend.x, 1.0), Flat.xy, Sunset);
+	const float Height = max(Flat.z - P.Bend.z, 0.0);
+	const float Reddening = Sunset * exp(-Height / max(Sun.Light.w, 1.0));
+	const float3 Own = LBAPlanetSunModel(Sun, ToSun, Sunset, Reddening, Normal);
+	const float3 Camera = LBAPlanetSunModel(Sun, Sun.Camera.xyz, Sun.Camera.w, Sun.Camera.w, Normal);
+	SunsetDelta = Sunset - Sun.Camera.w;
+	OwnLight = Own;
+	return clamp(Own / max(Camera, 1e-3), 0.05, 8.0);
+}

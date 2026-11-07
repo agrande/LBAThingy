@@ -412,7 +412,8 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 {
 	// Bump when the graph below changes: existing masters are rebuilt in place, user edits are otherwise kept.
 	// v31: globe mode's bend (MPC_LBA_Planet's PlanetBend and PlanetView). v32: pre-drawn art (ArtStencil, CustomDepth).
-	constexpr int32 Version = 32;
+	// v33: globe mode's sun of each surface's place (MPC_LBA_Planet's PlanetSun*). v35: day sky high up (PlanetSkyDay*).
+	constexpr int32 Version = 35;
 
 	CreateDitherTextures();
 	UMaterialParameterCollection* PlanetCollection = GetPlanetParameters();
@@ -510,6 +511,14 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		{ TEXT("SeaTexture"), TextureObject(TEXT("SeaTexture"), LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/Black.Black")), 1080) },
 		{ TEXT("PlanetBend"), Planet(TEXT("PlanetBend"), 1200) },
 		{ TEXT("PlanetView"), Planet(TEXT("PlanetView"), 1280) },
+		{ TEXT("PlanetSunPlaces"), Planet(TEXT("PlanetSunPlaces"), 1360) },
+		{ TEXT("PlanetSunAngles"), Planet(TEXT("PlanetSunAngles"), 1440) },
+		{ TEXT("PlanetSunLight"), Planet(TEXT("PlanetSunLight"), 1520) },
+		{ TEXT("PlanetSunTint"), Planet(TEXT("PlanetSunTint"), 1600) },
+		{ TEXT("PlanetSunAmbient"), Planet(TEXT("PlanetSunAmbient"), 1680) },
+		{ TEXT("PlanetSunCamera"), Planet(TEXT("PlanetSunCamera"), 1760) },
+		{ TEXT("PlanetSkyDayZenith"), Planet(TEXT("PlanetSkyDayZenith"), 1840) },
+		{ TEXT("PlanetSkyDayHorizon"), Planet(TEXT("PlanetSkyDayHorizon"), 1920) },
 		{ TEXT("Strength"), Scalar(TEXT("Strength"), 1.f, TEXT("Palette")) },
 		{ TEXT("NeutralRow"), Scalar(TEXT("NeutralRow"), 12.f, TEXT("Palette")) },
 		{ TEXT("NeutralLight"), Scalar(TEXT("NeutralLight"), 1.f, TEXT("Palette")) },
@@ -646,6 +655,14 @@ UMaterial* FLBARenderingAssets::CreateMaster()
 		"S.Halftone.Contrast = DotContrast;\n"
 		"S.Planet.Bend = PlanetBend;\n"
 		"S.Planet.View = PlanetView.xyz;\n"
+		"S.Sun.Places = PlanetSunPlaces;\n"
+		"S.Sun.Angles = PlanetSunAngles;\n"
+		"S.Sun.Light = PlanetSunLight;\n"
+		"S.Sun.Tint = PlanetSunTint;\n"
+		"S.Sun.Ambient = PlanetSunAmbient;\n"
+		"S.Sun.Camera = PlanetSunCamera;\n"
+		"S.Sun.SkyZenith = PlanetSkyDayZenith;\n"
+		"S.Sun.SkyHorizon = PlanetSkyDayHorizon;\n"
 		"return LBAPaletteShading(Parameters, SceneColor.rgb, BaseColor.rgb, Depth.r, Stencil.r, CustomDepth.r, ShadingModel.r, WorldNormal.rgb, Lut, Shades, SeaTexture,\n"
 		"    Dither, DitherSampler, DitherRamp, DitherRampSampler, HalftoneRamp, HalftoneRampSampler, S);"), DitherDotsPerSide);
 
@@ -811,6 +828,16 @@ UMaterialParameterCollection* FLBARenderingAssets::GetPlanetParameters()
 		{ TEXT("PlanetSeaMove"), FLinearColor::Transparent },
 		// The sky the sea reflects below the flat horizon (LBAPlanetSeaSkyBelow).
 		{ TEXT("PlanetSkyBelow"), FLinearColor::Transparent },
+		// The sun of each surface's place (LBAPlanetSunRelight; PlanetSunTint's alpha 0: off).
+		{ TEXT("PlanetSunPlaces"), FLinearColor::Transparent },
+		{ TEXT("PlanetSunAngles"), FLinearColor::Transparent },
+		{ TEXT("PlanetSunLight"), FLinearColor::Transparent },
+		{ TEXT("PlanetSunTint"), FLinearColor::Transparent },
+		{ TEXT("PlanetSunAmbient"), FLinearColor::Transparent },
+		{ TEXT("PlanetSunCamera"), FLinearColor::Transparent },
+		// High up, the day's sky the palette shading shows (PlanetSkyDayZenith's alpha 0: off).
+		{ TEXT("PlanetSkyDayZenith"), FLinearColor::Transparent },
+		{ TEXT("PlanetSkyDayHorizon"), FLinearColor::Transparent },
 	};
 	// Parameters dropped from the list go (only generated materials use the collection).
 	bool bChanged = PlanetParameters->VectorParameters.RemoveAll([&Defaults](const FCollectionVectorParameter& Parameter)

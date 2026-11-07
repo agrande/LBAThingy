@@ -284,6 +284,7 @@ struct FLBAPaletteShadingSettings
 	FLBAHalftoneSettings Halftone;
 	FLBACartoonWaterSettings Cartoon;
 	FLBAPlanetView Planet;		// globe mode: how the view bends onto the planet (LBAPlanet.ush)
+	FLBAPlanetSun Sun;			// globe mode: the sun of each surface's own place (LBAPlanetSunRelight)
 };
 
 // Viewport UV of the point at a horizontal world offset from a translated world position; false off screen.
@@ -498,6 +499,18 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 	BRANCH
 	if (Depth >= S.SkyDepth || all(BaseColor <= 0.0))
 	{
+		// Globe mode, high up: out of the sunset's air, the day's sky, from the bent horizon to the top; the sun's disc
+		// (far brighter than any sky) stays (ULBAPlanetSubsystem::UpdateSun).
+		BRANCH
+		if (Depth >= S.SkyDepth && LBAPlanetBent(S.Planet) && S.Sun.SkyZenith.a > 0.0)
+		{
+			const float3 Dir = normalize(LBATranslatedPositionAt(GetViewportUV(Parameters), Depth) - PrimaryView.TranslatedWorldCameraOrigin);
+			const float Dip = S.Sun.SkyHorizon.a;
+			const float Up = saturate((asin(clamp(Dir.z, -1.0, 1.0)) + Dip) / (0.5 * PI + Dip));
+			const float3 Day = lerp(S.Sun.SkyHorizon.rgb, S.Sun.SkyZenith.rgb, sqrt(Up));
+			const float3 Sky = lerp(Day, SceneColor, saturate(LBALuma(SceneColor) - 1.0));
+			return LBAGrade(lerp(SceneColor, Sky, S.Sun.SkyZenith.a), S);
+		}
 		return LBAGrade(SceneColor, S);
 	}
 
@@ -513,7 +526,27 @@ float3 LBAPaletteShading(FMaterialPixelParameters Parameters, float3 SceneColor,
 	{
 		return LBAGrade(lerp(SceneColor, S.FogColor, Fog * (1.0 - S.HeightFogAmount)), S);
 	}
-	const float3 Display = max(SceneColor - HeightFog.rgb, 0.0) / HeightFog.a;
+	float3 Display = max(SceneColor - HeightFog.rgb, 0.0) / HeightFog.a;
+	// Globe mode: the light of the surface's own place on the planet, not the camera's (LBAPlanetSunRelight). Not the
+	// sea's: its light is mostly the sky it reflects.
+	BRANCH
+	if (!bWater && LBAPlanetBent(S.Planet) && LBAPlanetSunOn(S.Sun))
+	{
+		const float3 World = DFDemote(DFFastSubtract(CameraToReceiver + PrimaryView.TranslatedWorldCameraOrigin, PrimaryView.PreViewTranslation));
+		float SunsetDelta;
+		float3 OwnLight;
+		const float3 Relight = LBAPlanetSunRelight(S.Planet, S.Sun, LBAPlanetUnbend(S.Planet, World), normalize(WorldNormal), SunsetDelta, OwnLight);
+		// For calibrating the model (lba.Globe.SurfaceSunDebug, a negative LightTint change): the light the renderer gives
+		// (scene color / base color), the model's, and what multiplies it, all / 4.
+		BRANCH
+		if (S.Sun.Ambient.a < -0.5)
+		{
+			const float Mode = -S.Sun.Ambient.a;
+			return 0.25 * (Mode < 1.5 ? Display / max(BaseColor, 0.02) : Mode < 2.5 ? OwnLight : Relight);
+		}
+		Display *= Relight;
+		S.LightTint = saturate(S.LightTint + S.Sun.Ambient.a * SunsetDelta);
+	}
 	BRANCH
 	if (S.Strength <= 0.0 || Fog >= 1.0 || S.DebugView > 3.5)
 	{
