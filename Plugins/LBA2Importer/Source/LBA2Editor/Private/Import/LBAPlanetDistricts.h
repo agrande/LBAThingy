@@ -141,6 +141,12 @@ namespace LBAPlanetDistricts
 		 * Kit, its whole layouts that the kit has a model for are its Pieces.
 		 */
 		bool MakeTown(const FPlaced& Placed, FTown& Out, const LBAPlanetKit::FTable* Kit = nullptr) const;
+		/**
+		 * Where a placed district meets LBA1 scene Other, which isn't one of its own: where Other's exits put the hero in the
+		 * district (Proxima's rune stones lead back to Proxim City's tarmac openings), else the middle of the district's exit
+		 * into Other. On the map (cm), and the way out of the district there (unit: off the scene's nearest edge).
+		 */
+		bool FindWayTo(const FPlaced& Placed, int32 Other, FVector2D& OutPoint, FVector2D& OutDir) const;
 		/** LBA1's data, for the towns' bricks (after Load). */
 		const LBA1::FData& GetData() const { return *Data; }
 

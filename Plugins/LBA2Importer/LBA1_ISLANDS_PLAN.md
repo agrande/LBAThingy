@@ -698,20 +698,30 @@ joined to the island. Scene 47's cliff is a flat wall standing in the water. Sho
   Scenes 45-47 are no longer districts (`LBAPlanetDistricts.cpp`, `Tools/district_pads.py`).
 - **Land:** islets (4.5 m), causeways (5 m wide) and the rock go into the land field before the coast is drawn, so the
   coast, shelf and ground kinds treat them as any other land. Causeways and islets are low (0.6 m).
-- **The rock and its hole:** the slot-and-lid plan failed: on the 1 m grid the lid's edges made tents and slits at the
-  faces (a 2 m hole in a 6.5 m face is finer than a cell). The rock is now a mesh of its own inside the stub's ground mesh
-  (`EmitRocks`): a 16 x 14 m wandering ellipse, sheer fluted sides drawn in a little toward the top and spread at the
-  foot, a ragged grassy top 6.5 m up, a bore 2.3 m wide with a half-round roof straight through, a dark rim at each
-  mouth (LBA1's dark ground kind). The ground under it is flattened, sloping from the near mouth's ground to the
-  causeway's. Same material, so steep is rock streaked from above like the cliffs; its triangles are the island's
-  collision, so Twinsen walks through. Through the bore the stone shows on its islet, as in LBA1.
+- **The rock and its hole** (second version, after the user's review: the first, an elliptical stump with a straight
+  arched tunnel and rims, "looks very unnatural"; the user asked for the bore to be like the Temple of Bu's enclosure):
+  - A ridge across the arm (`EmitRocks`), its ends running out past the coasts into the sea: a capsule outline wandering by
+    noise, 9 m thick at its foot, 6.5 m high, lower toward its ends, steep faces of uneven width with ledges, a lumpy
+    grassy top. A height field of 15 cm cells rising out of the ground it stands on (sunk 15 cm), same material.
+  - The bore as the Temple of Bu's halls (scene 10): 3.5 m wide, a vault from 2.3 m at the walls to 3.3 m, coming down in
+    fans (slope 0.9) onto three pairs of the Temple's own mosaic columns (the remake's `layouts/CA_045_mosaic_column.glb`,
+    library 3 layout 45), walls and roof in the Temple enclosure's finishes (`MI_Grid_010_Finish`, `MI_Grid_010_Roof`,
+    already planet-bent, UVs by position as `FinishUV` lays them).
+  - The mouths: on a sheer face one cell spans 1-2 m up, so cutting cells left slots to the top and teeth. Now the faces lean
+    back to about 65 degrees within a few meters of the way through, cells are cut by their middle a little wider than the
+    bore, and a flare of rock from the bore's end out and back into the ridge closes the edge: a cave mouth.
+  - Tried and dropped on the way: a heightfield slot with a lid (tents and slits at the faces), an elliptical stump with a
+    straight bore and rims (unnatural).
 - **LBA2 pieces tried:** Otringal's vault (decor 111 and its dark twin 143) is closed at one end, not a way through.
   Citadel's dark slab (decor 12) made a poor stone; the stones are generated instead (`EmitStones`: a rounded slab
   1.4 x 0.5 x 2.6 m, pale stone kind, but its sides are steep, so the material draws them as rock).
-- **Roads:** cheapest path from Proxim City's pad edge (length weighted by grade; a cliff costs 60 per cm climbed and the
-  road cuts a ramp through it), Chaikin-smoothed, graded to 12 % (smoothed, clamped from both ends, met halfway), laid in
-  over 2.5 m shoulders; earth 3 m wide, grass verges 1 m, then on along the causeways. Marked: 28 m of road to the rock
-  (Proxim City's east edge is close); Eclipse: 117 m. 273 generated boulders (dented icosahedra, 0.3-0.5 m) every 1.1 m on
+- **Roads:** they leave Proxim City where LBA1 does (`FDistricts::FindWayTo`): where scenes 45 and 47 put the hero back
+  into scene 42, the openings of its two tarmac lots, north (Eclipse) and south (Marked), both at x = 49.5 cells. Out
+  straight 5 m, then the cheapest path (length weighted by grade; a cliff costs 60 per cm climbed and the
+  road cuts a ramp through it), across water as a causeway (10 times the cost of level ground a meter, plus a meter per meter deep; land grows under
+  it at 0.6 m), never across a harbour's water or the ferry's cleared way; Chaikin-smoothed, graded to 12 % (smoothed, clamped from both ends, met halfway), laid in
+  over 2.5 m shoulders; earth 3 m wide, grass verges 1 m, then on along the causeways. Marked: 41 m of road to the rock (63 m2 of
+  causeway); Eclipse: 130 m (22 m2). 273 generated boulders (dented icosahedra, 0.3-0.5 m) every 1.1 m on
   both sides and round the islets.
 - **Props:** the buggy (Citadel decor 85) parked by the road's end at the rock. LBA2 has no motorbike body: none at the
   Eclipse Stone.
@@ -719,14 +729,15 @@ joined to the island. Scene 47's cliff is a flat wall standing in the water. Sho
   `FPlaced::Docks`. From each, the cheapest way to the open sea over water (land costs 30 times more, narrow water up to 8
   times), and the stub's land within 9 m of it is cleared (never a pad's). Proxima: 158 m2 cleared, the sand spit that
   narrowed the basin's mouth to about 10 m is gone. Principal: 1 m2 (already open). Rebellion has no LBA1 ferry.
-- **Checks:** `LBA2.Enclosure` 157 pass; the belt holds Twinsen at 3.7 m; globe 156.8 fps (150.6 after 3c). Twinsen stands
+- **Checks:** `LBA2.Enclosure` 157 pass; the belt holds Twinsen at 3.7 m; globe 156.8 fps (150.6 after 3c), 152.6 with
+  the ridge and the Temple bore. Twinsen stands
   and walks in the bore and on the Eclipse islet (`-Poses hero -Extra "-LBA2HeroAt=56492,37098,13.8,300"`, the fourth
   value the height to look down from).
 - **World poses:** Marked rock front `54550,36620,400,-3,13.8`, side `55894,39526,900,-15,-76.2`, behind the islet
   `59647,37874,400,-5,193.8`; Eclipse from behind its tip `44184,38092,1100,-25,142.5`; harbour from above
   `49033,35946,6000,-89,139.2`. Map positions are in the import log ("road to the ...").
 
-Open: the stones have no runes yet (LBA1's sprite 60); the rock's sides are rather regular from far away; the painting's
+Open: the stones have no runes yet (LBA1's sprite 60); the painting's
 crumb next to the Marked causeway is still an islet of its own; no Twinsen run along a whole road yet.
 
 ### Pitfalls
@@ -739,7 +750,7 @@ crumb next to the Marked causeway is still an islet of its own; no Twinsen run a
 
 ## Checks after each phase
 
-- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a, 152.2 after 3b walls, 150.6 after 3c, 156.8 after Phase 5 (2026-11-07). Another session's CPU-heavy job
+- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a, 152.2 after 3b walls, 150.6 after 3c, 156.8 after Phase 5, 152.6 after its ridge and Temple bore (2026-11-08). Another session's CPU-heavy job
   (a Python script at 100 % of a core) brought the same build to 101-119 fps: check the machine is idle before trusting a number.
 - **Tests:** `LBA2.Enclosure` 157 tests pass; `-LBA2Shots=belt` holds Twinsen at 3.7 m (2026-11-07).
 - **Street level:** `shots.ps1 -Map /Game/LBA2/Planets/L_TWINSUN -Poses hero -Extra "-LBA2HeroAt=6286,56485,0"`

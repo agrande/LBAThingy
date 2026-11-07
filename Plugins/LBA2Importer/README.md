@@ -730,11 +730,14 @@ How it holds together (the world is flat and still; only the view is round):
   level. Twinsen walks the harbour's streets. Globe test on `L_TWINSUN`: 128.0 fps (130.6 without the stub islands).
 - **Places reached by road, and the ferry's way in** (`LBAPlanetSites`, Phase 5 of `LBA1_ISLANDS_PLAN.md`, prototype
   `Tools/rune_sites.py`): Proxima's rune stones. The Marked Stone (LBA1 scene 46, the Hamalayi side) stands on a round
-  islet past a sheer rock with a bore through it, the road from Proxim City ending at the rock (the buggy parked there);
-  the Eclipse Stone (scene 45, the desert side) at the end of a causeway off the south lobe, 117 m of road from the town.
+  islet past a rock ridge across its arm with a bore through it, lined as the Temple of Bu's halls (its mosaic columns from
+  the remake, fans, its enclosure's finishes), the buggy parked at the ridge; the Eclipse Stone (scene 45, the desert side)
+  at the end of a causeway off the south lobe. Roads leave Proxim City where LBA1 does (its tarmac lots' openings, where
+  scenes 45 and 47 lead back to it) and cross water on causeways, never across a harbour or the ferry's way in.
   Each starts at its LBA1 holomap marker and moves to the nearest tip of painted land; islets and causeways go into the
-  stub's land before its coast is drawn. The rock is a mesh of its own in the stub's ground mesh (fluted sides, a grassy
-  top, an arched bore with dark rims), the stones generated slabs. Roads: cheapest path over the ground, graded to 12 %,
+  stub's land before its coast is drawn. The ridge is a fine height field of its own in the stub's ground mesh (15 cm
+  cells: a hole in a steep face is finer than the ground's 1 m), its mouths cut cleanly and flared; the stones are
+  generated slabs. Roads: cheapest path over the ground, graded to 12 %,
   earth with grass verges and generated boulders along both edges. Harbours: from where LBA1's ferry docks (its FILE3D
   27), the stub's land within 9 m of the widest water way out to the open sea is cleared, so the ferry can come in.
 - **LBA1's town kit** (`LBAPlanetKit`, Phase 3 of `LBA1_ISLANDS_PLAN.md`): a recurring piece (a whole layout, known by

@@ -833,6 +833,7 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 
 		// LBA1's districts: their pads in the ground, the coast and the shelf around them again.
 		TArray<bool> Pad;
+		TArray<bool> PadWater;
 		TArray<bool> Kinded;
 		TArray<LBAPlanetDistricts::FGroundShares> Kinds;
 		TArray<LBAPlanetDistricts::FPlaced> Placed;
@@ -849,6 +850,7 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			Heights.Values = MoveTemp(Ground.Heights);
 			Land = MoveTemp(Ground.Land);
 			Pad = MoveTemp(Ground.Pad);
+			PadWater = Ground.PadWater;
 			Kinded = MoveTemp(Ground.Kinded);
 			Kinds = MoveTemp(Ground.Kinds);
 			// Room for the ferry to come into LBA1's harbours.
@@ -898,11 +900,23 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			Heights.Values[Index] = float(Land[Index] ? FMath::Clamp(Height, 2.0, double(Heights.Values[Index])) : FMath::Max(Height, -CoastSeaDepth));
 		}
 
-		// The roads to the sites, graded in.
+		// The roads to the sites, from where LBA1 leaves the towns for them, graded in.
 		TArray<float> RoadShare, VergeShare;
 		if (bSites)
 		{
-			Sites.LayRoads(Heights.Values, Land, Pad, RoadShare, VergeShare);
+			Sites.FindWays(Districts, Placed);
+			// Causeways keep off the towns' harbours and the ferry's ways in.
+			TArray<bool> Avoid = PadWater;
+			const TArray<bool>& Channels = Sites.GetChannels();
+			for (int32 Index = 0; Index < Channels.Num() && Index < Cells; ++Index)
+			{
+				if (Avoid.IsEmpty())
+				{
+					Avoid.Init(false, Cells);
+				}
+				Avoid[Index] = Avoid[Index] || Channels[Index];
+			}
+			Sites.LayRoads(Heights.Values, Land, Pad, Avoid, RoadShare, VergeShare);
 		}
 
 		// The ground: grass or earth on the benches by the painting (patches of earth among the grass), painted sand,
@@ -1064,7 +1078,14 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			Grass.Color = FVector4f(1.f, 0.f, 0.f, 0.f);
 			FLBAVertex Dark = Rock;
 			Dark.UV = FVector2f(1.f, 0.f);
-			Sites.EmitRocks(Pivot, Rock, Grass, Dark, Builder, GroundSection);
+			// The bores lined as the Temple of Bu's halls are (scene 10, its enclosure's finishes).
+			UMaterialInterface* TempleWalls = Context.FindAsset<UMaterialInterface>(Context.GetContentPath(TEXT("Interiors/Grids/Enclosure")), TEXT("MI_Grid_010_Finish"));
+			UMaterialInterface* TempleRoof = Context.FindAsset<UMaterialInterface>(Context.GetContentPath(TEXT("Interiors/Grids/Enclosure")), TEXT("MI_Grid_010_Roof"));
+			if (!TempleWalls || !TempleRoof)
+			{
+				Context.Warn(TEXT("LBA1 sites: no Temple of Bu finishes (MI_Grid_010_Finish, _Roof: import the interiors first), the bore takes the ground's"));
+			}
+			Sites.EmitRocks(Heights.Values, Pivot, Rock, Grass, Dark, Builder, GroundSection, TempleWalls, TempleRoof);
 			FLBAVertex PaleStone = Rock;
 			PaleStone.Color = FVector4f(0.f, 0.f, 0.f, 1.f);
 			Sites.EmitStones(Heights.Values, Pivot, PaleStone, Builder, GroundSection);

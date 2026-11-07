@@ -6,23 +6,31 @@
 #include "Formats/LBA1.h"
 #include "Import/LBAImportContext.h"
 #include "Import/LBAMeshBuilder.h"
+#include "Import/LBAPlanetDistricts.h"
+#include "Import/LBARemakeAssets.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBAPlanet.h"
 
 namespace LBAPlanetSitesPrivate
 {
-	/** The sites, by island: the stone's LBA1 scene (its holomap marker), and whether a rock with a hole is before it. */
+	/**
+	 * The sites, by island: the stone's LBA1 scene (its holomap marker), the scene its town leads to on the way (where the
+	 * road leaves the town), and whether a rock with a hole is before it.
+	 */
 	struct FSiteEntry
 	{
 		const TCHAR* Island;
 		const TCHAR* Name;
 		int32 Scene;
+		int32 FromScene;
 		bool bRock;
 	};
 	constexpr FSiteEntry SiteTable[] =
 	{
-		{ TEXT("Proxima"), TEXT("Marked Stone"), 46, true },
-		{ TEXT("Proxima"), TEXT("Eclipse Stone"), 45, false },
+		{ TEXT("Proxima"), TEXT("Marked Stone"), 46, 47, true },
+		{ TEXT("Proxima"), TEXT("Eclipse Stone"), 45, 45, false },
 	};
 
 	// Lengths in cm.
@@ -37,24 +45,43 @@ namespace LBAPlanetSitesPrivate
 	constexpr double IsletRadius = 450.0;
 	/** Causeways and islets: low, level shore. */
 	constexpr double LowGround = 60.0;
-	/** The Marked Stone's rock: half its length along the way out (its face at the tip), half its width, its height over the ground (LBA1: 20 bricks, 6.4 m), the width over which its sides rise. */
-	constexpr double RockLong = 800.0;
-	constexpr double RockWide = 700.0;
-	constexpr double RockHeight = 650.0;
-	constexpr double RockEdge = 120.0;
-	constexpr double RockGround = 80.0;
+	/** The Marked Stone's ridge: half its thickness at its foot along the way out (its near face at the tip), its height over the ground (LBA1: 20 bricks, 6.4 m), its faces' width (steep), how far its ends reach past the arm's coasts, its half length's limits. */
+	constexpr double RidgeHalf = 450.0;
+	constexpr double RidgeHeight = 650.0;
+	constexpr double FaceMin = 100.0;
+	constexpr double FaceMax = 230.0;
+	constexpr double RidgeEnds = 400.0;
+	constexpr double RidgeMinHalf = 500.0;
+	constexpr double RidgeMaxHalf = 1500.0;
+	/** Its mesh: cells (cm), its foot sunk this far into the ground. */
+	constexpr double RockCell = 15.0;
+	/** The faces' width round the mouths (cm): about 65 degrees there. */
+	constexpr double MouthFace = 300.0;
+	constexpr double RockSink = 15.0;
 	/** Where the hole comes out: low ground before the causeway. */
 	constexpr double Landing = 350.0;
-	/** The bore: its half width, where its arch springs over the floor (a half circle on top), its rim's width round the mouth. */
-	constexpr double HoleHalf = 115.0;
-	constexpr double Spring = 160.0;
-	constexpr double RimWidth = 35.0;
-	/** The rock mesh: steps round its outline, rows up its sides (fine where the mouths are), its foot sunk this far. */
-	constexpr int32 RockTurns = 288;
-	constexpr double RockFineRows = 30.0;
-	constexpr double RockFineTop = 330.0;
-	constexpr int32 RockCoarseRows = 7;
-	constexpr double RockSink = 40.0;
+	/**
+	 * The bore, as the Temple of Bu's halls (LBAHollow's vault: the roof rises with the distance from what holds it): its half
+	 * width, its vault's spring at the walls and rise to the middle; pairs of the Temple's mosaic columns along its walls
+	 * (inset from them, their radius, height, how far apart, the first from the near mouth), the roof coming down on each
+	 * in a fan of this slope.
+	 */
+	constexpr double BoreHalf = 175.0;
+	constexpr double BoreSpring = 230.0;
+	constexpr double BoreRise = 100.0;
+	constexpr double PillarInset = 40.0;
+	constexpr double PillarRadius = 25.0;
+	constexpr double PillarTop = 170.0;
+	constexpr double PillarEvery = 240.0;
+	constexpr double PillarFirst = 150.0;
+	constexpr double FanSlope = 0.9;
+	/** The remake's model of the Temple's column (library 3, layout 45), under www/models/lba2. */
+	const TCHAR* const PillarFolder = TEXT("layouts");
+	const TCHAR* const PillarFile = TEXT("CA_045_mosaic_column.glb");
+	/** The mouths are cut this much wider than the bore; a flare of rock reaches out from the bore's end this far and back into the ridge this deep, closing the gap. */
+	constexpr double MouthWiden = 15.0;
+	constexpr double FlareOut = 110.0;
+	constexpr double FlareBack = 120.0;
 	/** The road: half its width, its grass verges, the ground easing into it, its steepest climb. */
 	constexpr double RoadHalf = 150.0;
 	constexpr double Verge = 100.0;
@@ -63,6 +90,8 @@ namespace LBAPlanetSitesPrivate
 	/** Ground steeper than this between two cells is a cliff to the road's search: crossed only at a price per cm climbed. */
 	constexpr double CliffGrade = 0.45;
 	constexpr double CliffCost = 60.0;
+	/** Across water the road is a causeway: this many times dearer a meter than level ground, plus a meter for each meter deep. */
+	constexpr double CausewayCost = 10.0;
 	/** Boulders along the roads: this far apart (and up to Wander off that), their radius. */
 	constexpr double BoulderEvery = 110.0;
 	constexpr double BoulderWander = 25.0;
@@ -167,28 +196,83 @@ namespace LBAPlanetSitesPrivate
 
 	FVector2D Side(const FVector2D& Dir) { return FVector2D(-Dir.Y, Dir.X); }
 
-	/** The rock's outline wanders this much round its ellipse (Angle as atan2(v / wide, u / long)); not at its ends, where the bore is. */
-	double RockWobble(double Angle)
+	/** Smooth noise, about -1 to 1, with features about Scale wide. */
+	double SiteNoise(const FVector2D& P, double Scale, double Seed)
 	{
-		const double Ends = FMath::Square(FMath::Sin(Angle));
-		return 1.0 + Ends * (0.10 * FMath::Sin(3.0 * Angle + 1.3) + 0.06 * FMath::Sin(5.0 * Angle + 0.4) + 0.04 * FMath::Sin(8.0 * Angle + 2.1));
+		const FVector2D Q = P / Scale;
+		return 0.5 * FMath::Sin(Q.X * 1.0 + 1.1 + Seed) * FMath::Cos(Q.Y * 1.3 + 0.3 + 2.0 * Seed)
+			+ 0.3 * FMath::Sin((0.7 * Q.X - 0.6 * Q.Y) * 1.7 + 2.0 + 3.0 * Seed)
+			+ 0.2 * FMath::Cos((0.4 * Q.X + 0.9 * Q.Y) * 2.9 + 0.5 + 5.0 * Seed);
 	}
 
-	/** How far inside the Marked Stone's rock a point is (cm, negative outside): an ellipse from the tip outward, its outline wandering a little. */
-	double RockInside(const FVector2D& P, const LBAPlanetSites::FSite& Site)
+	/** How far inside the Marked Stone's ridge a point is (cm, negative outside): round a segment across the way out, its outline wandering. */
+	double RidgeField(const FVector2D& P, const LBAPlanetSites::FSite& Site)
 	{
-		const FVector2D Center = Site.Tip + Site.Dir * RockLong;
-		const double U = FVector2D::DotProduct(P - Center, Site.Dir);
-		const double V = FVector2D::DotProduct(P - Center, Side(Site.Dir));
-		const double Angle = FMath::Atan2(V / RockWide, U / RockLong);
-		const double R = FMath::Sqrt(FMath::Square(U / RockLong) + FMath::Square(V / RockWide)) / RockWobble(Angle);
-		return (1.0 - R) * FMath::Min(RockLong, RockWide);
+		const FVector2D Across = Side(Site.Dir);
+		const FVector2D From = Site.RidgeCenter - Across * FMath::Max(Site.RidgeLeft - RidgeHalf, 0.0);
+		const FVector2D To = Site.RidgeCenter + Across * FMath::Max(Site.RidgeRight - RidgeHalf, 0.0);
+		return RidgeHalf - SegmentDistance(P, From, To) + 80.0 * SiteNoise(P, 260.0, 0.0) + 25.0 * SiteNoise(P, 70.0, 1.0);
 	}
 
-	/** Smooth noise, -1 to 1, with features a few meters wide. */
-	double RockNoise(const FVector2D& P)
+	/** The ridge's height over the ground it stands on (cm): steep faces of uneven width with ledges, a rolling top, lower toward its ends. */
+	double RidgeRise(const FVector2D& P, const LBAPlanetSites::FSite& Site)
 	{
-		return 0.5 * FMath::Sin(P.X / 170.0 + 1.1) * FMath::Cos(P.Y / 230.0 + 0.3) + 0.5 * FMath::Sin((P.X + P.Y) / 310.0 + 2.0);
+		const double Field = RidgeField(P, Site);
+		if (Field <= 0.0)
+		{
+			return 0.0;
+		}
+		// Round the mouths the faces lean back more, so the bore cuts them cleanly (a cell of a sheer face spans meters up).
+		const double FromWay = FMath::Abs(FVector2D::DotProduct(P - Site.Tip, Side(Site.Dir)));
+		const double Face = FMath::Max(FMath::Lerp(FaceMin, FaceMax, 0.5 + 0.5 * SiteNoise(P, 180.0, 2.0)), MouthFace * (1.0 - FMath::SmoothStep(BoreHalf + 100.0, BoreHalf + 400.0, FromWay)));
+		double S = FMath::Clamp(Field / Face, 0.0, 1.0);
+		S = FMath::Clamp(S + 0.05 * FMath::Sin(2.0 * PI * 3.0 * S), 0.0, 1.0);
+		const double Up = S * S * (3.0 - 2.0 * S);
+		const double Across = FVector2D::DotProduct(P - Site.RidgeCenter, Side(Site.Dir));
+		const double End = Across < 0.0 ? Site.RidgeLeft : Site.RidgeRight;
+		const double Ends = FMath::SmoothStep(End - 700.0, End, FMath::Abs(Across));
+		const double Top = RidgeHeight * (1.0 - 0.45 * Ends) + 60.0 * SiteNoise(P, 300.0, 3.0) + 20.0 * SiteNoise(P, 90.0, 4.0);
+		return Up * Top;
+	}
+
+	/** The way through the ridge: the ground's height (cm) at Along (from the tip, along the way out), from its near mouth to its far one. */
+	double RidgeFloor(double Along, const LBAPlanetSites::FSite& Site)
+	{
+		return FMath::Lerp(Site.NearGround, Site.FarGround, FMath::Clamp(Along / (2.0 * RidgeHalf), 0.0, 1.0));
+	}
+
+	/** The bore's columns: (along from the tip, across), pairs along its walls. */
+	TArray<FVector2D> BorePillars()
+	{
+		TArray<FVector2D> Pillars;
+		for (double Along = PillarFirst; Along <= 2.0 * RidgeHalf - PillarFirst + 1.0; Along += PillarEvery)
+		{
+			Pillars.Add(FVector2D(Along, -(BoreHalf - PillarInset)));
+			Pillars.Add(FVector2D(Along, BoreHalf - PillarInset));
+		}
+		return Pillars;
+	}
+
+	/** The bore's roof over its floor (cm) at Along, V: its vault, coming down in a fan on each column. */
+	double BoreRoof(double Along, double V, const LBAPlanetSites::FSite& Site)
+	{
+		const double Out = FMath::Clamp(FMath::Abs(V) / BoreHalf, 0.0, 1.0);
+		double Roof = BoreSpring + BoreRise * FMath::Sqrt(1.0 - Out * Out);
+		for (const FVector2D& Pillar : BorePillars())
+		{
+			const double Off = FMath::Max(FVector2D::Distance(FVector2D(Along, V), Pillar) - PillarRadius, 0.0);
+			Roof = FMath::Min(Roof, PillarTop + FanSlope * Off);
+		}
+		return Roof;
+	}
+
+	/**
+	 * In the bore's mouth (Along, V; H the middle of a ridge cell over the floor): what is cut out of the ridge's faces. A
+	 * little wider than the bore all round, the gap closed by its flare.
+	 */
+	bool InMouth(double Along, double V, double H, const LBAPlanetSites::FSite& Site)
+	{
+		return Along > -300.0 && Along < 2.0 * RidgeHalf + 300.0 && FMath::Abs(V) < BoreHalf + MouthWiden && H < BoreRoof(Along, V, Site) + MouthWiden;
 	}
 
 	/** Cheapest path over the grid (8 neighbours) from any of Starts to the first cell Goal accepts; Step(From, To, Run) < 0 is blocked. */
@@ -394,7 +478,7 @@ void LBAPlanetSites::FSites::Load(const LBA1::FData& Data, double Radius)
 		FLBAPlanetIsland Place;
 		Place.Latitude = Markers[Site.Scene].X;
 		Place.Longitude = Markers[Site.Scene].Y;
-		Entries.Add({ Site.Island, Site.Name, Site.Scene, Site.bRock, Place.GetMapLocation(Radius) });
+		Entries.Add({ Site.Island, Site.Name, Site.Scene, Site.FromScene, Site.bRock, Place.GetMapLocation(Radius) });
 	}
 }
 
@@ -409,6 +493,7 @@ void LBAPlanetSites::FSites::Find(const FString& Island, const FGridInfo& InGrid
 	Grid = InGrid;
 	Sites.Reset();
 	Boulders.Reset();
+	Channels.Reset();
 	const int32 Cells = Grid.SizeX * Grid.SizeY;
 	if (!HasIsland(Island))
 	{
@@ -465,14 +550,37 @@ void LBAPlanetSites::FSites::Find(const FString& Island, const FGridInfo& InGrid
 		FSite& Site = Sites.AddDefaulted_GetRef();
 		Site.Name = Entry.Name;
 		Site.Scene = Entry.Scene;
+		Site.FromScene = Entry.FromScene;
 		Site.bRock = Entry.bRock;
 		Site.Marker = Entry.Marker;
 		Site.Tip = Tip;
 		const FVector2D Out = Entry.Marker - Tip;
 		Site.Dir = Out.Size() > 300.0 ? Out.GetSafeNormal() : (Entry.Marker - Centroid).GetSafeNormal();
 		// The causeway starts at the tip, or past the rock where the hole comes out; the islet at least CausewayMin on.
-		Site.Shore = Site.bRock ? Tip + Site.Dir * (2.0 * RockLong + Landing - 100.0) : Tip;
+		Site.Shore = Site.bRock ? Tip + Site.Dir * (2.0 * RidgeHalf + Landing - 100.0) : Tip;
 		Site.Islet = Site.Shore + Site.Dir * FMath::Clamp(FVector2D::Distance(Entry.Marker, Site.Shore), CausewayMin, CausewayMax);
+		if (Site.bRock)
+		{
+			// The ridge spans the arm and runs out into the sea past its coasts.
+			Site.RidgeCenter = Tip + Site.Dir * RidgeHalf;
+			auto Reach = [&](double Sign)
+			{
+				double Out = 0.0;
+				for (; Out < RidgeMaxHalf; Out += 50.0)
+				{
+					const FVector2D P = Site.RidgeCenter + Side(Site.Dir) * Sign * Out;
+					const int32 X = FMath::RoundToInt((P.X - Grid.Origin.X) / Grid.Cell);
+					const int32 Y = FMath::RoundToInt((P.Y - Grid.Origin.Y) / Grid.Cell);
+					if (X < 0 || Y < 0 || X >= Grid.SizeX || Y >= Grid.SizeY || !MainLand[Y * Grid.SizeX + X])
+					{
+						break;
+					}
+				}
+				return FMath::Clamp(Out + RidgeEnds, RidgeMinHalf, RidgeMaxHalf);
+			};
+			Site.RidgeLeft = Reach(-1.0);
+			Site.RidgeRight = Reach(1.0);
+		}
 	}
 }
 
@@ -491,7 +599,6 @@ void LBAPlanetSites::FSites::AddLand(TArray<float>& LandField) const
 				Inside = FMath::Max(Inside, CausewayHalf - SegmentDistance(P, Site.Shore, Site.Islet));
 				if (Site.bRock)
 				{
-					Inside = FMath::Max(Inside, RockInside(P, Site));
 					Inside = FMath::Max(Inside, Landing - FVector2D::Distance(P, Site.Shore));
 					Inside = FMath::Max(Inside, CausewayHalf - SegmentDistance(P, Site.Tip, Site.Shore));
 				}
@@ -538,13 +645,12 @@ void LBAPlanetSites::FSites::ShapeHeights(TArray<float>& Heights, const TArray<b
 				{
 					continue;
 				}
-				// Under the rock (its mesh, EmitRocks) and round its foot: level across, sloping from its near mouth to its far one.
-				const double Inside = RockInside(P, Site);
-				if (Inside > -250.0)
+				// Under the ridge (its mesh, EmitRocks) and round its foot: level across, sloping from its near mouth to its far one.
+				const double Inside = RidgeField(P, Site);
+				if (Inside > -150.0)
 				{
-					const double Along = FMath::Clamp(FVector2D::DotProduct(P - Site.Tip, Site.Dir) / (2.0 * RockLong), 0.0, 1.0);
-					const double Floor = FMath::Lerp(Site.NearGround, Site.FarGround, Along);
-					const double Keep = FMath::SmoothStep(-250.0, -50.0, Inside);
+					const double Floor = RidgeFloor(FVector2D::DotProduct(P - Site.Tip, Site.Dir), Site);
+					const double Keep = FMath::SmoothStep(-150.0, 0.0, Inside);
 					Height = float(FMath::Lerp(double(Height), Floor, Keep));
 				}
 			}
@@ -552,12 +658,13 @@ void LBAPlanetSites::FSites::ShapeHeights(TArray<float>& Heights, const TArray<b
 	}
 }
 
-int32 LBAPlanetSites::FSites::OpenHarbours(const FString& Island, const TArray<FVector2D>& Docks, TArray<bool>& Land, const TArray<bool>& Pad) const
+int32 LBAPlanetSites::FSites::OpenHarbours(const FString& Island, const TArray<FVector2D>& Docks, TArray<bool>& Land, const TArray<bool>& Pad)
 {
 	using namespace LBAPlanetSitesPrivate;
 	const int32 SizeX = Grid.SizeX;
 	const int32 SizeY = Grid.SizeY;
 	const int32 Cells = SizeX * SizeY;
+	Channels.Init(false, Cells);
 	int32 Cleared = 0;
 	for (const FVector2D& Dock : Docks)
 	{
@@ -619,10 +726,11 @@ int32 LBAPlanetSites::FSites::OpenHarbours(const FString& Island, const TArray<F
 				for (int32 X = FMath::Max(PX - Reach, 0); X <= FMath::Min(PX + Reach, SizeX - 1); ++X)
 				{
 					const int32 Index = Y * SizeX + X;
-					if (Land[Index] && (Pad.IsEmpty() || !Pad[Index]) && FMath::Square(X - PX) + FMath::Square(Y - PY) <= Reach * Reach)
+					if ((Pad.IsEmpty() || !Pad[Index]) && FMath::Square(X - PX) + FMath::Square(Y - PY) <= Reach * Reach)
 					{
+						Channels[Index] = true;
+						Here += Land[Index] ? 1 : 0;
 						Land[Index] = false;
-						++Here;
 					}
 				}
 			}
@@ -648,7 +756,24 @@ float LBAPlanetSites::FSites::SampleHeight(const TArray<float>& Heights, const F
 	return FMath::Lerp(FMath::Lerp(H(X0, Y0), H(X0 + 1, Y0), FX), FMath::Lerp(H(X0, Y0 + 1), H(X0 + 1, Y0 + 1), FX), FY);
 }
 
-void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, const TArray<bool>& Land, const TArray<bool>& Pad, TArray<float>& RoadShare, TArray<float>& VergeShare)
+void LBAPlanetSites::FSites::FindWays(const LBAPlanetDistricts::FDistricts& Districts, const TArray<LBAPlanetDistricts::FPlaced>& Placed)
+{
+	for (FSite& Site : Sites)
+	{
+		Site.bWay = false;
+		for (const LBAPlanetDistricts::FPlaced& District : Placed)
+		{
+			if (!Site.bWay && Districts.FindWayTo(District, Site.FromScene, Site.WayPoint, Site.WayDir))
+			{
+				Site.bWay = true;
+				UE_LOG(LogLBA2, Display, TEXT("LBA2 planet stub: the road to the %s leaves %s at (%.1f, %.1f) m, where LBA1 leads to scene %d"),
+					*Site.Name, *District.Name, Site.WayPoint.X / 100.0, Site.WayPoint.Y / 100.0, Site.FromScene);
+			}
+		}
+	}
+}
+
+void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, TArray<bool>& Land, const TArray<bool>& Pad, const TArray<bool>& Avoid, TArray<float>& RoadShare, TArray<float>& VergeShare)
 {
 	using namespace LBAPlanetSitesPrivate;
 	const int32 SizeX = Grid.SizeX;
@@ -667,7 +792,7 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, const TArray<bool>
 	{
 		for (const FSite& Site : Sites)
 		{
-			if (Site.bRock && RockInside(P, Site) > -Margin)
+			if (Site.bRock && RidgeField(P, Site) > -Margin)
 			{
 				return true;
 			}
@@ -748,29 +873,46 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, const TArray<bool>
 	int32 SiteSeed = 1;
 	for (FSite& Site : Sites)
 	{
-		const FVector2D End = Site.bRock ? Site.Tip - Site.Dir * 200.0 : Site.Tip;
+		const FVector2D End = Site.bRock ? Site.Tip - Site.Dir * 250.0 : Site.Tip;
 		const int32 Goal = CellOf(End);
 		// Nothing past a rock's face: the road stops in front of it.
 		auto Blocked = [&](int32 Index)
 		{
-			if (!Land[Index] || (IsPad(Index) && !IsEdge[Index]))
+			if ((Land[Index] && IsPad(Index) && !IsEdge[Index]) || (!Land[Index] && !Avoid.IsEmpty() && Avoid[Index]))
 			{
 				return true;
 			}
 			const FVector2D P = CellToMap(Index % SizeX, Index / SizeX);
 			for (const FSite& Other : Sites)
 			{
-				if (Other.bRock && FVector2D::DotProduct(P - Other.Tip, Other.Dir) > -100.0 && FMath::Abs(FVector2D::DotProduct(P - Other.Tip, Side(Other.Dir))) < RockWide + 300.0
-					&& FVector2D::Distance(P, Other.Tip) < 2.0 * RockLong + 2500.0)
+				const double Along = FVector2D::DotProduct(P - Other.Tip, Other.Dir);
+				const double Across = FVector2D::DotProduct(P - Other.RidgeCenter, Side(Other.Dir));
+				if (Other.bRock && Along > -100.0 && Along < 2.0 * RidgeHalf + 3000.0 && Across > -Other.RidgeLeft - 300.0 && Across < Other.RidgeRight + 300.0)
 				{
 					return true;
 				}
 			}
 			return false;
 		};
-		TArray<int32> Starts = Edge;
-		Starts.Sort([&](int32 A, int32 B) { return FVector2D::DistSquared(CellToMap(A % SizeX, A / SizeX), End) < FVector2D::DistSquared(CellToMap(B % SizeX, B / SizeX), End); });
-		Starts.SetNum(FMath::Min(Starts.Num(), 80));
+		// From where LBA1 leaves the town for the stone: straight out of it first, then on by the cheapest way.
+		TArray<int32> Starts;
+		TArray<FVector2D> Lead;
+		if (Site.bWay)
+		{
+			FVector2D Out = Site.WayPoint + Site.WayDir * 500.0;
+			for (int32 Step = 0; Step < 10 && IsPad(CellOf(Out)); ++Step)
+			{
+				Out += Site.WayDir * 100.0;
+			}
+			Lead = { Site.WayPoint, Out };
+			Starts.Add(CellOf(Out));
+		}
+		else
+		{
+			Starts = Edge;
+			Starts.Sort([&](int32 A, int32 B) { return FVector2D::DistSquared(CellToMap(A % SizeX, A / SizeX), End) < FVector2D::DistSquared(CellToMap(B % SizeX, B / SizeX), End); });
+			Starts.SetNum(FMath::Min(Starts.Num(), 80));
+		}
 		if (Starts.IsEmpty())
 		{
 			UE_LOG(LogLBA2, Warning, TEXT("LBA2 planet stub: no town for the road to the %s"), *Site.Name);
@@ -783,6 +925,11 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, const TArray<bool>
 				{
 					return -1.0;
 				}
+				// Across water: a causeway, dearer the deeper.
+				if (!Land[To])
+				{
+					return Run * (CausewayCost + FMath::Max(0.0, -double(Heights[To])) / 100.0);
+				}
 				const double Climb = FMath::Abs(Heights[To] - Heights[From]);
 				const double Grade = Climb / (Run * Grid.Cell);
 				const double Kept = FMath::Min(Grade, CliffGrade);
@@ -794,10 +941,10 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, const TArray<bool>
 			UE_LOG(LogLBA2, Warning, TEXT("LBA2 planet stub: no way found for the road to the %s"), *Site.Name);
 			continue;
 		}
-		TArray<FVector2D> Points;
-		for (const int32 Index : Cellpath)
+		TArray<FVector2D> Points = Lead;
+		for (int32 Index = Lead.IsEmpty() ? 0 : 1; Index < Cellpath.Num(); ++Index)
 		{
-			Points.Add(CellToMap(Index % SizeX, Index / SizeX));
+			Points.Add(CellToMap(Cellpath[Index] % SizeX, Cellpath[Index] / SizeX));
 		}
 		Points = SmoothPath(Points, 4);
 		if (!Site.bRock)
@@ -810,7 +957,31 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, const TArray<bool>
 		TArray<double> Z;
 		for (const FVector2D& P : Line)
 		{
-			Z.Add(SampleHeight(Heights, P));
+			Z.Add(Land[CellOf(P)] ? SampleHeight(Heights, P) : LowGround);
+		}
+		// Where it crosses water, a causeway: land under it, at the shore's height (then graded with the rest).
+		int32 Built = 0;
+		const int32 Wide = FMath::CeilToInt(CausewayHalf / Grid.Cell);
+		for (const FVector2D& P : Line)
+		{
+			if (Land[CellOf(P)])
+			{
+				continue;
+			}
+			const FVector2D C = (P - Grid.Origin) / Grid.Cell;
+			for (int32 Y = FMath::Max(FMath::RoundToInt(C.Y) - Wide, 0); Y <= FMath::Min(FMath::RoundToInt(C.Y) + Wide, SizeY - 1); ++Y)
+			{
+				for (int32 X = FMath::Max(FMath::RoundToInt(C.X) - Wide, 0); X <= FMath::Min(FMath::RoundToInt(C.X) + Wide, SizeX - 1); ++X)
+				{
+					const int32 Index = Y * SizeX + X;
+					if (!Land[Index] && !IsPad(Index) && (Avoid.IsEmpty() || !Avoid[Index]) && FVector2D::Distance(CellToMap(X, Y), P) <= CausewayHalf)
+					{
+						Land[Index] = true;
+						Heights[Index] = float(LowGround);
+						++Built;
+					}
+				}
+			}
 		}
 		const TArray<double> Profile = GradeProfile(Z, Spacing, RoadGrade);
 		Site.Road.Reset();
@@ -858,8 +1029,8 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, const TArray<bool>
 			Lowest = FMath::Min(Lowest, Height);
 			Highest = FMath::Max(Highest, Height);
 		}
-		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet stub: road to the %s, %.0f m, steepest %.0f %%, from %.1f to %.1f m high; tip (%.1f, %.1f) m, islet (%.1f, %.1f) m on the map, %.0f m from its marker"),
-			*Site.Name, Site.RoadLength / 100.0, 100.0 * Site.Steepest, Lowest / 100.0, Highest / 100.0, Site.Tip.X / 100.0, Site.Tip.Y / 100.0,
+		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet stub: road to the %s, %.0f m (%d m2 of causeway), steepest %.0f %%, from %.1f to %.1f m high; tip (%.1f, %.1f) m, islet (%.1f, %.1f) m on the map, %.0f m from its marker"),
+			*Site.Name, Site.RoadLength / 100.0, Built, 100.0 * Site.Steepest, Lowest / 100.0, Highest / 100.0, Site.Tip.X / 100.0, Site.Tip.Y / 100.0,
 			Site.Islet.X / 100.0, Site.Islet.Y / 100.0, FVector2D::Distance(Site.Islet, Site.Marker) / 100.0);
 		++SiteSeed;
 	}
@@ -963,11 +1134,16 @@ void LBAPlanetSites::FSites::EmitBoulder(const FBoulder& Boulder, const FVector&
 	}
 }
 
-void LBAPlanetSites::FSites::EmitRocks(const FVector& Pivot, const FLBAVertex& Rock, const FLBAVertex& Grass, const FLBAVertex& Dark, FLBAMeshBuilder& Builder, int32 Section) const
+void LBAPlanetSites::FSites::EmitRocks(const TArray<float>& Heights, const FVector& Pivot, const FLBAVertex& Rock, const FLBAVertex& Grass, const FLBAVertex& Dark,
+	FLBAMeshBuilder& Builder, int32 Section, UMaterialInterface* WallMaterial, UMaterialInterface* RoofMaterial) const
 {
 	using namespace LBAPlanetSitesPrivate;
-	// Flat shaded: each triangle its own normal, facing Outward.
-	auto Triangle = [&](const FLBAVertex& Kind, const FVector& A, const FVector& B, const FVector& C, const FVector& Outward)
+	// The Temple of Bu's finishes (its enclosure's tiles, laid by position as its own walls and roof are), else the ground's.
+	const int32 WallSection = WallMaterial ? Builder.GetSection(TEXT("TempleWalls"), WallMaterial) : Section;
+	const int32 RoofSection = RoofMaterial ? Builder.GetSection(TEXT("TempleRoof"), RoofMaterial) : Section;
+	FLBAVertex Temple;
+	Temple.Color = FVector4f(1.f, 1.f, 1.f, 0.42f);
+	auto Emit = [&](int32 Into, const FLBAVertex& Kind, const FVector& A, const FVector& B, const FVector& C, const FVector2f UVs[3], const FVector& Outward)
 	{
 		FVector Normal = FVector::CrossProduct(C - A, B - A).GetSafeNormal();
 		if (FVector::DotProduct(Normal, Outward) < 0.0)
@@ -980,15 +1156,26 @@ void LBAPlanetSites::FSites::EmitRocks(const FVector& Pivot, const FLBAVertex& R
 		{
 			V[Corner].Position = FVector3f(Corners[Corner] - Pivot);
 			V[Corner].Normal = FVector3f(Normal);
+			if (UVs)
+			{
+				V[Corner].UV = UVs[Corner];
+			}
 		}
-		Builder.AddTriangleFacing(Section, V[0], V[1], V[2], FVector3f(Normal));
+		Builder.AddTriangleFacing(Into, V[0], V[1], V[2], FVector3f(Normal));
 	};
-	// A, B, C, D round the quad.
-	auto Quad = [&](const FLBAVertex& Kind, const FVector& A, const FVector& B, const FVector& C, const FVector& D, const FVector& Outward)
+	// A, B, C, D round the quad; UVs optional (four).
+	auto Quad = [&](int32 Into, const FLBAVertex& Kind, const FVector& A, const FVector& B, const FVector& C, const FVector& D, const FVector& Outward, const FVector2f* UVs = nullptr)
 	{
-		Triangle(Kind, A, B, C, Outward);
-		Triangle(Kind, A, C, D, Outward);
+		const FVector2f First[3] = { UVs ? UVs[0] : FVector2f::ZeroVector, UVs ? UVs[1] : FVector2f::ZeroVector, UVs ? UVs[2] : FVector2f::ZeroVector };
+		const FVector2f Second[3] = { UVs ? UVs[0] : FVector2f::ZeroVector, UVs ? UVs[2] : FVector2f::ZeroVector, UVs ? UVs[3] : FVector2f::ZeroVector };
+		Emit(Into, Kind, A, B, C, UVs ? First : nullptr, Outward);
+		Emit(Into, Kind, A, C, D, UVs ? Second : nullptr, Outward);
 	};
+	// The Temple's finish tile by position (LBAIsoImporter's FinishUV): 16 bricks a tile, a brick 64 cm across and 32 cm up;
+	// from below, two bricks per 64 cm.
+	auto WallUV = [](double Along, double Z) { return FVector2f(float(Along / 64.0 / 16.0), float(-Z / 32.0 / 16.0)); };
+	auto RoofUV = [](double Across, double Along) { return FVector2f(float(Across / 64.0 / 16.0), float(Along * 2.0 / 64.0 / 16.0)); };
+
 	for (const FSite& Site : Sites)
 	{
 		if (!Site.bRock)
@@ -996,139 +1183,165 @@ void LBAPlanetSites::FSites::EmitRocks(const FVector& Pivot, const FLBAVertex& R
 			continue;
 		}
 		const FVector2D Across = Side(Site.Dir);
-		const FVector2D Center = Site.Tip + Site.Dir * RockLong;
-		// The bore's floor (the ground) at U along the way out, from the rock's middle.
-		auto FloorAt = [&](double U)
+		// Ridge coordinates: Along from the tip on the way out, V across from the way's line.
+		auto MapAt = [&](double Along, double V) { return Site.Tip + Site.Dir * Along + Across * V; };
+		auto RockZ = [&](const FVector2D& P) { return double(SampleHeight(Heights, P)) + RidgeRise(P, Site) - RockSink; };
+
+		// The ridge: a fine height field over its footprint, rising out of the ground; the hole cut out of its faces.
+		const double AlongMin = -RidgeHalf - 300.0;
+		const double AlongMax = 3.0 * RidgeHalf + 300.0;
+		const double VMin = -Site.RidgeLeft - 200.0;
+		const double VMax = Site.RidgeRight + 200.0;
+		const int32 NA = FMath::CeilToInt((AlongMax - AlongMin) / RockCell);
+		const int32 NV = FMath::CeilToInt((VMax - VMin) / RockCell);
+		TArray<FVector> Points;
+		TArray<double> Rises;
+		Points.SetNumUninitialized((NA + 1) * (NV + 1));
+		Rises.SetNumUninitialized((NA + 1) * (NV + 1));
+		for (int32 I = 0; I <= NA; ++I)
 		{
-			return FMath::Lerp(Site.NearGround, Site.FarGround, FMath::Clamp((U + RockLong) / (2.0 * RockLong), 0.0, 1.0));
-		};
-		auto ToMap = [&](double U, double V, double Z) { return FVector(Center + Site.Dir * U + Across * V, Z); };
-		// Its outline at turn T (0 at the far mouth, PI at the near one), drawn in by Lean, with vertical flutes off the mouths.
-		auto Outline = [&](double T, double Lean)
-		{
-			const double Flutes = 1.0 + FMath::Square(FMath::Sin(T)) * (0.05 * FMath::Sin(19.0 * T) + 0.03 * FMath::Sin(33.0 * T + 1.0) + 0.015 * FMath::Sin(71.0 * T + 2.0));
-			const double Scale = RockWobble(T) * (1.0 - Lean) * Flutes;
-			return FVector2D(RockLong * FMath::Cos(T), RockWide * FMath::Sin(T)) * Scale;
-		};
-		auto TopAt = [&](double T)
-		{
-			return FloorAt(RockLong * FMath::Cos(T)) + RockHeight + 70.0 * FMath::Sin(2.0 * T + 0.7) + 40.0 * FMath::Sin(5.0 * T + 2.0) + 20.0 * FMath::Sin(11.0 * T);
-		};
-		// The rows up its sides: fine through the mouths' height, coarse above.
-		const int32 FineRows = FMath::CeilToInt((RockFineTop + RockSink) / RockFineRows);
-		const int32 Rows = FineRows + RockCoarseRows;
-		auto RowHeight = [&](double T, int32 Row)
-		{
-			const double Base = FloorAt(RockLong * FMath::Cos(T)) - RockSink;
-			if (Row <= FineRows)
+			for (int32 J = 0; J <= NV; ++J)
 			{
-				return Base + Row * RockFineRows;
+				const FVector2D P = MapAt(AlongMin + I * RockCell, VMin + J * RockCell);
+				const double Up = RidgeRise(P, Site);
+				Rises[I * (NV + 1) + J] = Up;
+				Points[I * (NV + 1) + J] = FVector(P, SampleHeight(Heights, P) + Up - RockSink);
 			}
-			const double From = Base + FineRows * RockFineRows;
-			return From + (TopAt(T) - From) * (Row - FineRows) / double(RockCoarseRows);
-		};
-		// In the bore's mouth (V across, H over the floor): within its half width, under its arch.
-		auto InMouth = [&](double V, double H)
+		}
+		auto PointAt = [&](int32 I, int32 J) { return Points[I * (NV + 1) + J]; };
+		auto NormalAt = [&](int32 I, int32 J)
 		{
-			return FMath::Abs(V) < HoleHalf && H < Spring + FMath::Sqrt(FMath::Max(0.0, HoleHalf * HoleHalf - V * V));
+			const FVector DA = PointAt(FMath::Min(I + 1, NA), J) - PointAt(FMath::Max(I - 1, 0), J);
+			const FVector DV = PointAt(I, FMath::Min(J + 1, NV)) - PointAt(I, FMath::Max(J - 1, 0));
+			FVector Normal = FVector::CrossProduct(DA, DV).GetSafeNormal();
+			return Normal.Z < 0.0 ? -Normal : Normal;
 		};
-		auto SidePoint = [&](int32 Turn, int32 Row)
+		for (int32 I = 0; I < NA; ++I)
 		{
-			const double T = 2.0 * PI * Turn / RockTurns;
-			const double Z = RowHeight(T, Row);
-			// Drawn in toward the top, spread at the foot (its scree), off the mouths.
-			const double Up = FMath::Clamp((Z - FloorAt(RockLong * FMath::Cos(T))) / RockHeight, 0.0, 1.0);
-			const double Lean = 0.09 * Up - FMath::Square(FMath::Sin(T)) * 0.10 * FMath::Pow(1.0 - Up, 4.0);
-			const FVector2D Local = Outline(T, Lean);
-			return ToMap(Local.X, Local.Y, Z);
-		};
-		// The sides, the mouths left open.
-		for (int32 Turn = 0; Turn < RockTurns; ++Turn)
-		{
-			for (int32 Row = 0; Row < Rows; ++Row)
+			for (int32 J = 0; J < NV; ++J)
 			{
-				const FVector A = SidePoint(Turn, Row), B = SidePoint(Turn + 1, Row), C = SidePoint(Turn + 1, Row + 1), D = SidePoint(Turn, Row + 1);
-				const FVector Mid = (A + B + C + D) / 4.0;
-				const double U = FVector2D::DotProduct(FVector2D(Mid) - Center, Site.Dir);
-				const double V = FVector2D::DotProduct(FVector2D(Mid) - Center, Across);
-				if (InMouth(V, Mid.Z - FloorAt(U)))
+				const double Highest = FMath::Max(FMath::Max(Rises[I * (NV + 1) + J], Rises[I * (NV + 1) + J + 1]), FMath::Max(Rises[(I + 1) * (NV + 1) + J], Rises[(I + 1) * (NV + 1) + J + 1]));
+				if (Highest < RockSink + 3.0)
 				{
 					continue;
 				}
-				Quad(Rock, A, B, C, D, FVector(FVector2D(Mid) - Center, 0.0));
+				const double Along = AlongMin + (I + 0.5) * RockCell;
+				const double V = VMin + (J + 0.5) * RockCell;
+				const FVector Mid = (PointAt(I, J) + PointAt(I + 1, J) + PointAt(I, J + 1) + PointAt(I + 1, J + 1)) / 4.0;
+				if (InMouth(Along, V, Mid.Z - RidgeFloor(Along, Site), Site))
+				{
+					continue;
+				}
+				const FVector2D P(Mid);
+				const bool bGrassy = Highest > 0.6 * RidgeHeight && SiteNoise(P, 150.0, 6.0) > -0.25;
+				const int32 Corners[4][2] = { { I, J }, { I + 1, J }, { I + 1, J + 1 }, { I, J + 1 } };
+				FLBAVertex V4[4];
+				for (int32 Corner = 0; Corner < 4; ++Corner)
+				{
+					V4[Corner] = bGrassy ? Grass : Rock;
+					V4[Corner].Position = FVector3f(PointAt(Corners[Corner][0], Corners[Corner][1]) - Pivot);
+					V4[Corner].Normal = FVector3f(NormalAt(Corners[Corner][0], Corners[Corner][1]));
+				}
+				Builder.AddTriangleFacing(Section, V4[0], V4[1], V4[2], FVector3f::UpVector);
+				Builder.AddTriangleFacing(Section, V4[0], V4[2], V4[3], FVector3f::UpVector);
 			}
 		}
-		// The top: rings in from its edge, rounded over it, grassy inside.
-		const double Rings[] = { 1.0, 0.93, 0.7, 0.45, 0.2 };
-		const double Lifts[] = { 0.0, 18.0, 30.0, 34.0, 36.0 };
-		constexpr int32 NumRings = UE_ARRAY_COUNT(Rings);
-		auto TopPoint = [&](int32 Turn, int32 Ring)
+
+		// The bore: where it meets the faces, per line across it (the first point out from its middle where the rock is no
+		// higher than its roof).
+		const double Middle = RidgeHalf;
+		auto Ends = [&](double V, double Lift, double& OutNear, double& OutFar)
 		{
-			const double T = 2.0 * PI * Turn / RockTurns;
-			const FVector2D Local = Outline(T, 0.09) * Rings[Ring];
-			const double Roll = Ring > 0 ? 20.0 * FMath::Sin(Local.X / 230.0 + 1.0) * FMath::Cos(Local.Y / 170.0) : 0.0;
-			return ToMap(Local.X, Local.Y, TopAt(T) + Lifts[Ring] + Roll);
+			auto Covered = [&](double Along) { return RockZ(MapAt(Along, V)) - RidgeFloor(Along, Site) > BoreRoof(Along, V, Site) + Lift; };
+			OutNear = Middle;
+			while (OutNear > AlongMin && Covered(OutNear - 5.0))
+			{
+				OutNear -= 5.0;
+			}
+			OutFar = Middle;
+			while (OutFar < AlongMax && Covered(OutFar + 5.0))
+			{
+				OutFar += 5.0;
+			}
 		};
-		const FVector Middle = ToMap(0.0, 0.0, FloorAt(0.0) + RockHeight + Lifts[NumRings - 1]);
-		for (int32 Turn = 0; Turn < RockTurns; ++Turn)
+		constexpr int32 Lines = 36;
+		constexpr int32 Steps = 64;
+		TArray<double> Nears, Fars;
+		for (int32 Line = 0; Line <= Lines; ++Line)
 		{
-			for (int32 Ring = 0; Ring + 1 < NumRings; ++Ring)
-			{
-				Quad(Ring >= 2 ? Grass : Rock, TopPoint(Turn, Ring), TopPoint(Turn + 1, Ring), TopPoint(Turn + 1, Ring + 1), TopPoint(Turn, Ring + 1), FVector::UpVector);
-			}
-			Triangle(Grass, TopPoint(Turn, NumRings - 1), TopPoint(Turn + 1, NumRings - 1), Middle, FVector::UpVector);
+			double Near = 0.0, Far = 0.0;
+			Ends(FMath::Lerp(-BoreHalf, BoreHalf, double(Line) / Lines), 0.0, Near, Far);
+			Nears.Add(Near);
+			Fars.Add(Far);
 		}
-		// The bore: walls and an arched roof, facing in, dark; its floor is the ground. It reaches the rims' faces.
-		TArray<FVector2D> Profile;
-		Profile.Add(FVector2D(-HoleHalf, -20.0));
-		Profile.Add(FVector2D(-HoleHalf, Spring));
-		constexpr int32 ArchSteps = 14;
-		for (int32 Step = 1; Step < ArchSteps; ++Step)
+		// Its roof, seen from below: the Temple's vault coming down in fans on its columns.
+		auto RoofPoint = [&](int32 Line, int32 Step)
 		{
-			const double Angle = PI * (1.0 - double(Step) / ArchSteps);
-			Profile.Add(FVector2D(HoleHalf * FMath::Cos(Angle), Spring + HoleHalf * FMath::Sin(Angle)));
-		}
-		Profile.Add(FVector2D(HoleHalf, Spring));
-		Profile.Add(FVector2D(HoleHalf, -20.0));
-		constexpr double RimProud = 12.0;
-		constexpr double RimDeep = 40.0;
-		const double Near = -RockLong - RimProud;
-		const double Far = RockLong + RimProud;
-		constexpr int32 Lengths = 8;
-		for (int32 Piece = 0; Piece < Lengths; ++Piece)
-		{
-			const double U0 = FMath::Lerp(Near, Far, double(Piece) / Lengths);
-			const double U1 = FMath::Lerp(Near, Far, double(Piece + 1) / Lengths);
-			for (int32 Index = 0; Index + 1 < Profile.Num(); ++Index)
-			{
-				const FVector2D P0 = Profile[Index], P1 = Profile[Index + 1];
-				const FVector2D Mid = 0.5 * (P0 + P1);
-				const FVector Inward = FVector(-Across * Mid.X, Spring - Mid.Y).GetSafeNormal();
-				Quad(Dark, ToMap(U0, P0.X, FloorAt(U0) + P0.Y), ToMap(U1, P0.X, FloorAt(U1) + P0.Y), ToMap(U1, P1.X, FloorAt(U1) + P1.Y), ToMap(U0, P1.X, FloorAt(U0) + P1.Y), Inward);
-			}
-		}
-		// A rim round each mouth: its face proud of the rock, its edge reaching back into it.
-		auto Grown = [](const FVector2D& P)
-		{
-			// Out from the bore's middle; the floor's corners straight out sideways.
-			const FVector2D From(0.0, FMath::Min(P.Y, Spring));
-			return P + (P - From).GetSafeNormal() * RimWidth;
+			const double V = FMath::Lerp(-BoreHalf, BoreHalf, double(Line) / Lines);
+			const double Along = FMath::Lerp(Nears[Line], Fars[Line], double(Step) / Steps);
+			return FVector(MapAt(Along, V), RidgeFloor(Along, Site) + BoreRoof(Along, V, Site));
 		};
-		for (const double End : { -RockLong, RockLong })
+		auto RoofUVAt = [&](int32 Line, int32 Step)
 		{
-			const double Out = End > 0.0 ? 1.0 : -1.0;
-			const double Front = End + Out * RimProud;
-			const double Back = End - Out * RimDeep;
-			const double Ground = FloorAt(End);
-			const FVector Facing(Site.Dir * Out, 0.0);
-			for (int32 Index = 0; Index + 1 < Profile.Num(); ++Index)
+			const double V = FMath::Lerp(-BoreHalf, BoreHalf, double(Line) / Lines);
+			return RoofUV(V, FMath::Lerp(Nears[Line], Fars[Line], double(Step) / Steps));
+		};
+		for (int32 Line = 0; Line < Lines; ++Line)
+		{
+			for (int32 Step = 0; Step < Steps; ++Step)
 			{
-				const FVector2D P0 = Profile[Index], P1 = Profile[Index + 1];
-				const FVector2D G0 = Grown(P0), G1 = Grown(P1);
-				Quad(Dark, ToMap(Front, P0.X, Ground + P0.Y), ToMap(Front, P1.X, Ground + P1.Y), ToMap(Front, G1.X, Ground + G1.Y), ToMap(Front, G0.X, Ground + G0.Y), Facing);
-				const FVector2D Mid = 0.5 * (G0 + G1);
-				const FVector Outward = FVector(Across * Mid.X, Mid.Y - Spring).GetSafeNormal();
-				Quad(Dark, ToMap(Front, G0.X, Ground + G0.Y), ToMap(Front, G1.X, Ground + G1.Y), ToMap(Back, G1.X, Ground + G1.Y), ToMap(Back, G0.X, Ground + G0.Y), Outward);
+				const FVector2f UVs[4] = { RoofUVAt(Line, Step), RoofUVAt(Line + 1, Step), RoofUVAt(Line + 1, Step + 1), RoofUVAt(Line, Step + 1) };
+				Quad(RoofSection, Temple, RoofPoint(Line, Step), RoofPoint(Line + 1, Step), RoofPoint(Line + 1, Step + 1), RoofPoint(Line, Step + 1), -FVector::UpVector, UVs);
+			}
+		}
+		// Its walls, from under the floor up to the roof's edge.
+		for (const int32 Line : { 0, Lines })
+		{
+			const double V = Line == 0 ? -BoreHalf : BoreHalf;
+			const FVector Inward = FVector(Across * (Line == 0 ? 1.0 : -1.0), 0.0);
+			for (int32 Step = 0; Step < Steps; ++Step)
+			{
+				const double A0 = FMath::Lerp(Nears[Line], Fars[Line], double(Step) / Steps);
+				const double A1 = FMath::Lerp(Nears[Line], Fars[Line], double(Step + 1) / Steps);
+				const FVector Low0(MapAt(A0, V), RidgeFloor(A0, Site) - 20.0), Low1(MapAt(A1, V), RidgeFloor(A1, Site) - 20.0);
+				const FVector High0 = RoofPoint(Line, Step), High1 = RoofPoint(Line, Step + 1);
+				const FVector2f UVs[4] = { WallUV(A0, Low0.Z), WallUV(A1, Low1.Z), WallUV(A1, High1.Z), WallUV(A0, High0.Z) };
+				Quad(WallSection, Temple, Low0, Low1, High1, High0, Inward, UVs);
+			}
+		}
+		// A flare of rock round each mouth: from the bore's end out and back into the ridge, behind its face, so it shows
+		// only where the face is cut: a mouth funnelling into the bore.
+		for (const bool bFar : { false, true })
+		{
+			const double Sign = bFar ? 1.0 : -1.0;
+			auto EndAt = [&](int32 Line) { return bFar ? Fars[Line] : Nears[Line]; };
+			TArray<FVector> Ring;
+			TArray<FVector> Outs;
+			// Up the left wall, across the roof, down the right wall.
+			for (int32 Row = 0; Row <= 4; ++Row)
+			{
+				const double Along = EndAt(0);
+				Ring.Add(FVector(MapAt(Along, -BoreHalf), RidgeFloor(Along, Site) - 20.0 + (BoreRoof(Along, -BoreHalf, Site) + 20.0) * Row / 4.0));
+				Outs.Add(Row == 4 ? FVector(-Across, 1.0).GetSafeNormal() : FVector(-Across, 0.0));
+			}
+			for (int32 Line = 1; Line < Lines; ++Line)
+			{
+				Ring.Add(RoofPoint(Line, bFar ? Steps : 0));
+				Outs.Add(FVector::UpVector);
+			}
+			for (int32 Row = 4; Row >= 0; --Row)
+			{
+				const double Along = EndAt(Lines);
+				Ring.Add(FVector(MapAt(Along, BoreHalf), RidgeFloor(Along, Site) - 20.0 + (BoreRoof(Along, BoreHalf, Site) + 20.0) * Row / 4.0));
+				Outs.Add(Row == 4 ? FVector(Across, 1.0).GetSafeNormal() : FVector(Across, 0.0));
+			}
+			const FVector Back = FVector(Site.Dir * -Sign * FlareBack, 0.0);
+			const FVector Facing = FVector(Site.Dir * Sign, 0.0);
+			for (int32 Index = 0; Index + 1 < Ring.Num(); ++Index)
+			{
+				const FVector A = Ring[Index], B = Ring[Index + 1];
+				const FVector OA = A + Outs[Index] * FlareOut + Back, OB = B + Outs[Index + 1] * FlareOut + Back;
+				Quad(Section, Rock, A, B, OB, OA, (Facing + 0.5 * (Outs[Index] + Outs[Index + 1])).GetSafeNormal());
 			}
 		}
 	}
@@ -1223,6 +1436,43 @@ void LBAPlanetSites::FSites::SpawnProps(FLBAImportContext& Context, UWorld* Worl
 			Actor->Tags.Add(ULBAPlanetAsset::StubTag);
 		}
 	};
+	// The bores' columns: the Temple of Bu's own, from the remake, each its pillar's height, its foot on the floor.
+	FLBARemakeAssets Remake(Context);
+	UStaticMesh* Column = nullptr;
+	if (Context.GetProjectSettings().bUseRemakeModels && Remake.Initialize())
+	{
+		Column = Remake.GetModelMesh(PillarFolder, PillarFile);
+	}
+	if (!Column && Sites.ContainsByPredicate([](const FSite& Site) { return Site.bRock; }))
+	{
+		Context.Warn(FString::Printf(TEXT("LBA1 sites: no %s/%s from the remake (remake models off, or no checkout): the bore's fans stand on nothing"), PillarFolder, PillarFile));
+	}
+	for (const FSite& Site : Sites)
+	{
+		if (!Site.bRock || !Column)
+		{
+			continue;
+		}
+		const FBox Box = Column->GetBoundingBox();
+		const double Scale = (PillarTop + 15.0) / FMath::Max(Box.GetSize().Z, 1.0);
+		if (AActor* Actor = Context.SpawnGeneratedActor<AActor>(World, FTransform::Identity, FString::Printf(TEXT("Site_%s_Columns"), *FLBAImportContext::SanitizeName(Site.Name)), TEXT("Stubs/Sites")))
+		{
+			UInstancedStaticMeshComponent* Component = NewObject<UInstancedStaticMeshComponent>(Actor, TEXT("Instances"));
+			Component->SetStaticMesh(Column);
+			Actor->SetRootComponent(Component);
+			Actor->AddInstanceComponent(Component);
+			Component->RegisterComponent();
+			Actor->Tags.Add(ULBAPlanetAsset::StubTag);
+			const FQuat Turn(FVector::UpVector, FMath::Atan2(Site.Dir.Y, Site.Dir.X));
+			for (const FVector2D& Pillar : BorePillars())
+			{
+				const FVector2D At = Site.Tip + Site.Dir * Pillar.X + Side(Site.Dir) * Pillar.Y;
+				const FVector Foot(At, RidgeFloor(Pillar.X, Site) - 5.0);
+				const FVector Center = Box.GetCenter();
+				Component->AddInstance(FTransform(Turn, Foot - Turn.RotateVector(FVector(Center.X, Center.Y, Box.Min.Z) * Scale), FVector(Scale)), true);
+			}
+		}
+	}
 	UStaticMesh* Buggy = nullptr;
 	for (const FSite& Site : Sites)
 	{

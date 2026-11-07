@@ -1037,6 +1037,61 @@ FVector LBAPlanetDistricts::FTown::GetOrigin() const
 	return FVector(Low.X * CellCm, Low.Z * CellCm, Low.Y * StepCm);
 }
 
+bool LBAPlanetDistricts::FDistricts::FindWayTo(const FPlaced& Placed, int32 Other, FVector2D& OutPoint, FVector2D& OutDir) const
+{
+	if (!Districts.IsValidIndex(Placed.District) || !Data)
+	{
+		return false;
+	}
+	const FDistrict& District = *Districts[Placed.District];
+	// In a scene of the district (its frame's offset), at a point (scene units): the way out is off its nearest edge.
+	auto Found = [&](const FIntVector& Offset, const FIntVector& At)
+	{
+		const int32 Size = LBA1::SceneCells * LBA1::CellSize;
+		const int32 Edges[4] = { At.X, Size - At.X, At.Z, Size - At.Z };
+		const FVector2D Outs[4] = { FVector2D(-1.0, 0.0), FVector2D(1.0, 0.0), FVector2D(0.0, -1.0), FVector2D(0.0, 1.0) };
+		int32 Nearest = 0;
+		for (int32 Edge = 1; Edge < 4; ++Edge)
+		{
+			Nearest = Edges[Edge] < Edges[Nearest] ? Edge : Nearest;
+		}
+		const FVector2D Frame = FVector2D(Offset.X + At.X, Offset.Z + At.Z) / 8.0;
+		OutPoint = FVector2D(Placed.FrameToMap.TransformPosition(FVector(Frame, 0.0)));
+		OutDir = FVector2D(Placed.FrameToMap.TransformVector(FVector(Outs[Nearest], 0.0))).GetSafeNormal();
+		return true;
+	};
+	// Where Other puts the hero in the district.
+	LBA1::FScene Scene;
+	if (Data->LoadScene(Other, Scene))
+	{
+		for (const LBA1::FZone& Zone : Scene.Zones)
+		{
+			const TPair<int32, FIntVector>* Into = Zone.Type == LBA1::ZoneCube ? District.Offsets.FindByPredicate([&Zone](const TPair<int32, FIntVector>& Each) { return Each.Key == Zone.Number; }) : nullptr;
+			if (Into)
+			{
+				return Found(Into->Value, Zone.Info);
+			}
+		}
+	}
+	// Else the district's own exit into Other.
+	for (const TPair<int32, FIntVector>& Offset : District.Offsets)
+	{
+		LBA1::FScene Own;
+		if (!Data->LoadScene(Offset.Key, Own))
+		{
+			continue;
+		}
+		for (const LBA1::FZone& Zone : Own.Zones)
+		{
+			if (Zone.Type == LBA1::ZoneCube && Zone.Number == Other)
+			{
+				return Found(Offset.Value, (Zone.Min + Zone.Max) / 2);
+			}
+		}
+	}
+	return false;
+}
+
 bool LBAPlanetDistricts::FDistricts::MakeTown(const FPlaced& Placed, FTown& Out, const LBAPlanetKit::FTable* Kit) const
 {
 	using namespace LBAPlanetDistrictsPrivate;
