@@ -18,7 +18,7 @@ for what isn't replaced yet.
 |---|---|---|
 | 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
 | 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
-| 2 | The color system, and town ground becoming terrain | built, not committed; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
+| 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
 | 3 | Kit: recurring pieces and simple houses as models | not started |
 | 4 | Trees, rocks and paths | not started |
 | 5 | Rune stones on real islets | not started |
