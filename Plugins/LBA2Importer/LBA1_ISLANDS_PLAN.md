@@ -19,7 +19,7 @@ for what isn't replaced yet.
 | 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
 | 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
 | 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
-| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (72f2d74, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). Next: simple objects as primitives, or Proxim City's roofs |
+| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (72f2d74, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). 3c simple objects: generated fences, railings, sandbags, buoys + remake oil drums (shots `phase3c_objects_before_after.png`, `phase3c_objects_close.png`). Next: Proxim City's roofs |
 | 4 | Trees, rocks and paths | not started |
 | 5 | Rune stones on real islets | not started |
 
@@ -381,10 +381,38 @@ Ranked by cells (count x size), not ground, not walls, not in the kit:
 Most suit preference 3 (generated primitives: posts and rails for fences and railings, boxes for sandbags and platforms,
 a torus for buoys), with colors from their sprites.
 
+### What was built (2026-11-07): 3c, simple objects as generated models
+
+- **A generated kind in the kit table:** `"primitive": "fence" | "railing" | "sack" | "buoy"` in `lba1_kit.json`.
+  `LBAPlanetKit::BuildPrimitive` builds it in the piece's frame (centered on its footprint, floor at 0, along its longer side;
+  a piece along z is the same shape mirrored across x = y), sized from the example piece's cells. `LBAPlanetTowns` makes one
+  mesh per island and model (`Towns/Kit/SM_LBA1_<ISLAND>_Kit_<name>`, the vertex-color master, no collision, bent bounds) and
+  instances it like the other kit models.
+- **Colors from the bricks:** Main is the LBA1 ramp with the most pixels weighted by step (so the lit cloth of a sack seen
+  along its length wins over its shadow ramp); Accent the other ramp with at least 8 % of the pixels whose color is
+  furthest from Main (the buoy's teal bands, not the grey shading its white), else Main. Each at the step 80 % of that
+  ramp's pixels are at or below, through the town palette (`MakeTownPalette`). Models are lit, so the bright end of the
+  ramp is the one that matches the predrawn bricks.
+- **Measured** (harbour 3, median sRGB of the green pixels): sandbags as bricks (60,76,51), as models (66,98,59), like the
+  planet's lit town grass (78,104,59) on the same olive ramp. A lower step (the median) made them (23,50,32): darker but
+  no less green, so the hue is the palette shading's and the 80 % step stays. If the user wants them more olive, the
+  choice is another ramp, not another step.
+- **Shapes:** pickets about 5 a cell on two rails (12:143, 13:144); iron railings, three bars a cell bent over at the top away
+  from the iso camera, on two rails (12:152, 12:153); sandbags as rounded boxes (11:172, 11:173); the life buoy as an upright
+  ring with four bands (11:104).
+- **The blue oil drums** (11:178, x79) are the remake's `layouts/CA_152_oil_barrel.glb` (teal, like LBA1's), fitted to the
+  piece's height. A table `remake` path is under `www/models/lba2` (`lba1/...` reaches the remake's LBA1 models).
+- **Left as bricks:** palisades 24:59/24:60 and 59:59 (by their sprites, rocky earth walls, not logs: closer to cliffs, Phase 4),
+  the wooden platform 11:231 (flat), the crate 11:177, boulder rows.
+- `Tools/dump_level_actors.py` now lists an instanced actor's instances, to aim cameras at single pieces.
+- Counts (Principal / Proxima): sandbags 284 / 13, railings 126 / 58, picket fences 79 / 31, buoys 7 / 4, oil drums 68 / 11.
+- Checks: LBA2.Enclosure passes (exit code 0); globe 149.9 and 150.6 fps (155.1 after 3b, but other sessions' uncommitted water and sea work
+  was in this build too, so the drop isn't isolated).
+
 ### How to continue Phase 3 (written 2026-11-07, after 3b)
 
 Two open items, either can go first: **simple objects as primitives**, and **Proxim City's roofs**. Show the user each one's
-before/after sheet before the next.
+before/after sheet before the next. (Simple objects were done as 3c, above: what is left of them is listed there.)
 
 **Tools** (all in `Tools/`, run from the plugin folder):
 - `lba1_round.ps1 -Name <n> [-Poses towns|"x,y,z,pitch,yaw;..."] [-Labels "a;b"] [-NoBuild] [-NoImport] [-Map ...]`: build,
@@ -445,7 +473,7 @@ main islands), so the slabs sit inside real land with a coast.
 
 ## Checks after each phase
 
-- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a, 152.2 after 3b walls (2026-11-07). Another session's CPU-heavy job
+- **Performance:** globe test on `L_TWINSUN`, real time (`-Poses globe -Extra "-LBA2ShotStep=0"`): 152.9 fps before Phase 1, 154.0 after, 155.5 after Phase 2, 154.4 after 3a, 152.2 after 3b walls, 150.6 after 3c (2026-11-07). Another session's CPU-heavy job
   (a Python script at 100 % of a core) brought the same build to 101-119 fps: check the machine is idle before trusting a number.
 - **Tests:** `LBA2.Enclosure` 157 tests pass; `-LBA2Shots=belt` holds Twinsen at 3.7 m (2026-11-07).
 - **Street level:** `shots.ps1 -Map /Game/LBA2/Planets/L_TWINSUN -Poses hero -Extra "-LBA2HeroAt=6286,56485,0"`

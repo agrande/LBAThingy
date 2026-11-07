@@ -1,11 +1,19 @@
 {
-    "about": "LBA1's town pieces drawn as models on the globe's stub islands (Source/.../Import/LBAPlanetKit.h). example: one of the piece's layouts, scene:layout (0-based), as Tools/lba1_kit_survey.py labels pieces_big.png. lba2: ISLAND:body, an island's decor (Tools/lba2_decor_sheet.py draws them). remake: a model under the remake's www/models. yaw (degrees), scale, fit: height (scaled to the piece's height), every: one copy per that many cells along the piece, turn: random. The remake's own LBA1 replacements (barrel, box) are added without a line here.",
+    "about": "LBA1's town pieces drawn as models on the globe's stub islands (Source/.../Import/LBAPlanetKit.h). example: one of the piece's layouts, scene:layout (0-based), as Tools/lba1_kit_survey.py labels pieces_big.png. lba2: ISLAND:body, an island's decor (Tools/lba2_decor_sheet.py draws them). remake: a model under the remake's www/models/lba2 (lba1/... for its LBA1 models). primitive: generated, sized to the piece and colored from its bricks (fence, railing, sack, buoy). yaw (degrees), scale, fit: height (scaled to the piece's height), every: one copy per that many cells along the piece, turn: random. The remake's own LBA1 replacements (barrel, box) are added without a line here.",
     "pieces": [
         {"name": "lamppost", "example": "11:116", "lba2": "CITADEL:26"},
         {"name": "pine", "example": "12:111", "lba2": "CITADEL:1"},
         {"name": "pine_proxima", "example": "44:206", "lba2": "CITADEL:1"},
         {"name": "bollards_x", "example": "11:23", "lba2": "CITADEL:50"},
         {"name": "bollards_z", "example": "11:22", "lba2": "CITADEL:50", "yaw": 90},
-        {"name": "sign_board", "example": "11:139", "lba2": "CITADEL:5"}
+        {"name": "sign_board", "example": "11:139", "lba2": "CITADEL:5"},
+        {"name": "oil_drum", "example": "11:178", "remake": "layouts/CA_152_oil_barrel.glb", "fit": "height"},
+        {"name": "picket_fence_z", "example": "12:143", "primitive": "fence"},
+        {"name": "picket_fence_x", "example": "13:144", "primitive": "fence"},
+        {"name": "iron_railing_x", "example": "12:152", "primitive": "railing"},
+        {"name": "iron_railing_z", "example": "12:153", "primitive": "railing"},
+        {"name": "sandbag_x", "example": "11:172", "primitive": "sack"},
+        {"name": "sandbag_z", "example": "11:173", "primitive": "sack"},
+        {"name": "life_buoy", "example": "11:104", "primitive": "buoy"}
     ]
 }

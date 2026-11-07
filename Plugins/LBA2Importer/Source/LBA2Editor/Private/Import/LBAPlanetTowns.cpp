@@ -764,7 +764,32 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 			if (!Instancer)
 			{
 				UStaticMesh* Mesh = nullptr;
-				if (Model.Body != INDEX_NONE)
+				if (!Model.Primitive.IsEmpty())
+				{
+					// Generated once per island, in the piece's frame, colored like its bricks (SM_LBA1_<ISLAND>_Kit_<name>).
+					FLBAMeshBuilder KitBuilder;
+					const int32 KitSection = KitBuilder.GetSection(FLBAMaterialLibrary::GetSlotName(ELBAMaterial::Color), Atlas.FillMaterial);
+					if (LBAPlanetKit::BuildPrimitive(Model, Data, Palette, CellCm, StepCm, KitBuilder, KitSection))
+					{
+						FMeshDescription Description;
+						TArray<UMaterialInterface*> Materials;
+						TArray<FName> Slots;
+						KitBuilder.BuildStatic(Description, Materials, Slots);
+						FLBAStaticMeshOptions Options;
+						Options.bNoCollision = true;
+						Options.bDeferBuild = false;
+						Options.bNoDistanceField = true;
+						Mesh = Context.CreateStaticMesh(TownFolder / TEXT("Kit"), FString::Printf(TEXT("SM_LBA1_%s_Kit_%s"), *Island, *FLBAImportContext::SanitizeName(Model.Name)),
+							MoveTemp(Description), Materials, Slots, Options);
+						if (Mesh)
+						{
+							Mesh->SetNegativeBoundsExtension(FVector(0.0, 0.0, 2.0 * Radius));
+							Mesh->CalculateExtendedBounds();
+							Context.MarkForSave(Mesh);
+						}
+					}
+				}
+				else if (Model.Body != INDEX_NONE)
 				{
 					Mesh = Context.FindAsset<UStaticMesh>(Context.GetContentPath(TEXT("Islands") / Model.Island / TEXT("Decor")), FString::Printf(TEXT("SM_%s_Decor_%03d"), *Model.Island, Model.Body));
 				}
@@ -781,7 +806,8 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 				if (!Mesh)
 				{
 					Context.Warn(FString::Printf(TEXT("LBA1 kit on %s: no mesh for %s (%s), it stays bricks"), *Island, *Model.Name,
-						Model.Body != INDEX_NONE ? *FString::Printf(TEXT("%s decor %d: import the island first"), *Model.Island, Model.Body) : *Model.RemakeFile));
+						!Model.Primitive.IsEmpty() ? *FString::Printf(TEXT("a generated %s"), *Model.Primitive)
+						: Model.Body != INDEX_NONE ? *FString::Printf(TEXT("%s decor %d: import the island first"), *Model.Island, Model.Body) : *Model.RemakeFile));
 				}
 				else if (AActor* Actor = Context.SpawnGeneratedActor<AActor>(World, FTransform::Identity,
 					FString::Printf(TEXT("Kit_%s_%s"), *Island, *FLBAImportContext::SanitizeName(Model.Name)), TEXT("Stubs/Kit")))
