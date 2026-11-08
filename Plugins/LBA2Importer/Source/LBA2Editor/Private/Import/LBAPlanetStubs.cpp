@@ -1086,9 +1086,6 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				Context.Warn(TEXT("LBA1 sites: no Temple of Bu finishes (MI_Grid_010_Finish, _Roof: import the interiors first), the bore takes the ground's"));
 			}
 			Sites.EmitRocks(Heights.Values, Pivot, Rock, Grass, Dark, Builder, GroundSection, TempleWalls, TempleRoof);
-			FLBAVertex PaleStone = Rock;
-			PaleStone.Color = FVector4f(0.f, 0.f, 0.f, 1.f);
-			Sites.EmitStones(Heights.Values, Pivot, PaleStone, Builder, GroundSection);
 			for (const LBAPlanetSites::FBoulder& Boulder : Sites.GetBoulders())
 			{
 				LBAPlanetSites::FSites::EmitBoulder(Boulder, Pivot, Rock, Builder, GroundSection);

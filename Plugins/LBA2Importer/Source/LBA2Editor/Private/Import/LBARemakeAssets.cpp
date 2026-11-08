@@ -98,6 +98,11 @@ FLBARemakeAssets::FLBARemakeAssets(FLBAImportContext& InContext)
 
 bool FLBARemakeAssets::Initialize()
 {
+	// The plugin's own models don't depend on the remake.
+	if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("LBA2Importer")))
+	{
+		PluginModelsDirectory = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources/Models"));
+	}
 	const ULBA2ImporterSettings& Settings = Context.GetSettings();
 	if (!Context.GetProjectSettings().bUseRemakeModels)
 	{
@@ -139,9 +144,8 @@ bool FLBARemakeAssets::Initialize()
 	};
 	LoadSpriteReplacements(FPaths::Combine(Root, TEXT("www/metadata/lba2/model_replacements.json")));
 	// The plugin's own models fill in for sprites the remake has none of.
-	if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("LBA2Importer")))
+	if (!PluginModelsDirectory.IsEmpty())
 	{
-		PluginModelsDirectory = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources/Models"));
 		LoadSpriteReplacements(FPaths::Combine(PluginModelsDirectory, TEXT("model_replacements.json")));
 	}
 	if (!bAvailable)

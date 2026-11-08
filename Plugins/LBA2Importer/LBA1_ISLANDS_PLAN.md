@@ -730,8 +730,8 @@ joined to the island. Scene 47's cliff is a flat wall standing in the water. Sho
   - Tried and dropped on the way: a heightfield slot with a lid (tents and slits at the faces), an elliptical stump with a
     straight bore and rims (unnatural).
 - **LBA2 pieces tried:** Otringal's vault (decor 111 and its dark twin 143) is closed at one end, not a way through.
-  Citadel's dark slab (decor 12) made a poor stone; the stones are generated instead (`EmitStones`: a rounded slab
-  1.4 x 0.5 x 2.6 m, pale stone kind, but its sides are steep, so the material draws them as rock).
+  Citadel's dark slab (decor 12) made a poor stone. The stones are now the user's carved model
+  `Resources/Models/sites/runestone.glb` (1.0 x 0.4 x 1.9 m, spawned in `SpawnProps`, carved side toward the road).
 - **Roads:** they leave Proxim City where LBA1 does (`FDistricts::FindWayTo`): where scenes 45 and 47 put the hero back
   into scene 42, the openings of its two tarmac lots, north (Eclipse) and south (Marked), both at x = 49.5 cells. Out
   straight 5 m, then the cheapest path (length weighted by grade; a cliff costs 60 per cm climbed and the
@@ -754,7 +754,7 @@ joined to the island. Scene 47's cliff is a flat wall standing in the water. Sho
   `59647,37874,400,-5,193.8`; Eclipse from behind its tip `44184,38092,1100,-25,142.5`; harbour from above
   `49033,35946,6000,-89,139.2`. Map positions are in the import log ("road to the ...").
 
-Open: the stones have no runes yet (LBA1's sprite 60); the painting's
+Open: the painting's
 crumb next to the Marked causeway is still an islet of its own; no Twinsen run along a whole road yet.
 
 ### Pitfalls

@@ -104,11 +104,11 @@ namespace LBAPlanetSitesPrivate
 	constexpr double HarbourNarrowCost = 8.0;
 	/** A dock's water is found this close to it. */
 	constexpr int32 DockReach = 15;
-	/** The stones: LBA1's rounded slab (about Twinsen's height there), a little taller to be seen from the city. */
-	constexpr double StoneWidth = 140.0;
-	constexpr double StoneThick = 50.0;
-	constexpr double StoneShoulder = 190.0;
-	constexpr double StoneSink = 20.0;
+	/** The stones: the plugin's model (Resources/Models/sites; carved side +Y once imported, foot at its origin), this tall (about Twinsen's height, as in LBA1), its foot this far into the ground. */
+	const TCHAR* const StoneFolder = TEXT("sites");
+	const TCHAR* const StoneFile = TEXT("runestone.glb");
+	constexpr double StoneHeight = 190.0;
+	constexpr double StoneSink = 8.0;
 
 
 	/** Squared distance transform along one line (Felzenszwalb and Huttenlocher): F in, D out. */
@@ -1345,61 +1345,6 @@ void LBAPlanetSites::FSites::EmitRocks(const TArray<float>& Heights, const FVect
 	}
 }
 
-void LBAPlanetSites::FSites::EmitStones(const TArray<float>& Heights, const FVector& Pivot, const FLBAVertex& Stone, FLBAMeshBuilder& Builder, int32 Section) const
-{
-	using namespace LBAPlanetSitesPrivate;
-	// Its outline seen from the front (across, up): straight sides, a half round top.
-	TArray<FVector2D> Outline;
-	const double Half = 0.5 * StoneWidth;
-	Outline.Add(FVector2D(Half, -StoneSink));
-	constexpr int32 Steps = 12;
-	for (int32 Step = 0; Step <= Steps; ++Step)
-	{
-		const double Angle = PI * double(Step) / Steps;
-		Outline.Add(FVector2D(Half * FMath::Cos(Angle), StoneShoulder + Half * FMath::Sin(Angle)));
-	}
-	Outline.Add(FVector2D(-Half, -StoneSink));
-	for (const FSite& Site : Sites)
-	{
-		const FVector2D Face = -Site.Dir;
-		const FVector2D Across = Side(Face);
-		const FVector Base(Site.Islet, SampleHeight(Heights, Site.Islet));
-		// The back a little thinner toward the top.
-		auto At = [&](const FVector2D& P, double Out)
-		{
-			const double Thick = 0.5 * StoneThick * (1.0 - 0.25 * FMath::Clamp(P.Y / (StoneShoulder + Half), 0.0, 1.0));
-			return Base + FVector(Across * P.X + Face * Thick * Out, P.Y) - Pivot;
-		};
-		auto Add = [&](const FVector& A, const FVector& B, const FVector& C, const FVector& Outward)
-		{
-			FLBAVertex V[3] = { Stone, Stone, Stone };
-			const FVector Normal = FVector::CrossProduct(C - A, B - A).GetSafeNormal() * (FVector::DotProduct(FVector::CrossProduct(C - A, B - A), Outward) < 0.0 ? -1.0 : 1.0);
-			const FVector Corners[3] = { A, B, C };
-			for (int32 Corner = 0; Corner < 3; ++Corner)
-			{
-				V[Corner].Position = FVector3f(Corners[Corner]);
-				V[Corner].Normal = FVector3f(Normal);
-			}
-			Builder.AddTriangleFacing(Section, V[0], V[1], V[2], FVector3f(Normal));
-		};
-		const FVector2D Middle(0.0, 0.5 * StoneShoulder);
-		for (int32 Index = 0; Index < Outline.Num(); ++Index)
-		{
-			const FVector2D P0 = Outline[Index], P1 = Outline[(Index + 1) % Outline.Num()];
-			// Front and back: fans from the middle.
-			for (const double Out : { 1.0, -1.0 })
-			{
-				Add(At(Middle, Out), At(P0, Out), At(P1, Out), FVector(Face * Out, 0.0));
-			}
-			// Its edge, all round.
-			const FVector2D Mid = 0.5 * (P0 + P1);
-			const FVector Edge = FVector(Across * Mid.X, Mid.Y - StoneShoulder * 0.5).GetSafeNormal();
-			Add(At(P0, 1.0), At(P1, 1.0), At(P1, -1.0), Edge);
-			Add(At(P0, 1.0), At(P1, -1.0), At(P0, -1.0), Edge);
-		}
-	}
-}
-
 void LBAPlanetSites::FSites::SpawnProps(FLBAImportContext& Context, UWorld* World, const TArray<float>& Heights) const
 {
 	using namespace LBAPlanetSitesPrivate;
@@ -1407,7 +1352,7 @@ void LBAPlanetSites::FSites::SpawnProps(FLBAImportContext& Context, UWorld* Worl
 	// The bores' columns: the Temple of Bu's own, from the remake, each its pillar's height, its foot on the floor.
 	FLBARemakeAssets Remake(Context);
 	UStaticMesh* Column = nullptr;
-	if (Context.GetProjectSettings().bUseRemakeModels && Remake.Initialize())
+	if (Remake.Initialize())
 	{
 		Column = Remake.GetModelMesh(PillarFolder, PillarFile);
 	}
@@ -1438,6 +1383,31 @@ void LBAPlanetSites::FSites::SpawnProps(FLBAImportContext& Context, UWorld* Worl
 				const FVector Foot(At, RidgeFloor(Pillar.X, Site) - 5.0);
 				const FVector Center = Box.GetCenter();
 				Component->AddInstance(FTransform(Turn, Foot - Turn.RotateVector(FVector(Center.X, Center.Y, Box.Min.Z) * Scale), FVector(Scale)), true);
+			}
+		}
+	}
+	// The stones, on their islets, the carved side toward whoever comes down the road.
+	if (!Sites.IsEmpty())
+	{
+		UStaticMesh* Stone = Remake.GetModelMesh(StoneFolder, StoneFile);
+		if (!Stone)
+		{
+			Context.Warn(FString::Printf(TEXT("LBA1 sites: no model %s/%s in the plugin's Resources/Models: the sites have no stones"), StoneFolder, StoneFile));
+		}
+		else
+		{
+			const FBox Box = Stone->GetBoundingBox();
+			const double Scale = StoneHeight / FMath::Max(Box.GetSize().Z, 1.0);
+			for (const FSite& Site : Sites)
+			{
+				const FVector2D Face = -Site.Dir;
+				const FQuat Turn(FVector::UpVector, FMath::Atan2(Face.Y, Face.X) - UE_HALF_PI);
+				const FVector Foot(Site.Islet, SampleHeight(Heights, Site.Islet) - StoneSink - Box.Min.Z * Scale);
+				if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform(Turn, Foot, FVector(Scale)), FString::Printf(TEXT("Site_%s_Stone"), *FLBAImportContext::SanitizeName(Site.Name)), TEXT("Stubs/Sites")))
+				{
+					Actor->GetStaticMeshComponent()->SetStaticMesh(Stone);
+					Actor->Tags.Add(ULBAPlanetAsset::StubTag);
+				}
 			}
 		}
 	}

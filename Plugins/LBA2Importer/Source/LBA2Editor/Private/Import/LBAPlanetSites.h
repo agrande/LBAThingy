@@ -137,12 +137,10 @@ namespace LBAPlanetSites
 		/** A boulder's faceted mesh (flat shaded, Vertex's color and UV on every vertex), less Pivot. */
 		static void EmitBoulder(const FBoulder& Boulder, const FVector& Pivot, const FLBAVertex& Vertex, FLBAMeshBuilder& Builder, int32 Section);
 
-		/** The stones on their islets, less Pivot, into the stub's ground mesh: rounded slabs of Stone (pale stone). */
-		void EmitStones(const TArray<float>& Heights, const FVector& Pivot, const FLBAVertex& Stone, FLBAMeshBuilder& Builder, int32 Section) const;
-
 		/**
-		 * The bores' columns (the remake's model of the Temple of Bu's mosaic column, when remake models are on) and the parked
-		 * buggy (LBA2 island decor: import the islands first), in World's folder Stubs/Sites.
+		 * The stones on their islets (the plugin's model), the bores' columns (the remake's model of the Temple of Bu's mosaic
+		 * column, when remake models are on) and the parked buggy (LBA2 island decor: import the islands first), in World's
+		 * folder Stubs/Sites.
 		 */
 		void SpawnProps(FLBAImportContext& Context, UWorld* World, const TArray<float>& Heights) const;
 
