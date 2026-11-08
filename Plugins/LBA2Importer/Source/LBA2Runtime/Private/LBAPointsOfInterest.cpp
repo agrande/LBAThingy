@@ -11,12 +11,10 @@ namespace
 	const TCHAR* StubsFrame = TEXT("/Game/LBA2/Planets/L_TWINSUN_Stubs");
 	const TCHAR* BeltFrame = TEXT("/Game/LBA2/Planets/L_TWINSUN_Belt");
 
-	FLBAPointOfInterest Spot(const TCHAR* Id, const FText& Group, const FText& Name, const FText& Description, const TCHAR* Frame,
-		const FVector& Feet, double Yaw)
+	FLBAPointOfInterest Spot(const TCHAR* Id, const FText& Name, const FText& Description, const TCHAR* Frame, const FVector& Feet, double Yaw)
 	{
 		FLBAPointOfInterest Point;
 		Point.Id = Id;
-		Point.Group = Group;
 		Point.Name = Name;
 		Point.Description = Description;
 		Point.Level = TwinsunLevel;
@@ -26,11 +24,10 @@ namespace
 		return Point;
 	}
 
-	FLBAPointOfInterest Interior(const TCHAR* Id, const FText& Group, const FText& Name, const FText& Description, int32 Scene)
+	FLBAPointOfInterest Interior(const TCHAR* Id, const FText& Name, const FText& Description, int32 Scene)
 	{
 		FLBAPointOfInterest Point;
 		Point.Id = Id;
-		Point.Group = Group;
 		Point.Name = Name;
 		Point.Description = Description;
 		Point.Scene = Scene;
@@ -47,31 +44,29 @@ const TArray<FLBAPointOfInterest>& LBAPointsOfInterest::Get()
 	// LBA1 districts are rebuilt with another layout.
 	static const TArray<FLBAPointOfInterest> Points = []
 	{
-		const FText Globe = LOCTEXT("Globe", "On the globe");
-		const FText Inside = LOCTEXT("Inside", "Interiors");
 		return TArray<FLBAPointOfInterest>{
-			Spot(TEXT("CitadelBoat"), Globe, LOCTEXT("CitadelBoat", "Citadel harbour, by the ferry"),
+			Spot(TEXT("CitadelBoat"), LOCTEXT("CitadelBoat", "Citadel harbour, by the ferry"),
 				LOCTEXT("CitadelBoatTip", "Board the ferry (Use) and sail around the planet."), CitadelFrame, FVector(31123.0, 38591.0, 100.0), 138.0),
-			Spot(TEXT("DinoflySpot"), Globe, LOCTEXT("DinoflySpot", "Where the Dinofly waits"),
+			Spot(TEXT("DinoflySpot"), LOCTEXT("DinoflySpot", "Where the Dinofly waits"),
 				LOCTEXT("DinoflySpotTip", "Near Twinsen's house, where LBA2's Dinofly lies. Summon yours with F / Y."), CitadelFrame,
 				FVector(33950.0, 42790.0, 250.0), 0.0),
-			Spot(TEXT("PrincipalTown"), Globe, LOCTEXT("PrincipalTown", "Principal Island town"),
+			Interior(TEXT("Start"), LOCTEXT("Start", "The start of LBA2"),
+				LOCTEXT("StartTip", "Twinsen's house, where the game begins."), 0),
+			Interior(TEXT("TempleOfBu"), LOCTEXT("TempleOfBu", "Temple of Bu"),
+				LOCTEXT("TempleOfBuTip", "Desert Island's temple: vaults, pillars and sliding doors."), 10),
+			Interior(TEXT("TraluCave"), LOCTEXT("TraluCave", "Tralu's cave"),
+				LOCTEXT("TraluCaveTip", "Citadel's cave behind the wizard's tent: a hollow with a rising roof."), 2),
+			Spot(TEXT("ProximCity"), LOCTEXT("ProximCity", "Proxim City"),
+				LOCTEXT("ProximCityTip", "Proxima Island, from near the inventor's house."), StubsFrame, FVector(-6742.0, -27875.0, 100.0), -7.7),
+			Spot(TEXT("PrincipalTown"), LOCTEXT("PrincipalTown", "Principal Island town"),
 				LOCTEXT("PrincipalTownTip", "LBA1's harbour town rebuilt in 3D: below the fortress, looking into Old Burg."), StubsFrame,
 				FVector(-18751.0, 19234.0, 100.0), 51.8),
-			Spot(TEXT("ProximCity"), Globe, LOCTEXT("ProximCity", "Proxim City"),
-				LOCTEXT("ProximCityTip", "Proxima Island, from near the inventor's house."), StubsFrame, FVector(-6742.0, -27875.0, 100.0), -7.7),
-			Spot(TEXT("RebellionHarbour"), Globe, LOCTEXT("RebellionHarbour", "Rebellion Island harbour"),
+			Spot(TEXT("RebellionHarbour"), LOCTEXT("RebellionHarbour", "Rebellion Island harbour"),
 				LOCTEXT("RebellionHarbourTip", "Where the rebels first fight, facing the Hamalayi mountains."), StubsFrame,
 				FVector(28353.0, -12246.0, 100.0), -23.4),
-			Spot(TEXT("HamalayiTop"), Globe, LOCTEXT("HamalayiTop", "Hamalayi plateau"),
+			Spot(TEXT("HamalayiTop"), LOCTEXT("HamalayiTop", "Hamalayi plateau"),
 				LOCTEXT("HamalayiTopTip", "The belt's widest flat ground, 50 m up, looking back at the islands."), BeltFrame,
 				FVector(-50445.0, 1342.0, 5170.0), -1.5),
-			Interior(TEXT("Start"), Inside, LOCTEXT("Start", "The start of LBA2"),
-				LOCTEXT("StartTip", "Twinsen's house, where the game begins."), 0),
-			Interior(TEXT("TempleOfBu"), Inside, LOCTEXT("TempleOfBu", "Temple of Bu"),
-				LOCTEXT("TempleOfBuTip", "Desert Island's temple: vaults, pillars and sliding doors."), 10),
-			Interior(TEXT("TraluCave"), Inside, LOCTEXT("TraluCave", "Tralu's cave"),
-				LOCTEXT("TraluCaveTip", "Citadel's cave behind the wizard's tent: a hollow with a rising roof."), 2),
 		};
 	}();
 	return Points;

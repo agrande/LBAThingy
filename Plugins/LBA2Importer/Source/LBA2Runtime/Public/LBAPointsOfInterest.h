@@ -13,8 +13,6 @@ struct LBA2RUNTIME_API FLBAPointOfInterest
 	FName Id;
 	FText Name;
 	FText Description;
-	/** Heading it is listed under. */
-	FText Group;
 
 	/** An interior: goes to this scene's hero start (Level is then unused). -1 for a spot on a level. */
 	int32 Scene = INDEX_NONE;

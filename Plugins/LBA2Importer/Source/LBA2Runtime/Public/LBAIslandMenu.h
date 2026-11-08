@@ -9,6 +9,7 @@ class UBorder;
 class UButton;
 class UHorizontalBox;
 class UScrollBox;
+class USizeBox;
 class UTextBlock;
 class UTexture2D;
 class UVerticalBox;
@@ -20,8 +21,6 @@ enum class ELBAMenuAction : uint8
 {
 	/** Shows the showcase places (LBAPointsOfInterest), the tab the menu opens on. */
 	PointsTab,
-	/** Shows one heading of showcase places. */
-	PointGroup,
 	/** Goes to a showcase place. */
 	Point,
 	/** Shows a planet's islands. */
@@ -57,8 +56,8 @@ public:
 
 	ELBAMenuAction Action = ELBAMenuAction::Quit;
 
-	/** ELBAPlanet, index into the menu's islands, test levels or place headings, scene number, index into the shown level's
-	 * stations or into the showcase places. */
+	/** ELBAPlanet, index into the menu's islands or test levels, scene number, index into the shown level's stations or
+	 * into the showcase places. */
 	int32 Value = INDEX_NONE;
 
 	UFUNCTION()
@@ -102,13 +101,13 @@ struct FLBAMenuButton
 
 /**
  * Travel menu shown by ALBAPlayerController (M / gamepad Start): tabs along the top, a list on the left and what it
- * holds on the right. It opens on the Points of interest tab (showcase places, LBAPointsOfInterest); then one tab per
- * planet, its islands on the left and the selected island's scenes on the right (its areas, each with the interiors it
- * opens on): picking an island goes to its level's start, picking a scene to that scene's hero start. The Tests tab
- * lists the test levels and sandboxes, the feature test map first, each with its stations. Drawn after the original's
- * menus (framed bars, the choice lit in amber) with large, high-contrast text. Playable with the mouse, the keyboard
- * (arrows, Enter, Q / E for tabs) or a gamepad (d-pad, A, LB / RB); left and right always cross between the two
- * columns. Esc, B, M or Start close it.
+ * holds on the right. It opens on the Points of interest tab (the showcase places, LBAPointsOfInterest, one list across
+ * the whole panel); then one tab per planet, its islands on the left and the selected island's scenes on the right (its
+ * areas, each with the interiors it opens on): picking an island goes to its level's start, picking a scene to that
+ * scene's hero start. The Tests tab lists the test levels and sandboxes, the feature test map first, each with its
+ * stations. Drawn after the original's menus (framed bars, the choice lit in amber) with large, high-contrast text.
+ * Playable with the mouse, the keyboard (arrows, Enter, Q / E for tabs) or a gamepad (d-pad, A, LB / RB); left and right
+ * always cross between the two columns. Esc, B, M or Start close it.
  * The layout is built in C++, so it needs no asset; a Blueprint subclass can restyle it through the colors and
  * icons below. The editor's level selector (LBA2Editor) is a subclass that opens levels in the editor instead.
  */
@@ -227,7 +226,6 @@ private:
 	void BuildSceneTree();
 	void BuildTestLevelList();
 	void BuildStationList();
-	void BuildPointGroupList();
 	void BuildPointList();
 	/**
 	 * Left from anywhere in the right column goes to the left column's entry shown, right from the left column to the
@@ -244,7 +242,6 @@ private:
 	void ShowTests();
 	void SelectTestLevel(int32 Level);
 	void ShowPoints();
-	void SelectPointGroup(int32 Group);
 	/** Points of interest, planets then Tests, step tabs to the right (negative: left). */
 	void CycleTab(int32 Step);
 	/** Where the player is (their scene, station or level start), else the island or test level shown. */
@@ -264,6 +261,10 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FLBATestLevelInfo> TestLevels;
+
+	/** The left column, collapsed on the Points of interest tab. */
+	UPROPERTY(Transient)
+	TObjectPtr<USizeBox> IslandColumn;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UVerticalBox> IslandList;
@@ -307,9 +308,6 @@ private:
 
 	/** The Points of interest tab is shown (the default). */
 	bool bShowPoints = true;
-	/** Headings of the showcase places, in order. */
-	TArray<FText> PointGroups;
-	int32 SelectedPointGroup = 0;
 	/** Index into LBAPointsOfInterest::Get() of the place the player is at, -1 if none. */
 	int32 CurrentPoint = INDEX_NONE;
 	/** Index into TestLevels. */

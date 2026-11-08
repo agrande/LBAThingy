@@ -213,17 +213,12 @@ void ULBAIslandMenu::BuildTree()
 		}
 	}
 
-	// Showcase places: their headings, and the one the player is at (an interior's scene, or within reach of a spot).
+	// The showcase place the player is at (an interior's scene, or within reach of a spot).
 	const TArray<FLBAPointOfInterest>& Points = LBAPointsOfInterest::Get();
-	PointGroups.Reset();
 	CurrentPoint = INDEX_NONE;
 	for (int32 Index = 0; Index < Points.Num(); ++Index)
 	{
 		const FLBAPointOfInterest& Point = Points[Index];
-		if (!PointGroups.ContainsByPredicate([&Point](const FText& Group) { return Group.EqualTo(Point.Group); }))
-		{
-			PointGroups.Add(Point.Group);
-		}
 		const TOptional<FVector> Feet = ULBASceneTravelSubsystem::FindPointOfInterestFeet(World, Point);
 		const bool bHere = Point.Scene != INDEX_NONE ? Point.Scene == CurrentScene && CurrentIsland == INDEX_NONE
 			: Feet && bViewKnown && FVector::Dist(*Feet, ViewLocation) < StationReach;
@@ -232,9 +227,6 @@ void ULBAIslandMenu::BuildTree()
 			CurrentPoint = Index;
 		}
 	}
-	SelectedPointGroup = Points.IsValidIndex(CurrentPoint)
-		? FMath::Max(0, PointGroups.IndexOfByPredicate([&](const FText& Group) { return Group.EqualTo(Points[CurrentPoint].Group); }))
-		: 0;
 
 	Planets.Reset();
 	for (const FLBAIslandInfo& Island : Islands)
@@ -299,13 +291,14 @@ void ULBAIslandMenu::BuildTree()
 	Line->SetPadding(FMargin(0.f, 1.f));
 	Content->AddChildToVerticalBox(Line);
 
-	// The list (islands, test levels, headings) on the left, what the selected entry holds on the right.
+	// The list (islands, test levels) on the left, what the selected entry holds on the right. The showcase places are one
+	// list: they take the right panel and the left column goes away.
 	UHorizontalBox* Body = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Body"));
 	UVerticalBoxSlot* BodySlot = Content->AddChildToVerticalBox(Body);
 	BodySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	BodySlot->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
 
-	USizeBox* IslandColumn = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("IslandColumn"));
+	IslandColumn = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("IslandColumn"));
 	IslandColumn->SetWidthOverride(bEditorMode ? 260.f : 360.f);
 	Body->AddChildToHorizontalBox(IslandColumn);
 	UScrollBox* IslandScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("IslandScroll"));
@@ -360,10 +353,10 @@ void ULBAIslandMenu::BuildIslandList()
 			: Action == ELBAMenuAction::PointsTab ? bShowPoints
 			: !bShowTests && !bShowPoints && Button.Handler->Value == int32(SelectedPlanet);
 	}
+	IslandColumn->SetVisibility(bShowPoints ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 	if (bShowPoints)
 	{
-		BuildPointGroupList();
-		return;
+		return; // One list, in the right panel: BuildPointList.
 	}
 	if (bShowTests)
 	{
@@ -384,19 +377,6 @@ void ULBAIslandMenu::BuildIslandList()
 		UTextBlock* None = MakeText(WidgetTree, LOCTEXT("NoIslands", "No island imported yet (Tools > LBA2 Importer)."), 15, IdleTextColor, ETextJustify::Left);
 		None->SetAutoWrapText(true);
 		IslandList->AddChildToVerticalBox(None);
-	}
-}
-
-void ULBAIslandMenu::BuildPointGroupList()
-{
-	const TArray<FLBAPointOfInterest>& Points = LBAPointsOfInterest::Get();
-	for (int32 Index = 0; Index < PointGroups.Num(); ++Index)
-	{
-		const int32 Count = Points.FilterByPredicate([&](const FLBAPointOfInterest& Point) { return Point.Group.EqualTo(PointGroups[Index]); }).Num();
-		FLBAMenuButton& Button = AddButton(IslandButtons, ELBAMenuAction::PointGroup, Index, PointGroups[Index], PointsIcon, true, 0.f,
-			FText::Format(LOCTEXT("PlaceCount", "{0} {0}|plural(one=place,other=places)"), FText::AsNumber(Count)));
-		Button.bCurrent = Points.IsValidIndex(CurrentPoint) && Points[CurrentPoint].Group.EqualTo(PointGroups[Index]);
-		IslandList->AddChildToVerticalBox(Button.Button)->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
 	}
 }
 
@@ -489,22 +469,10 @@ void ULBAIslandMenu::BuildSceneTree()
 
 void ULBAIslandMenu::BuildPointList()
 {
-	for (FLBAMenuButton& Button : IslandButtons)
-	{
-		Button.bActive = Button.Handler->Value == SelectedPointGroup;
-	}
-	if (!PointGroups.IsValidIndex(SelectedPointGroup))
-	{
-		return;
-	}
 	const TArray<FLBAPointOfInterest>& Points = LBAPointsOfInterest::Get();
 	for (int32 Index = 0; Index < Points.Num(); ++Index)
 	{
 		const FLBAPointOfInterest& Point = Points[Index];
-		if (!Point.Group.EqualTo(PointGroups[SelectedPointGroup]))
-		{
-			continue;
-		}
 		FLBAMenuButton& Button = AddButton(SceneButtons, ELBAMenuAction::Point, Index, Point.Name, Point.Scene != INDEX_NONE ? BuildingIcon : SectionIcon,
 			false, 0.f, Point.Description);
 		Button.bCurrent = Index == CurrentPoint;
@@ -732,12 +700,6 @@ void ULBAIslandMenu::ShowPoints()
 	bShowPoints = true;
 	bShowTests = false;
 	BuildIslandList();
-	BuildSceneTree();
-}
-
-void ULBAIslandMenu::SelectPointGroup(int32 Group)
-{
-	SelectedPointGroup = Group;
 	BuildSceneTree();
 }
 
@@ -1002,10 +964,6 @@ void ULBAIslandMenu::OnButtonClicked(ELBAMenuAction Action, int32 Value)
 
 	case ELBAMenuAction::PointsTab:
 		ShowPoints();
-		return;
-
-	case ELBAMenuAction::PointGroup:
-		SelectPointGroup(Value);
 		return;
 
 	case ELBAMenuAction::Point:
