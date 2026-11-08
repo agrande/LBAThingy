@@ -33,6 +33,19 @@ namespace LBAPlanetDistrictsPrivate
 		{ TEXT("Rebellion"), 59, TEXT("Rebellion harbour") },
 	};
 
+	/** LBA1's vehicle rides (a cutscene there) that become a drivable car and a road: the same vehicle stands at both ends. */
+	struct FVehicleRide
+	{
+		int32 Scene;
+		int32 ToScene;
+		int32 File3D;
+	};
+	const FVehicleRide VehicleRides[] =
+	{
+		{ 25, 37, LBA1::MotorbikeFile3D },	// Peg Leg Street to the Water Tower.
+		{ 19, 24, LBA1::BuggyFile3D },		// The far end of the Military camp to Port Belooga.
+	};
+
 	/** LBA1's cells in cm (units / 8, as LBA2's). */
 	constexpr double CellCm = LBA1::CellSize / 8.0;
 	constexpr double StepCm = LBA1::CellHeight / 8.0;
@@ -282,6 +295,16 @@ struct LBAPlanetDistricts::FDistricts::FDistrict
 	TArray<int32> SceneOf;
 	/** Where LBA1's ferry docks (frame cm, x and z), in the ferry ports. */
 	TArray<FVector2D> Docks;
+	/** LBA1's land vehicles at the ends of their rides (frame cm: x, z, height) and their heading there (1024 = a turn). */
+	struct FVehicleSpot
+	{
+		int32 Ride = INDEX_NONE;
+		bool bStart = false;
+		int32 Scene = INDEX_NONE;
+		FVector Location = FVector::ZeroVector;
+		int32 Beta = 0;
+	};
+	TArray<FVehicleSpot> Vehicles;
 	/** The scenes' sea level (cells in the frame), when it has water. */
 	bool bSea = false;
 	int32 SeaY = 0;
@@ -596,6 +619,14 @@ bool LBAPlanetDistricts::FDistricts::Load(const FString& InDirectory, double Rad
 				{
 					District->Docks.Add(FVector2D(Offset.Value.X + Actor.Position.X, Offset.Value.Z + Actor.Position.Z) / 8.0);
 				}
+				for (int32 Ride = 0; Ride < UE_ARRAY_COUNT(VehicleRides); ++Ride)
+				{
+					if ((VehicleRides[Ride].Scene == Offset.Key || VehicleRides[Ride].ToScene == Offset.Key) && VehicleRides[Ride].File3D == Actor.File3D)
+					{
+						const FIntVector At = Offset.Value + Actor.Position;
+						District->Vehicles.Add({ Ride, VehicleRides[Ride].Scene == Offset.Key, Offset.Key, FVector(At.X, At.Z, At.Y) / 8.0, Actor.Beta });
+					}
+				}
 			}
 		}
 		if (!District->Build(*Data, Offsets, Markers, Radius))
@@ -828,6 +859,17 @@ TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FS
 		{
 			Place.Docks.Add(FVector2D(Place.FrameToMap.TransformPosition(FVector(Dock, 0.0))));
 		}
+		for (const FDistrict::FVehicleSpot& Spot : District->Vehicles)
+		{
+			// LBA's heading 0 faces +z, a quarter turn faces +x.
+			const double Beta = Spot.Beta * 2.0 * UE_DOUBLE_PI / 1024.0;
+			FPlaced::FVehicle& Vehicle = Place.Vehicles.AddDefaulted_GetRef();
+			Vehicle.Ride = Spot.Ride;
+			Vehicle.bStart = Spot.bStart;
+			Vehicle.Scene = Spot.Scene;
+			Vehicle.Location = Place.FrameToMap.TransformPosition(Spot.Location);
+			Vehicle.Heading = FVector2D(Place.FrameToMap.TransformVectorNoScale(FVector(FMath::Sin(Beta), FMath::Cos(Beta), 0.0)));
+		}
 		Places.Add({ Turn, At });
 		int32 OnLand = 0, On = 0, WetOnSea = 0, Wet = 0;
 		for (int32 Y = 0; Y < Ground.SizeY; ++Y)
@@ -905,6 +947,10 @@ TArray<LBAPlanetDistricts::FPlaced> LBAPlanetDistricts::FDistricts::Lay(const FS
 			}
 		}
 		Placed[Which].FrameToMap.AddToTranslation(FVector(0.0, 0.0, Shift));
+		for (FPlaced::FVehicle& Vehicle : Placed[Which].Vehicles)
+		{
+			Vehicle.Location.Z += Shift;
+		}
 	}
 
 	// The pad's edge: its land next to land off it comes up to the streets' top (the lowest around: its triangles stay under

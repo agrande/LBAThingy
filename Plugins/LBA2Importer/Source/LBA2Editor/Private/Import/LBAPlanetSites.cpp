@@ -426,6 +426,131 @@ namespace LBAPlanetSitesPrivate
 		return Out;
 	}
 
+	/** A car's headroom in LBA1 cells (32 cm), and how many columns next to its start need no room at its sides. */
+	constexpr int32 CarHeadroom = 4;
+	constexpr int32 CarSqueezeSteps = 3;
+	/** A road may leave a town this many columns (64 cm) further from its vehicle than the nearest way out. */
+	constexpr int32 RimSlack = 40;
+	/** Where a road leaves a town, the ground off the bricks is at most this far (cm) from the street, and this close (cells). */
+	constexpr double RimHeight = 150.0;
+	constexpr int32 RimOutside = 3;
+	/**
+	 * A ride's road keeps this far (cm) off a town's bricks: its width and verges, the car's, and the strip of sloped ground
+	 * round a town (the road isn't graded into that). Nearer costs up to this many times level ground, so it leaves a town
+	 * squarely and then stays away.
+	 */
+	constexpr double TownMargin = 600.0;
+	constexpr double TownMarginCost = 30.0;
+	/** A ride's road has no kerb this far (cm) from where it leaves a town: the way in stays open. */
+	constexpr double RideKerbSkip = 500.0;
+	/** A boulder's center nearer than this (cm) to a road's middle is dropped: the inside of a bend's kerb lands on the road. */
+	constexpr double BoulderClear = 180.0;
+	/** A parked car faces along its way this far on (cm). */
+	constexpr double CarLookAhead = 500.0;
+
+	/**
+	 * The town's columns a car can reach from Map (breadth first, so each step's Steps is its distance): flat from column to
+	 * column, a brick up or down only over a ramp, with headroom and a clear column on each side (the buggy is 1.7 m wide).
+	 */
+	bool FloodStreets(const LBAPlanetDistricts::FTown& Town, const FTransform& FrameToMap, const FVector& Map, TArray<LBAPlanetSites::FStreetStep>& Out)
+	{
+		const double CellCm = LBA1::CellSize / 8.0;
+		const double StepCm = LBA1::CellHeight / 8.0;
+		const FVector Origin = Town.GetOrigin();
+		const FVector Cell = (FrameToMap.InverseTransformPositionNoScale(Map) - Origin) / FVector(CellCm, CellCm, StepCm);
+		auto ShapeAt = [&Town](int32 X, int32 Y, int32 Z)
+		{
+			if (X < 0 || Y < 0 || Z < 0 || X >= Town.Size.X || Y >= Town.Size.Y || Z >= Town.Size.Z)
+			{
+				return 0;
+			}
+			const int32 Index = Town.Index(X, Y, Z);
+			return Town.Bricks[Index] != 0 ? int32(Town.Shapes[Index]) : 0;
+		};
+		auto IsRamp = [](int32 Shape) { return Shape >= 2 && Shape <= 5; };
+		auto Clear = [&](int32 X, int32 Floor, int32 Z)
+		{
+			for (int32 Y = Floor; Y < Floor + CarHeadroom; ++Y)
+			{
+				const int32 Shape = ShapeAt(X, Y, Z);
+				if (Shape != 0 && !IsRamp(Shape))
+				{
+					return false;
+				}
+			}
+			return true;
+		};
+		auto Stands = [&](int32 X, int32 Floor, int32 Z) { return ShapeAt(X, Floor - 1, Z) != 0 && Clear(X, Floor, Z); };
+		auto InTown = [&Town](int32 X, int32 Z) { return X >= 0 && Z >= 0 && X < Town.Size.X && Z < Town.Size.Z && Town.Scenes[Z * Town.Size.X + X] != INDEX_NONE; };
+		auto MapOf = [&](int32 X, int32 Floor, int32 Z)
+		{
+			return FrameToMap.TransformPosition(Origin + FVector((X + 0.5) * CellCm, (Z + 0.5) * CellCm, Floor * StepCm));
+		};
+		static const FIntPoint Sides[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
+
+		const int32 X0 = FMath::RoundToInt(Cell.X);
+		const int32 Z0 = FMath::RoundToInt(Cell.Y);
+		int32 Floor0 = INDEX_NONE;
+		for (const int32 Offset : { 0, 1, -1, 2, -2 })
+		{
+			if (Floor0 == INDEX_NONE && Stands(X0, FMath::RoundToInt(Cell.Z) + Offset, Z0))
+			{
+				Floor0 = FMath::RoundToInt(Cell.Z) + Offset;
+			}
+		}
+		Out.Reset();
+		if (Floor0 == INDEX_NONE)
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("LBA2 planet stub: no street under (%.0f, %.0f, %.0f): cell (%.1f, %.1f, %.1f) of a town %d x %d x %d, its column's shapes around: %d %d %d"),
+				Map.X, Map.Y, Map.Z, Cell.X, Cell.Y, Cell.Z, Town.Size.X, Town.Size.Y, Town.Size.Z,
+				ShapeAt(X0, FMath::RoundToInt(Cell.Z) - 2, Z0), ShapeAt(X0, FMath::RoundToInt(Cell.Z) - 1, Z0), ShapeAt(X0, FMath::RoundToInt(Cell.Z), Z0));
+			return false;
+		}
+		TArray<int32> Seen;
+		Seen.Init(INDEX_NONE, Town.Bricks.Num());
+		TArray<FIntVector> Cells = { FIntVector(X0, Floor0, Z0) };
+		Seen[Town.Index(X0, Floor0, Z0)] = 0;
+		Out.AddDefaulted_GetRef().Map = MapOf(X0, Floor0, Z0);
+		for (int32 Head = 0; Head < Cells.Num(); ++Head)
+		{
+			const FIntVector Here = Cells[Head];
+			for (const FIntPoint& Side : Sides)
+			{
+				const int32 X = Here.X + Side.X;
+				const int32 Z = Here.Z + Side.Y;
+				if (!InTown(X, Z))
+				{
+					Out[Head].bRim = true;
+					continue;
+				}
+				for (const int32 Rise : { 0, 1, -1 })
+				{
+					const int32 Floor = Here.Y + Rise;
+					if (!Stands(X, Floor, Z) || (Rise != 0 && !IsRamp(ShapeAt(X, Floor - 1, Z)) && !IsRamp(ShapeAt(Here.X, Here.Y - 1, Here.Z))))
+					{
+						continue;
+					}
+					bool bWide = true;
+					for (const FIntPoint& Beside : Sides)
+					{
+						bWide = bWide && Clear(X + Beside.X, Floor, Z + Beside.Y);
+					}
+					if ((bWide || Out[Head].Steps < CarSqueezeSteps) && Seen[Town.Index(X, Floor, Z)] == INDEX_NONE)
+					{
+						Seen[Town.Index(X, Floor, Z)] = Cells.Num();
+						Cells.Add(FIntVector(X, Floor, Z));
+						LBAPlanetSites::FStreetStep& Step = Out.AddDefaulted_GetRef();
+						Step.Map = MapOf(X, Floor, Z);
+						Step.Parent = Head;
+						Step.Steps = Out[Head].Steps + 1;
+					}
+					break;
+				}
+			}
+		}
+		return true;
+	}
+
 	/** Land cells in 4-connected pieces: per cell its piece (INDEX_NONE for sea), and each piece's size. */
 	TArray<int32> LandPieces(const TArray<bool>& Land, int32 SizeX, int32 SizeY, TArray<int32>& Sizes)
 	{
@@ -771,6 +896,80 @@ void LBAPlanetSites::FSites::FindWays(const LBAPlanetDistricts::FDistricts& Dist
 	}
 }
 
+void LBAPlanetSites::FSites::FindRides(const LBAPlanetDistricts::FDistricts& Districts, const TArray<LBAPlanetDistricts::FPlaced>& Placed)
+{
+	using namespace LBAPlanetSitesPrivate;
+	Rides.Reset();
+	TownCells.Reset();
+	if (Placed.IsEmpty())
+	{
+		return;
+	}
+	TownCells.Init(false, Grid.SizeX * Grid.SizeY);
+	TArray<LBAPlanetDistricts::FTown> Towns;
+	Towns.SetNum(Placed.Num());
+	const double CellCm = LBA1::CellSize / 8.0;
+	for (int32 Place = 0; Place < Placed.Num(); ++Place)
+	{
+		LBAPlanetDistricts::FTown& Town = Towns[Place];
+		if (!Districts.MakeTown(Placed[Place], Town))
+		{
+			continue;
+		}
+		const FVector Origin = Town.GetOrigin();
+		for (int32 Z = 0; Z < Town.Size.Z; ++Z)
+		{
+			for (int32 X = 0; X < Town.Size.X; ++X)
+			{
+				if (Town.Scenes[Z * Town.Size.X + X] == INDEX_NONE)
+				{
+					continue;
+				}
+				const FVector P = Placed[Place].FrameToMap.TransformPosition(Origin + FVector((X + 0.5) * CellCm, (Z + 0.5) * CellCm, 0.0));
+				const int32 CX = FMath::RoundToInt((P.X - Grid.Origin.X) / Grid.Cell);
+				const int32 CY = FMath::RoundToInt((P.Y - Grid.Origin.Y) / Grid.Cell);
+				if (CX >= 0 && CY >= 0 && CX < Grid.SizeX && CY < Grid.SizeY)
+				{
+					TownCells[CY * Grid.SizeX + CX] = true;
+				}
+			}
+		}
+	}
+	for (int32 Place = 0; Place < Placed.Num(); ++Place)
+	{
+		for (const LBAPlanetDistricts::FPlaced::FVehicle& Start : Placed[Place].Vehicles)
+		{
+			if (!Start.bStart)
+			{
+				continue;
+			}
+			for (int32 Other = 0; Other < Placed.Num(); ++Other)
+			{
+				for (const LBAPlanetDistricts::FPlaced::FVehicle& End : Placed[Other].Vehicles)
+				{
+					if (End.bStart || End.Ride != Start.Ride)
+					{
+						continue;
+					}
+					FRide Ride;
+					Ride.Scene = Start.Scene;
+					Ride.ToScene = End.Scene;
+					Ride.Parked = Start.Location;
+					Ride.Heading = Start.Heading;
+					if (FloodStreets(Towns[Place], Placed[Place].FrameToMap, Start.Location, Ride.From) && FloodStreets(Towns[Other], Placed[Other].FrameToMap, End.Location, Ride.To))
+					{
+						Rides.Add(MoveTemp(Ride));
+					}
+					else
+					{
+						UE_LOG(LogLBA2, Warning, TEXT("LBA2 planet stub: LBA1's vehicle in scene %d or %d doesn't stand on its streets: no ride"), Start.Scene, End.Scene);
+					}
+				}
+			}
+		}
+	}
+}
+
 void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, TArray<bool>& Land, const TArray<bool>& Pad, const TArray<bool>& Avoid, TArray<float>& RoadShare, TArray<float>& VergeShare)
 {
 	using namespace LBAPlanetSitesPrivate;
@@ -868,6 +1067,79 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, TArray<bool>& Land
 		}
 	};
 
+	// A step of road over the ground (not whether it may go there): across water a causeway, dearer the deeper; else its
+	// length, weighted by the climb, a cliff costing dearly.
+	auto StepCost = [&](int32 From, int32 To, double Run)
+	{
+		if (!Land[To])
+		{
+			return Run * (CausewayCost + FMath::Max(0.0, -double(Heights[To])) / 100.0);
+		}
+		const double Climb = FMath::Abs(Heights[To] - Heights[From]);
+		const double Grade = Climb / (Run * Grid.Cell);
+		const double Kept = FMath::Min(Grade, CliffGrade);
+		return Run * (1.0 + 40.0 * Kept * Kept + 4.0 * Grade) + (Grade > CliffGrade ? CliffCost * Climb / Grid.Cell : 0.0);
+	};
+
+	TArray<FVector2D> RoadSamples;
+	// Along a path: causeways where it crosses water, graded heights, the road laid (Splat) and its kerbs of boulders.
+	struct FLaidRoad
+	{
+		TArray<FVector> Road;
+		double Length = 0.0;
+		double Steepest = 0.0;
+		int32 Built = 0;
+	};
+	auto LayLine = [&](const TArray<FVector2D>& Points, double KerbSkip, int32 Seed)
+	{
+		constexpr double Spacing = 50.0;
+		const TArray<FVector2D> Line = Resample(Points, Spacing);
+		TArray<double> Z;
+		for (const FVector2D& P : Line)
+		{
+			Z.Add(Land[CellOf(P)] ? SampleHeight(Heights, P) : LowGround);
+		}
+		FLaidRoad Laid;
+		// Where it crosses water, a causeway: land under it, at the shore's height (then graded with the rest).
+		const int32 Wide = FMath::CeilToInt(CausewayHalf / Grid.Cell);
+		for (const FVector2D& P : Line)
+		{
+			if (Land[CellOf(P)])
+			{
+				continue;
+			}
+			const FVector2D C = (P - Grid.Origin) / Grid.Cell;
+			for (int32 Y = FMath::Max(FMath::RoundToInt(C.Y) - Wide, 0); Y <= FMath::Min(FMath::RoundToInt(C.Y) + Wide, SizeY - 1); ++Y)
+			{
+				for (int32 X = FMath::Max(FMath::RoundToInt(C.X) - Wide, 0); X <= FMath::Min(FMath::RoundToInt(C.X) + Wide, SizeX - 1); ++X)
+				{
+					const int32 Index = Y * SizeX + X;
+					if (!Land[Index] && !IsPad(Index) && (Avoid.IsEmpty() || !Avoid[Index]) && FVector2D::Distance(CellToMap(X, Y), P) <= CausewayHalf)
+					{
+						Land[Index] = true;
+						Heights[Index] = float(LowGround);
+						++Laid.Built;
+					}
+				}
+			}
+		}
+		const TArray<double> Profile = GradeProfile(Z, Spacing, RoadGrade);
+		for (int32 Index = 0; Index < Line.Num(); ++Index)
+		{
+			Laid.Road.Add(FVector(Line[Index], Profile[Index]));
+			if (Index > 0)
+			{
+				const double Run = FVector2D::Distance(Line[Index], Line[Index - 1]);
+				Laid.Length += Run;
+				Laid.Steepest = FMath::Max(Laid.Steepest, FMath::Abs(Profile[Index] - Profile[Index - 1]) / FMath::Max(Run, Spacing));
+			}
+			Splat(Line[Index], Profile[Index], true);
+		}
+		RoadSamples.Append(Line);
+		Kerbs(Line, KerbSkip, Seed);
+		return Laid;
+	};
+
 	int32 SiteSeed = 1;
 	for (FSite& Site : Sites)
 	{
@@ -923,15 +1195,7 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, TArray<bool>& Land
 				{
 					return -1.0;
 				}
-				// Across water: a causeway, dearer the deeper.
-				if (!Land[To])
-				{
-					return Run * (CausewayCost + FMath::Max(0.0, -double(Heights[To])) / 100.0);
-				}
-				const double Climb = FMath::Abs(Heights[To] - Heights[From]);
-				const double Grade = Climb / (Run * Grid.Cell);
-				const double Kept = FMath::Min(Grade, CliffGrade);
-				return Run * (1.0 + 40.0 * Kept * Kept + 4.0 * Grade) + (Grade > CliffGrade ? CliffCost * Climb / Grid.Cell : 0.0);
+				return StepCost(From, To, Run);
 			},
 			[&](int32 Index) { return Index == Goal; });
 		if (Cellpath.IsEmpty())
@@ -950,53 +1214,12 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, TArray<bool>& Land
 			// On along the causeway to the islet.
 			Points.Add(Site.Islet);
 		}
+		FLaidRoad Laid = LayLine(Points, 400.0, 100 * SiteSeed);
+		const int32 Built = Laid.Built;
+		Site.Road = MoveTemp(Laid.Road);
+		Site.RoadLength = Laid.Length;
+		Site.Steepest = Laid.Steepest;
 		constexpr double Spacing = 50.0;
-		const TArray<FVector2D> Line = Resample(Points, Spacing);
-		TArray<double> Z;
-		for (const FVector2D& P : Line)
-		{
-			Z.Add(Land[CellOf(P)] ? SampleHeight(Heights, P) : LowGround);
-		}
-		// Where it crosses water, a causeway: land under it, at the shore's height (then graded with the rest).
-		int32 Built = 0;
-		const int32 Wide = FMath::CeilToInt(CausewayHalf / Grid.Cell);
-		for (const FVector2D& P : Line)
-		{
-			if (Land[CellOf(P)])
-			{
-				continue;
-			}
-			const FVector2D C = (P - Grid.Origin) / Grid.Cell;
-			for (int32 Y = FMath::Max(FMath::RoundToInt(C.Y) - Wide, 0); Y <= FMath::Min(FMath::RoundToInt(C.Y) + Wide, SizeY - 1); ++Y)
-			{
-				for (int32 X = FMath::Max(FMath::RoundToInt(C.X) - Wide, 0); X <= FMath::Min(FMath::RoundToInt(C.X) + Wide, SizeX - 1); ++X)
-				{
-					const int32 Index = Y * SizeX + X;
-					if (!Land[Index] && !IsPad(Index) && (Avoid.IsEmpty() || !Avoid[Index]) && FVector2D::Distance(CellToMap(X, Y), P) <= CausewayHalf)
-					{
-						Land[Index] = true;
-						Heights[Index] = float(LowGround);
-						++Built;
-					}
-				}
-			}
-		}
-		const TArray<double> Profile = GradeProfile(Z, Spacing, RoadGrade);
-		Site.Road.Reset();
-		Site.RoadLength = 0.0;
-		Site.Steepest = 0.0;
-		for (int32 Index = 0; Index < Line.Num(); ++Index)
-		{
-			Site.Road.Add(FVector(Line[Index], Profile[Index]));
-			if (Index > 0)
-			{
-				const double Run = FVector2D::Distance(Line[Index], Line[Index - 1]);
-				Site.RoadLength += Run;
-				Site.Steepest = FMath::Max(Site.Steepest, FMath::Abs(Profile[Index] - Profile[Index - 1]) / FMath::Max(Run, Spacing));
-			}
-			Splat(Line[Index], Profile[Index], true);
-		}
-		Kerbs(Line, 400.0, 100 * SiteSeed);
 		// Past the rock: the causeway's path, level.
 		if (Site.bRock)
 		{
@@ -1022,15 +1245,140 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, TArray<bool>& Land
 			BoulderSpots.Add(FVector(Site.Islet + Out * (Ring + Random.FRandRange(-10.0, 10.0)), Random.FRandRange(BoulderMin, BoulderMax)));
 		}
 		double Lowest = TNumericLimits<double>::Max(), Highest = -TNumericLimits<double>::Max();
-		for (const double Height : Profile)
+		for (const FVector& Point : Site.Road)
 		{
-			Lowest = FMath::Min(Lowest, Height);
-			Highest = FMath::Max(Highest, Height);
+			Lowest = FMath::Min(Lowest, Point.Z);
+			Highest = FMath::Max(Highest, Point.Z);
 		}
 		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet stub: road to the %s, %.0f m (%d m2 of causeway), steepest %.0f %%, from %.1f to %.1f m high; tip (%.1f, %.1f) m, islet (%.1f, %.1f) m on the map, %.0f m from its marker"),
 			*Site.Name, Site.RoadLength / 100.0, Built, 100.0 * Site.Steepest, Lowest / 100.0, Highest / 100.0, Site.Tip.X / 100.0, Site.Tip.Y / 100.0,
 			Site.Islet.X / 100.0, Site.Islet.Y / 100.0, FVector2D::Distance(Site.Islet, Site.Marker) / 100.0);
 		++SiteSeed;
+	}
+
+	// LBA1's vehicle rides: from the streets a car reaches at one end to those at the other, off the towns' bricks between.
+	TArray<float> FromTown;
+	if (!Rides.IsEmpty())
+	{
+		TArray<bool> OffTown;
+		OffTown.SetNumUninitialized(Cells);
+		for (int32 Index = 0; Index < Cells; ++Index)
+		{
+			OffTown[Index] = !TownCells[Index];
+		}
+		FromTown = SiteDistanceOutOf(OffTown, SizeX, SizeY);
+	}
+	int32 RideSeed = 50;
+	for (FRide& Ride : Rides)
+	{
+		// Where a road can leave some streets: per stub cell, the street step nearest its vehicle.
+		auto WaysOut = [&](const TArray<FStreetStep>& Streets)
+		{
+			auto Usable = [&](const FStreetStep& Step)
+			{
+				const int32 Cell = CellOf(FVector2D(Step.Map));
+				if (!Step.bRim || !Land[Cell] || FMath::Abs(Heights[Cell] - Step.Map.Z) > RimHeight)
+				{
+					return false;
+				}
+				// Land off the bricks right there (not a quay over the sea).
+				const int32 CX = Cell % SizeX;
+				const int32 CY = Cell / SizeX;
+				for (int32 Y = FMath::Max(CY - RimOutside, 0); Y <= FMath::Min(CY + RimOutside, SizeY - 1); ++Y)
+				{
+					for (int32 X = FMath::Max(CX - RimOutside, 0); X <= FMath::Min(CX + RimOutside, SizeX - 1); ++X)
+					{
+						if (Land[Y * SizeX + X] && !TownCells[Y * SizeX + X])
+						{
+							return true;
+						}
+					}
+				}
+				return false;
+			};
+			int32 Nearest = MAX_int32;
+			for (const FStreetStep& Step : Streets)
+			{
+				Nearest = Usable(Step) ? FMath::Min(Nearest, Step.Steps) : Nearest;
+			}
+			TMap<int32, int32> Cells;
+			for (int32 Index = 0; Index < Streets.Num(); ++Index)
+			{
+				if (Usable(Streets[Index]) && Streets[Index].Steps <= Nearest + RimSlack)
+				{
+					int32& Best = Cells.FindOrAdd(CellOf(FVector2D(Streets[Index].Map)), Index);
+					Best = Streets[Index].Steps < Streets[Best].Steps ? Index : Best;
+				}
+			}
+			return Cells;
+		};
+		const TMap<int32, int32> FromCells = WaysOut(Ride.From);
+		const TMap<int32, int32> ToCells = WaysOut(Ride.To);
+		if (FromCells.IsEmpty() || ToCells.IsEmpty())
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("LBA2 planet stub: no way out of the streets for the ride from scene %d to %d"), Ride.Scene, Ride.ToScene);
+			continue;
+		}
+		TArray<int32> Starts;
+		FromCells.GetKeys(Starts);
+		const TArray<int32> Cellpath = CheapestPath(SizeX, SizeY, Starts,
+			[&](int32 From, int32 To, double Run)
+			{
+				if ((TownCells[To] && !FromCells.Contains(To) && !ToCells.Contains(To)) || (!Land[To] && !Avoid.IsEmpty() && Avoid[To]))
+				{
+					return -1.0;
+				}
+				const double Near = FMath::Max(0.0, 1.0 - FromTown[To] * Grid.Cell / TownMargin);
+				return StepCost(From, To, Run) + Run * TownMarginCost * Near;
+			},
+			[&](int32 Index) { return ToCells.Contains(Index); });
+		if (Cellpath.IsEmpty())
+		{
+			UE_LOG(LogLBA2, Warning, TEXT("LBA2 planet stub: no road found for the ride from scene %d to %d"), Ride.Scene, Ride.ToScene);
+			continue;
+		}
+		const FStreetStep& Leaves = Ride.From[FromCells[Cellpath[0]]];
+		const FStreetStep& Arrives = Ride.To[ToCells[Cellpath.Last()]];
+		TArray<FVector2D> Points = { FVector2D(Leaves.Map) };
+		for (int32 Index = 1; Index + 1 < Cellpath.Num(); ++Index)
+		{
+			Points.Add(CellToMap(Cellpath[Index] % SizeX, Cellpath[Index] / SizeX));
+		}
+		Points.Add(FVector2D(Arrives.Map));
+		const FLaidRoad Laid = LayLine(SmoothPath(Points, 4), RideKerbSkip, 100 * RideSeed);
+		++RideSeed;
+
+		// The whole trip: through the streets to where the road leaves, along it, through the streets at the far end.
+		Ride.Route.Reset();
+		for (int32 Step = FromCells[Cellpath[0]]; Step != INDEX_NONE; Step = Ride.From[Step].Parent)
+		{
+			Ride.Route.Insert(FVector2D(Ride.From[Step].Map), 0);
+		}
+		for (const FVector& Point : Laid.Road)
+		{
+			Ride.Route.Add(FVector2D(Point));
+		}
+		for (int32 Step = ToCells[Cellpath.Last()]; Step != INDEX_NONE; Step = Ride.To[Step].Parent)
+		{
+			Ride.Route.Add(FVector2D(Ride.To[Step].Map));
+		}
+		// The car faces along it.
+		for (const FVector2D& Point : Ride.Route)
+		{
+			if (FVector2D::Distance(Point, FVector2D(Ride.Parked)) >= CarLookAhead)
+			{
+				Ride.Heading = (Point - FVector2D(Ride.Parked)).GetSafeNormal();
+				break;
+			}
+		}
+		double Lowest = TNumericLimits<double>::Max(), Highest = -TNumericLimits<double>::Max();
+		for (const FVector& Point : Laid.Road)
+		{
+			Lowest = FMath::Min(Lowest, Point.Z);
+			Highest = FMath::Max(Highest, Point.Z);
+		}
+		UE_LOG(LogLBA2, Display, TEXT("LBA2 planet stub: road for the ride from scene %d to %d, %.0f m (%d m2 of causeway), steepest %.0f %%, from %.1f to %.1f m high, leaving %d columns from the car"),
+			Ride.Scene, Ride.ToScene, Laid.Length / 100.0, Laid.Built, 100.0 * Laid.Steepest, Lowest / 100.0, Highest / 100.0, Leaves.Steps);
 	}
 
 	// Laid in: level across, eased into the ground; earth on the road, grass on its verges and round the islets.
@@ -1082,6 +1430,10 @@ void LBAPlanetSites::FSites::LayRoads(TArray<float>& Heights, TArray<bool>& Land
 		const FVector2D P(Spot.X, Spot.Y);
 		const int32 Index = CellOf(P);
 		if (!Land[Index] || IsPad(Index) || InAnyRock(P, 30.0))
+		{
+			continue;
+		}
+		if (RoadSamples.ContainsByPredicate([&P](const FVector2D& Sample) { return FVector2D::DistSquared(P, Sample) < FMath::Square(BoulderClear); }))
 		{
 			continue;
 		}
@@ -1409,6 +1761,26 @@ void LBAPlanetSites::FSites::SpawnProps(FLBAImportContext& Context, UWorld* Worl
 					Actor->Tags.Add(ULBAPlanetAsset::StubTag);
 				}
 			}
+		}
+	}
+	// The rides' cars, where LBA1's vehicles set off (they set themselves down on the bricks when the level starts).
+	for (const FRide& Ride : Rides)
+	{
+		const FTransform Parked(FRotator(0.0, FMath::RadiansToDegrees(FMath::Atan2(Ride.Heading.Y, Ride.Heading.X)), 0.0), Ride.Parked + FVector(0.0, 0.0, 60.0));
+		if (ALBACar* Car = Context.SpawnGeneratedActor<ALBACar>(World, Parked, FString::Printf(TEXT("Ride_Scene%d_Car"), Ride.Scene), TEXT("Stubs/Sites")))
+		{
+			Car->Tags.Add(ULBAPlanetAsset::StubTag);
+			FString Route;
+			FVector2D Last(TNumericLimits<double>::Max());
+			for (const FVector2D& Point : Ride.Route)
+			{
+				if (FVector2D::Distance(Point, Last) >= 400.0 || &Point == &Ride.Route.Last())
+				{
+					Route += FString::Printf(TEXT("%s%.0f,%.0f"), Route.IsEmpty() ? TEXT("") : TEXT(";"), Point.X, Point.Y);
+					Last = Point;
+				}
+			}
+			UE_LOG(LogLBA2, Display, TEXT("LBA2 planet stub: a car for the ride from scene %d to %d at %s, facing %.0f; route on the map: %s"), Ride.Scene, Ride.ToScene, *Parked.GetLocation().ToCompactString(), Parked.Rotator().Yaw, *Route);
 		}
 	}
 	for (const FSite& Site : Sites)

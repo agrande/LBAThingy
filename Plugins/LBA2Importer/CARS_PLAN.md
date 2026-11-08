@@ -56,9 +56,10 @@ The 18 desert copies are placeholders for **one** buggy: the original shows it o
 | Wheel diameters | 260 front, 360 rear | 32.5 cm, 45 cm |
 | Engine sound | `SAMPLE_BUGGY`, pitch 4096 = 1x | pitch climbs with speed through 3 gears, one every 1.2 s of throttle |
 
-Its animation is code, not clips (`DoAnimBuggy`): group 1 = chassis pitch and roll from the ground under the wheels,
-groups 3 and 6 = front wheels steering, 4, 7, 9, 11 = wheels rolling, 12 = steering wheel, 14 = Twinsen's head turning
-into the bend. Forbidden ground makes it slide (`InitSkating`). Throw while driving opens the hood and shoots a magic ball
+Its animation is code, not clips (`DoAnimBuggy`). Its `CurrentFrame[n]` is group n + 1 (`AFF_OBJ.CPP`: the root group has
+no entry), so in groups: 2 = chassis pitch and roll from the ground under the wheels, 4 and 7 = front wheels steering, 5, 8,
+10, 12 = wheels rolling, 13 = steering wheel (with Twinsen's arms in the driven body), 15 = Twinsen's head turning into the
+bend. Forbidden ground makes it slide (`InitSkating`). Throw while driving opens the hood and shoots a magic ball
 (`GEN_BODY_TUNIQUE_TIR`).
 
 Bodies with Twinsen: BODY.HQR 14 and 15 (16 groups, like 219), 22 and 23 (20 groups: probably the open hood for
@@ -233,6 +234,26 @@ The buggy is small: about 1.7 m wide and 1.5 m long, 0.9 m high without Twinsen.
 - Measured (feature map, flat): buggy 8.1 m/s, 90% of it after 3.3 s, stops from 7.6 m/s in 0.84 s, coasts 2.5 m/s^2,
   reverse 3 m/s, about 70 deg/s at full lock at top speed, never rolled; scooter 6.2 m/s. On L_DESERT and L_CITADEL:
   board, drive, reverse, leave all work; all six Citadel cars settled on the ground (the two stands 10 m up are on hills).
+
+## After the user's first drive (2026-11-08)
+
+- **Power:** 2 s to top speed (was 3), and the gearbox changes down at 55% of the rev limit (was 40%, which lugged up
+  slopes in top gear). Chassis box from 18 cm up and no further forward than the front wheels, 10 cm of suspension rise.
+  Measured with `-LBA2Shots=car -LBA2Car=spawn -LBA2CarRamp=<deg>` or `-LBA2CarBumps=<cm>` (`-LBA2CarGap=<m>`), buggy on the
+  feature map: 15 deg slope 7.35 m/s (was 3.68), 25 deg 3.5-4.9 m/s and hunting between gears (was 3.2), 90% of top speed on
+  the flat after 2.5 s (was 3.3), 16 cm bumps no longer stop it (3-5 m/s over a row of them).
+- **Animation:** groups were off by one (see "What LBA2 has"): the rear-left wheel was being turned as the steering wheel.
+- **Packaged games:** `DA_TwinsenCar` is only referenced by the settings, so it wasn't cooked and the empty buggy stayed
+  on screen. The cook hook in `LBA2EditorModule` now adds the settings' entities. Not yet confirmed in a packaged build.
+- **Principal Island:** cars and roads for LBA1's vehicle rides (`VehicleRides` in `LBAPlanetDistricts.cpp`; roads in
+  `LBAPlanetSites`, `FindRides` and the rides part of `LayRoads`). Peg Leg Street (scene 25, motorbike) to the Water Tower
+  (37), 122 m; the far end of the Military camp (19, buggy) to Port Belooga (24), 87 m. Actors `Ride_Scene25/19_Car` in
+  L_TWINSUN_Stubs, at (7583, 61639) and (621, 57159) in L_TWINSUN, facing along their way to the road.
+  - Each road runs between the streets a car can reach at the same vehicle's two spots (`FloodStreets`: flat or over
+    ramps, headroom, a clear column each side), and keeps 6 m off the towns' bricks.
+  - Test drive along a route: `-LBA2Shots=car -LBA2CarRoute=x,y;x,y;...` (world points; the import log has each ride's
+    route on the map). Before the 6 m margin: Peg Leg to the Water Tower arrived; the camp car stopped against the camp's
+    sandbag fence. The current roads await the user's own test.
 
 ## Pitfalls (Chaos Vehicles on a box root)
 

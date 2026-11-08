@@ -1122,6 +1122,57 @@ bool ULBA2SnapshotSubsystem::TickBoat(UWorld* World, float DeltaTime)
 	return true;
 }
 
+namespace
+{
+	/**
+	 * -LBA2CarRamp=degrees or -LBA2CarBumps=cm (-LBA2CarGap=m before the front wheels, default 3): a long slope or a row of
+	 * bumps every 4 m across the car's path, to measure how it climbs.
+	 */
+	bool SpawnCarObstacles(UWorld* World, const ALBACar* Car)
+	{
+		float Angle = 0.f, BumpHeight = 0.f, Gap = 3.f;
+		FParse::Value(FCommandLine::Get(), TEXT("LBA2CarRamp="), Angle);
+		FParse::Value(FCommandLine::Get(), TEXT("LBA2CarBumps="), BumpHeight);
+		FParse::Value(FCommandLine::Get(), TEXT("LBA2CarGap="), Gap);
+		UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+		FHitResult Floor;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(LBACarTestObstacle), true, Car);
+		if ((Angle <= 0.f && BumpHeight <= 0.f) || !Cube
+			|| !World->LineTraceSingleByChannel(Floor, Car->GetActorLocation(), Car->GetActorLocation() - FVector(0.0, 0.0, 500.0), ECC_WorldStatic, Params))
+		{
+			return false;
+		}
+		const FVector Forward = Car->GetActorForwardVector().GetSafeNormal2D();
+		const FVector Start = Floor.ImpactPoint + Forward * (Car->GetGeometry().FrontWheel.X + Gap * 100.0);
+		auto Box = [&](const FVector& Center, const FRotator& Rotation, const FVector& Size)
+		{
+			FActorSpawnParameters Spawn;
+			Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(Center, Rotation, Spawn);
+			Actor->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+			Actor->GetStaticMeshComponent()->SetStaticMesh(Cube);
+			Actor->SetActorScale3D(Size / 100.0);
+		};
+		if (Angle > 0.f)
+		{
+			constexpr double Length = 12000.0, Thickness = 50.0;
+			const double Radians = FMath::DegreesToRadians(double(Angle));
+			const FVector Along = Forward * FMath::Cos(Radians) + FVector::UpVector * FMath::Sin(Radians);
+			const FVector Normal = FVector::UpVector * FMath::Cos(Radians) - Forward * FMath::Sin(Radians);
+			Box(Start + Along * 0.5 * Length - Normal * 0.5 * Thickness, FRotationMatrix::MakeFromXZ(Along, Normal).Rotator(), FVector(Length, 1200.0, Thickness));
+		}
+		else
+		{
+			for (int32 Index = 0; Index < 12; ++Index)
+			{
+				Box(Start + Forward * 400.0 * Index + FVector::UpVector * 0.5 * BumpHeight, Forward.Rotation(), FVector(30.0, 1200.0, BumpHeight));
+			}
+		}
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: obstacles built, slope %.0f deg, bumps %.0f cm, %.1f m ahead"), Angle, BumpHeight, Gap);
+		return true;
+	}
+}
+
 bool ULBA2SnapshotSubsystem::TickCar(UWorld* World, float DeltaTime)
 {
 	enum class ECarStep : uint8 { Settle, Approach, Board, Drive, Brake, Leave };
@@ -1273,6 +1324,23 @@ bool ULBA2SnapshotSubsystem::TickCar(UWorld* World, float DeltaTime)
 		{
 			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: %s settled at %s, mass %.0f kg"), *Car->GetName(), *Car->GetActorLocation().ToCompactString(),
 				Cast<UPrimitiveComponent>(Car->GetRootComponent())->GetMass());
+			bCarObstacles = SpawnCarObstacles(World, Car);
+			{
+				FString RouteText;
+				if (FParse::Value(FCommandLine::Get(), TEXT("LBA2CarRoute="), RouteText, false))
+				{
+					TArray<FString> Points;
+					RouteText.ParseIntoArray(Points, TEXT(";"));
+					for (const FString& Point : Points)
+					{
+						FString X, Y;
+						if (Point.Split(TEXT(","), &X, &Y))
+						{
+							CarRoute.Emplace(FCString::Atod(*X), FCString::Atod(*Y));
+						}
+					}
+				}
+			}
 			Report(true);
 			Shoot(Step.Name);
 			NextStep();
@@ -1352,6 +1420,19 @@ bool ULBA2SnapshotSubsystem::TickCar(UWorld* World, float DeltaTime)
 				}
 			}
 		}
+		if (!CarRoute.IsEmpty() && CarStep == 3)
+		{
+			// Following the route: on to the next point when near this one; slower when pointing away from it.
+			const FVector2D At(Car->GetActorLocation());
+			while (CarRouteAt + 1 < CarRoute.Num() && FVector2D::Distance(At, CarRoute[CarRouteAt]) < 350.0)
+			{
+				++CarRouteAt;
+			}
+			const FVector2D To = CarRoute[CarRouteAt] - At;
+			const double Error = FRotator::NormalizeAxis(float(FMath::RadiansToDegrees(FMath::Atan2(To.Y, To.X)) - Car->GetActorRotation().Yaw));
+			Steer = float(FMath::Clamp(Error / 20.0, -1.0, 1.0));
+			Throttle = FMath::Abs(Error) < 35.0 ? 1.f : 0.4f;
+		}
 		Car->SetDriveInput(FVector2D(Steer, Throttle));
 		Car->SetHandbrake(Step.bHandbrake);
 		if (Step.Kind == ECarStep::Drive && Step.Throttle > 0.f && Speed > CarTopSpeed + 1.f)
@@ -1377,12 +1458,24 @@ bool ULBA2SnapshotSubsystem::TickCar(UWorld* World, float DeltaTime)
 	}
 	}
 	++CarFrame;
-	if (StepTime >= Step.Duration)
+	// Measuring a climb: only a long full-throttle run, then done.
+	const bool bRoute = !CarRoute.IsEmpty() && CarStep == 3;
+	const bool bClimb = (bCarObstacles || bRoute) && CarStep == 3;
+	const bool bArrived = bRoute && CarRouteAt == CarRoute.Num() - 1 && FVector2D::Distance(FVector2D(Car->GetActorLocation()), CarRoute.Last()) < 350.0;
+	if (bArrived || StepTime >= (bRoute ? 150.f : bClimb ? 14.f : Step.Duration))
 	{
+		if (bRoute)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car route: %s at point %d of %d after %.1f s"), bArrived ? TEXT("arrived") : TEXT("gave up"), CarRouteAt + 1, CarRoute.Num(), StepTime);
+		}
 		Report(true);
 		Shoot(Step.Name);
 		Car->SetDriveInput(FVector2D::ZeroVector);
 		NextStep();
+		if (bClimb)
+		{
+			CarStep = NumSteps;
+		}
 	}
 	return true;
 }

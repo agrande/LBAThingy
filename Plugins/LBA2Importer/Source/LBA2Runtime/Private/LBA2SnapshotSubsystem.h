@@ -112,6 +112,10 @@ private:
 	FVector CarBrakeStart = FVector::ZeroVector;
 	float CarBrakeSpeed = 0.f;
 	TWeakObjectPtr<class ALBACar> TestCar;
+	bool bCarObstacles = false;
+	/** -LBA2CarRoute=x,y;x,y;...: world points the test drive steers along, and the one it is heading for. */
+	TArray<FVector2D> CarRoute;
+	int32 CarRouteAt = 0;
 	/**
 	 * -LBA2Shots=belt (globe mode): the Dinofly flies out to the planet's belt and over it, looks at it from above, comes
 	 * back and lands on its flank; Twinsen gets off and walks, then jumps, up it. Logs how high and how far past the

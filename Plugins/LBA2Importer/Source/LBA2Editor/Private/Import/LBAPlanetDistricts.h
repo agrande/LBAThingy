@@ -82,6 +82,18 @@ namespace LBAPlanetDistricts
 		double LandArea = 0.0;
 		/** Where LBA1's ferry docks on the map (cm): its ferry ports (LBAPlanetSites opens a way in from the sea). */
 		TArray<FVector2D> Docks;
+		/** LBA1's land vehicles: where one stands on the map, at either end of its ride (FVehicleRides: LBAPlanetDistricts.cpp). */
+		struct FVehicle
+		{
+			int32 Ride = INDEX_NONE;
+			/** Where the ride sets off (a drivable car is parked there), else where it ends. */
+			bool bStart = false;
+			int32 Scene = INDEX_NONE;
+			FVector Location = FVector::ZeroVector;
+			/** The way it faces in LBA1 (unit, on the map). */
+			FVector2D Heading = FVector2D::UnitX();
+		};
+		TArray<FVehicle> Vehicles;
 	};
 
 	/** A district's bricks in its frame: cells (x, y up, z) from Low (frame cells: 64 cm across, 32 cm up). */

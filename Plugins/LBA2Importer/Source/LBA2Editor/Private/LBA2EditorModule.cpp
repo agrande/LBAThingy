@@ -132,6 +132,19 @@ public:
 				{
 					PackagesToCook.AddUnique(Airflow.GetLongPackageFName());
 				}
+				// Entities only the settings refer to, that no level or scene pulls in (without DA_TwinsenCar, packaged
+				// games kept the empty buggy under a hidden Twinsen).
+				const ULBA2Settings* Settings = GetDefault<ULBA2Settings>();
+				for (const FSoftObjectPath& Entity : { Settings->HeroNormal.ToSoftObjectPath(), Settings->HeroAthletic.ToSoftObjectPath(),
+					Settings->HeroAggressive.ToSoftObjectPath(), Settings->HeroDiscreet.ToSoftObjectPath(), Settings->Dinofly.ToSoftObjectPath(),
+					Settings->Boat.ToSoftObjectPath(), Settings->Car.ToSoftObjectPath(), Settings->CarDriven.ToSoftObjectPath(), Settings->Scooter.ToSoftObjectPath() })
+				{
+					if (Entity.IsValid())
+					{
+						PackagesToCook.AddUnique(Entity.GetLongPackageFName());
+						UE_LOG(LogLBA2, Display, TEXT("Cooking entity %s"), *Entity.GetLongPackageName());
+					}
+				}
 				// The planets, found through the settings, and their levels.
 				for (const TSoftObjectPtr<ULBAPlanetAsset>& Soft : GetDefault<ULBA2Settings>()->Planets)
 				{

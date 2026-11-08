@@ -64,15 +64,18 @@ namespace
 	constexpr double LookReturnDelay = 1.5;
 	constexpr float MetersPerMile = 1609.344f;
 
-	/** The buggy's groups (BUGGY.CPP DoAnimBuggy): steering, rolling wheels, steering wheel, Twinsen's head. */
+	/**
+	 * The buggy's groups: steering, rolling wheels, steering wheel (with Twinsen's arms), Twinsen's head. BUGGY.CPP
+	 * DoAnimBuggy numbers them one lower: its CurrentFrame[n] is group n + 1 (AFF_OBJ.CPP: the root group has no entry).
+	 */
 	namespace BuggyGroups
 	{
-		constexpr int32 SteerLeft = 3;
-		constexpr int32 SteerRight = 6;
-		constexpr int32 FrontWheels[] = { 4, 7 };
-		constexpr int32 RearWheels[] = { 9, 11 };
-		constexpr int32 SteeringWheel = 12;
-		constexpr int32 Head = 14;
+		constexpr int32 SteerLeft = 4;
+		constexpr int32 SteerRight = 7;
+		constexpr int32 FrontWheels[] = { 5, 8 };
+		constexpr int32 RearWheels[] = { 10, 12 };
+		constexpr int32 SteeringWheel = 13;
+		constexpr int32 Head = 15;
 	}
 }
 
@@ -86,9 +89,10 @@ const FLBACarGeometry FLBACarGeometry::Buggy = []
 	Geometry.FrontRadius = 16.25f;
 	Geometry.RearRadius = 22.5f;
 	Geometry.WheelWidth = 16.f;
-	// The body (1.66 m wide with its fenders, 1.54 m long, 0.87 m high): a box inside the wheels, from 14 to 56 cm up.
-	Geometry.ChassisCenter = FVector(10.0, 0.0, 35.0);
-	Geometry.ChassisExtent = FVector(72.0, 42.0, 21.0);
+	// The body (1.66 m wide with its fenders, 1.54 m long, 0.87 m high): a box inside the wheels, from 18 to 56 cm up (the
+	// body's underside is at 16.6) and no further forward than the front wheels, which must reach a bump before it does.
+	Geometry.ChassisCenter = FVector(3.0, 0.0, 37.0);
+	Geometry.ChassisExtent = FVector(65.0, 42.0, 19.0);
 	Geometry.bRearWheelDrive = true;
 	return Geometry;
 }();
@@ -184,9 +188,9 @@ ULBACarWheel::ULBACarWheel()
 	// Sphere sweeps ride over brick edges and kerbs better than rays; the islands' ground is complex collision.
 	SweepShape = ESweepShape::Spherecast;
 	SweepType = ESweepType::ComplexSweep;
-	// The body is drawn at its rest pose: the wheels may rise 6 cm into it but drop only 3 cm, so it never floats far
-	// above the ground (stiff springs pushed the wheels to a full 8 cm drop and the chassis rode that much high).
-	SuspensionMaxRaise = 6.f;
+	// The body is drawn at its rest pose: the wheels may rise 10 cm into it (bumps) but drop only 3 cm, so it never floats
+	// far above the ground (stiff springs pushed the wheels to a full 8 cm drop and the chassis rode that much high).
+	SuspensionMaxRaise = 10.f;
 	SuspensionMaxDrop = 3.f;
 	SuspensionDampingRatio = 0.6f;
 	// Chaos needs the suspension constraints ULBACarMovementComponent builds for the box root: without them the chassis
@@ -392,7 +396,9 @@ void ALBACar::ApplyVehicleSetup()
 	Gearbox.ForwardGearRatios = { FLBACarDrive::Gears[0], FLBACarDrive::Gears[1], FLBACarDrive::Gears[2] };
 	Gearbox.ReverseGearRatios = { Drive.ReverseRatio };
 	Gearbox.ChangeUpRPM = 0.92f * FLBACarDrive::MaxRPM;
-	Gearbox.ChangeDownRPM = 0.4f * FLBACarDrive::MaxRPM;
+	// Early, so a slope or a bump finds it in the gear that pulls (0.4 lugged up a slope in top gear). Below 0.6: a shift up
+	// lands at 0.92 / 1.5 of the limit, and must not shift right back.
+	Gearbox.ChangeDownRPM = 0.55f * FLBACarDrive::MaxRPM;
 	Gearbox.GearChangeTime = FLBACarDrive::GearChangeTime;
 	Gearbox.TransmissionEfficiency = FLBACarDrive::Efficiency;
 
@@ -670,7 +676,7 @@ void ALBACar::UpdateBodyPose(float DeltaSeconds)
 	}
 	// The steering wheel turns with the wheels (about the column, roughly the car's long axis), the head looks into
 	// the bend (BUGGY.CPP: both by the front wheels' angle).
-	Pose.BoneRotations.Emplace(GetGroupBone(BuggyGroups::SteeringWheel), FQuat(FVector(0.f, 1.f, 0.f), -FMath::DegreesToRadians(2.f * ShownSteer)));
+	Pose.BoneRotations.Emplace(GetGroupBone(BuggyGroups::SteeringWheel), FQuat(FVector(0.f, 1.f, 0.f), -FMath::DegreesToRadians(ShownSteer)));
 	Pose.BoneRotations.Emplace(GetGroupBone(BuggyGroups::Head), FQuat(FVector::UpVector, FMath::DegreesToRadians(ShownSteer)));
 	Pose.BoneRotations.RemoveAll([](const TPair<FName, FQuat>& Rotation) { return Rotation.Key.IsNone(); });
 	Anim->SetProceduralPose(Pose);

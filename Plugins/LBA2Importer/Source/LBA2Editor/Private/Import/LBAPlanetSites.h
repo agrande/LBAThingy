@@ -86,6 +86,36 @@ namespace LBAPlanetSites
 		double Steepest = 0.0;
 	};
 
+	/** A column of a town's streets a car can stand on (FSites::FindRides). */
+	struct FStreetStep
+	{
+		/** On the map (cm, Z the street's top). */
+		FVector Map = FVector::ZeroVector;
+		/** The step before it on the way from the vehicle's spot, and how many columns from there. */
+		int32 Parent = INDEX_NONE;
+		int32 Steps = 0;
+		/** At the edge of the town's bricks: a road can leave from here. */
+		bool bRim = false;
+	};
+
+	/**
+	 * One of LBA1's vehicle rides (a cutscene there): a car parked where it sets off, a road across the stub from the streets
+	 * there to the streets where the same vehicle stands at the far end.
+	 */
+	struct FRide
+	{
+		int32 Scene = INDEX_NONE;
+		int32 ToScene = INDEX_NONE;
+		/** Where the car is parked (map cm) and the way it faces: along its way to the road once laid, as in LBA1 till then. */
+		FVector Parked = FVector::ZeroVector;
+		FVector2D Heading = FVector2D::UnitX();
+		/** The streets reachable from each end. */
+		TArray<FStreetStep> From;
+		TArray<FStreetStep> To;
+		/** The whole trip on the map (cm): streets, road, streets. */
+		TArray<FVector2D> Route;
+	};
+
 	/** A round boulder: center on the map (cm, Z the ground) and radius. */
 	struct FBoulder
 	{
@@ -116,6 +146,9 @@ namespace LBAPlanetSites
 		const TArray<bool>& GetChannels() const { return Channels; }
 		/** After the pads are laid: where each site's road leaves its town (LBA1's way back into it). */
 		void FindWays(const LBAPlanetDistricts::FDistricts& Districts, const TArray<LBAPlanetDistricts::FPlaced>& Placed);
+		/** After the pads are laid: the island's vehicle rides and the streets a car can reach at each end (any island). */
+		void FindRides(const LBAPlanetDistricts::FDistricts& Districts, const TArray<LBAPlanetDistricts::FPlaced>& Placed);
+		const TArray<FRide>& GetRides() const { return Rides; }
 		/**
 		 * After the coast: the roads from the pads (Pad, may be empty) to the sites, graded into Heights. Where a road must cross
 		 * water it is a causeway (Land grows under it, at the shore's height), as LBA1's are; never across Avoid (a harbour's
@@ -139,8 +172,8 @@ namespace LBAPlanetSites
 
 		/**
 		 * The stones on their islets (the plugin's model), the bores' columns (the remake's model of the Temple of Bu's mosaic
-		 * column, when remake models are on) and the parked buggy (LBA2 island decor: import the islands first), in World's
-		 * folder Stubs/Sites.
+		 * column, when remake models are on), the parked buggy (LBA2 island decor: import the islands first) and the rides' cars,
+		 * in World's folder Stubs/Sites.
 		 */
 		void SpawnProps(FLBAImportContext& Context, UWorld* World, const TArray<float>& Heights) const;
 
@@ -162,6 +195,9 @@ namespace LBAPlanetSites
 		TArray<FEntry> Entries;
 		FGridInfo Grid;
 		TArray<FSite> Sites;
+		TArray<FRide> Rides;
+		/** Per cell: under a town's bricks (roads stay off them). */
+		TArray<bool> TownCells;
 		TArray<FBoulder> Boulders;
 		TArray<bool> Channels;
 	};

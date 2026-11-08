@@ -22,7 +22,7 @@ struct LBA2RUNTIME_API FLBACarTuning
 
 	/** From standing to top speed at full throttle on level ground (s), through 3 gears. The original buggy: about 1 s. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Car", meta = (ClampMin = "0.5", ClampMax = "20", Units = "s"))
-	float AccelerationTime = 3.f;
+	float AccelerationTime = 2.f;
 
 	/** Braking (cm/s^2), S or the left trigger while moving forward. The original buggy: 1500. */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Car", meta = (ClampMin = "100", ClampMax = "5000"))

@@ -900,9 +900,11 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 			Heights.Values[Index] = float(Land[Index] ? FMath::Clamp(Height, 2.0, double(Heights.Values[Index])) : FMath::Max(Height, -CoastSeaDepth));
 		}
 
-		// The roads to the sites, from where LBA1 leaves the towns for them, graded in.
+		// The roads to the sites, from where LBA1 leaves the towns for them, and those of LBA1's vehicle rides, graded in.
 		TArray<float> RoadShare, VergeShare;
-		if (bSites)
+		Sites.FindRides(Districts, Placed);
+		const bool bRoads = bSites || !Sites.GetRides().IsEmpty();
+		if (bRoads)
 		{
 			Sites.FindWays(Districts, Placed);
 			// Causeways keep off the towns' harbours and the ferry's ways in.
@@ -1068,8 +1070,8 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 				Builder.AddTriangleFacing(Section, A, D, C, FVector3f::UpVector);
 			}
 		}
-		// The sites: the rocks with their bores, and the boulders.
-		if (bSites)
+		// The sites: the rocks with their bores, and the roads' boulders.
+		if (bRoads)
 		{
 			FLBAVertex Rock;
 			Rock.Color = FVector4f(0.f, 0.f, 0.f, 0.f);
@@ -1145,8 +1147,8 @@ TSoftObjectPtr<UWorld> LBAPlanetStubs::Build(FLBAImportContext& Context, const F
 #endif
 			}
 		}
-		// What stands by the stones.
-		if (bSites)
+		// What stands by the stones, and the rides' cars.
+		if (bRoads)
 		{
 			Sites.SpawnProps(Context, World, Heights.Values);
 		}

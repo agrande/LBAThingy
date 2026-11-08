@@ -46,12 +46,16 @@ namespace LBA1
 
 	/** File3D of the ferry, docked in the ferry ports (Citadel 6, Principal 24, Proxima 42, desert 39). */
 	constexpr int32 FerryFile3D = 27;
+	/** File3D of the buggy and of the motorbike, parked where Twinsen rides them from (and left at the far ends). */
+	constexpr int32 BuggyFile3D = 39;
+	constexpr int32 MotorbikeFile3D = 46;
 
-	/** An actor of a scene (the hero not counted): its 3D model (FILE3D.HQR entry, 65535 for a sprite) and where it stands (units). */
+	/** An actor of a scene (the hero not counted): its 3D model (FILE3D.HQR entry, 65535 for a sprite), where it stands (units), its heading (1024 = a turn). */
 	struct FActor
 	{
 		int32 File3D = 0;
 		FIntVector Position = FIntVector::ZeroValue;
+		int32 Beta = 0;
 	};
 
 	struct FScene

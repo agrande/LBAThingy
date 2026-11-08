@@ -52,7 +52,9 @@ bool LBA1::FScene::Load(const TArray<uint8>& Data, int32 InIndex)
 		Actor.File3D = R.U16();
 		R.Skip(4);
 		Actor.Position = ReadPoint();
-		R.Skip(35 - 14);
+		R.Skip(3);
+		Actor.Beta = R.S16();
+		R.Skip(35 - 19);
 		for (int32 Script = 0; Script < 2; ++Script)
 		{
 			R.Skip(R.U16());
