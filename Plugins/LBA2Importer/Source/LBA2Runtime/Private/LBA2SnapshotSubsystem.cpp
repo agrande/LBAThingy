@@ -18,6 +18,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/WorldSettings.h"
 #include "Framework/Application/SlateApplication.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
 #include "LBA2Runtime.h"
 #include "Animation/AnimSequence.h"
@@ -203,6 +204,12 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		FApp::SetUseFixedTimeStep(true);
 		FApp::SetFixedDeltaTime(1.0 / StepRate);
 		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots: fixed time step 1/%d s, as fast as frames render"), StepRate);
+	}
+	// The game has VSync on by default (DefaultGameUserSettings.ini): runs don't wait for the screen, and frame rates
+	// measured in real time aren't capped at its refresh rate.
+	if (IConsoleVariable* VSync = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VSync")))
+	{
+		VSync->Set(0, ECVF_SetByCode);
 	}
 
 	FString HeroSpec;
