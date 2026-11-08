@@ -584,8 +584,25 @@ them as today; cheek walls continue the wall beside; drops get a stringer.
 - Tools: player-like poses (`room_poses.py`, `side_poses.py`) and a build-import-shots round (`rooms.ps1`) to copy for town
   close-ups; capture the original first.
 
-**Next in the model:** a piece-kind table (round window, arched door, plaque, banner, cellar door: the kind decides the
-frame; today a round window just above a walkway reads as "closed door"); then port to C++
+**Piece kinds (added 2026-11-07):** all the towns' openings use only 23 pieces (`lba1_houses.py pieces`: sheet
+`pieces_openings.png`, list `pieces_openings.txt`). They are listed in `Resources/Models/lba1_kit.json` under "openings"
+(the importer reads only "pieces" today, so the new key is ignored until the port), each by example `scene:layout` with
+a part and kind:
+- frame: jamb (13:149, 13:151), arch (11:150, 11:153);
+- door: arched with a wooden leaf (13:126) or a stone or metal shutter (13:154, 13:155);
+- doorway: arched, a whole piece (11:239);
+- window: round (12:14, the fortress's portholes), barred arched (11:14, 11:15: cellar windows), barred square (12:140);
+- decoration: plaque (11:19, 11:20, 44:247), banner (12:19);
+- ruin: Rebellion's broken arches (59:82, 59:83);
+- none: lone pillars and rubble (44:207, 44:208, 44:211-213).
+Rules: an opening takes the strongest part among its pieces (door, doorway, window, decoration, ruin); an air hole with
+frame pieces is a doorway (reaching the base) or a window, arched when an arch frames it; frame pieces with no hole found
+under them still make a doorway when one is an arch (its air went down into a deep pit), a lone jamb is the side of a
+doorway beside it; openings of "none" pieces only are dropped. Over all 15 town scenes no opening is left unlisted. Totals
+in the regression set: 19 arched doorways, 4 square doorways, 6 arched wooden doors, 6 shutter doors, 9 round windows,
+11 barred arched and 2 barred square windows, 11 plaques, 2 banners, 7 ruined arches.
+
+**Next in the model:** port to C++
 (`LBAPlanetDistricts`, per district rather than per scene) and the geometry steps above.
 
 ## Phase 4: trees, rocks and paths

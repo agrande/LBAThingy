@@ -15,5 +15,31 @@
         {"name": "sandbag_x", "example": "11:172", "primitive": "sack"},
         {"name": "sandbag_z", "example": "11:173", "primitive": "sack"},
         {"name": "life_buoy", "example": "11:104", "primitive": "buoy"}
+    ],
+    "openings_about": "The pieces that make doors and windows in the towns' walls (LBA1_ISLANDS_PLAN.md, 'The building model'; Tools/lba1_houses.py pieces draws them all). example as above. part: what the piece is in an opening. frame: jamb (a side post) or arch (the top over a hole). door: a closed door (leaf: wood, or shutter: a stone or metal closure in the arch). doorway: an open door with its own arch. window: round, barred (arched or square). decoration: on the wall, not an opening (plaque, banner). ruin: a broken arch (Rebellion). none: not an opening (rubble, a lone pillar). Pieces not listed are guessed from where they sit.",
+    "openings": [
+        {"example": "13:149", "part": "frame", "kind": "jamb"},
+        {"example": "13:151", "part": "frame", "kind": "jamb"},
+        {"example": "11:150", "part": "frame", "kind": "arch"},
+        {"example": "11:153", "part": "frame", "kind": "arch"},
+        {"example": "13:126", "part": "door", "kind": "arched", "leaf": "wood"},
+        {"example": "13:154", "part": "door", "kind": "arched", "leaf": "shutter"},
+        {"example": "13:155", "part": "door", "kind": "arched", "leaf": "shutter"},
+        {"example": "11:239", "part": "doorway", "kind": "arched"},
+        {"example": "12:14", "part": "window", "kind": "round"},
+        {"example": "11:14", "part": "window", "kind": "barred_arched"},
+        {"example": "11:15", "part": "window", "kind": "barred_arched"},
+        {"example": "12:140", "part": "window", "kind": "barred_square"},
+        {"example": "11:19", "part": "decoration", "kind": "plaque"},
+        {"example": "11:20", "part": "decoration", "kind": "plaque"},
+        {"example": "44:247", "part": "decoration", "kind": "plaque"},
+        {"example": "12:19", "part": "decoration", "kind": "banner"},
+        {"example": "59:82", "part": "ruin", "kind": "arch"},
+        {"example": "59:83", "part": "ruin", "kind": "arch"},
+        {"example": "44:207", "part": "none", "kind": "pillar"},
+        {"example": "44:208", "part": "none", "kind": "pillar"},
+        {"example": "44:211", "part": "none", "kind": "rubble"},
+        {"example": "44:212", "part": "none", "kind": "rubble"},
+        {"example": "44:213", "part": "none", "kind": "rubble"}
     ]
 }

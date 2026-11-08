@@ -4,6 +4,7 @@ Writes to Saved/LookDev/lba1_houses.
 
 Usage: lba1_houses.py <command> [args]
   model <scene> [...]     the model (houses, openings, stairs) over the iso render (model_<scene>.png)
+  pieces [<scene> ...]    every piece used in an opening (all towns by default): pieces_openings.png / .txt
   explore <scene> [...]   plan of the raw grid: heights, roof cells, every placed layout that isn't wall or ground (boxes,
                           labelled layout:size), to see what the model has to find
 """
@@ -627,10 +628,70 @@ def find_model(s):
                 inside |= h.z0 - 1 <= o["fixed"] < h.z1 + 1 and a0 < h.x1 and a1 > h.x0
         if not inside:
             others.append(o)
+    # Each opening's part and kind from the piece table; openings made only of non-opening pieces go.
+    for h in found:
+        for w in h.walls.values():
+            w["openings"] = [o for o in w["openings"] if classify(s, o, o["pieces"])]
+    others = [o for o in others if classify(s, o, o["frame"])]
     return found, others, find_stairs(s)
 
 
-KIND_COLORS = {"door": (0, 255, 255), "window": (255, 255, 0), "closed door": (255, 140, 0), "wall piece": (255, 255, 255)}
+KIT = os.path.join(TOOLS, "../Resources/Models/lba1_kit.json")
+
+
+def opening_table(cache={}):
+    """lba1_kit.json's "openings": piece key (size, bricks) to its entry. Examples are resolved in their own scene."""
+    if not cache:
+        import json
+        libs = {}
+        for e in json.load(open(KIT))["openings"]:
+            n, li = map(int, e["example"].split(":"))
+            if n not in libs:
+                libs[n] = lba1.load_library(n)
+            cache[piece_key(libs[n], li)] = e
+    return cache
+
+
+def classify(s, o, layouts):
+    """Sets o["part"] (doorway, door, window, decoration, ruin, or a guess with '?') and o["style"] from its pieces;
+    False when every piece is listed as not an opening."""
+    table = opening_table()
+    entries = [table.get(piece_key(s.lib, li)) for li in layouts]
+    listed = [e for e in entries if e]
+    if listed and all(e["part"] == "none" for e in listed) and len(listed) == len(entries):
+        return False
+    by = {e["part"]: e for e in listed}
+    if "door" in by:
+        o["part"], o["style"] = "door", "%s %s" % (by["door"]["kind"], by["door"].get("leaf", ""))
+    elif "doorway" in by:
+        o["part"], o["style"] = "doorway", by["doorway"]["kind"]
+    elif "window" in by:
+        o["part"], o["style"] = "window", by["window"]["kind"]
+    elif "decoration" in by:
+        o["part"], o["style"] = "decoration", by["decoration"]["kind"]
+    elif "ruin" in by:
+        o["part"], o["style"] = "ruin", by["ruin"]["kind"]
+    elif listed and all(e["part"] == "frame" for e in listed) and o["kind"] not in ("door", "window"):
+        # Frame pieces with no hole found under them: an arch still means a doorway below it (its air went down into a
+        # pit deeper than the wall's plane looks); a lone jamb is the side of a doorway found beside it, not one more.
+        if not any(e["kind"] == "arch" for e in listed):
+            return False
+        o["part"], o["style"] = "doorway", "arched (from its arch)"
+    elif o["kind"] in ("door", "window"):
+        # An air hole: its frame pieces tell its shape.
+        arch = any(e["part"] == "frame" and e["kind"] == "arch" for e in listed)
+        o["part"], o["style"] = ("doorway" if o["kind"] == "door" else "window"), ("arched" if arch else "square")
+    else:
+        o["part"], o["style"] = o["kind"] + "?", "unlisted"
+    return True
+
+
+KIND_COLORS = {"doorway": (0, 255, 255), "door": (255, 140, 0), "window": (255, 255, 0), "decoration": (255, 255, 255),
+               "ruin": (255, 60, 220)}
+
+
+def kind_color(o):
+    return KIND_COLORS.get(o.get("part"), (255, 0, 0))
 
 
 def draw_model(s, found, others, flights, path):
@@ -661,9 +722,9 @@ def draw_model(s, found, others, flights, path):
             for o in w["openings"]:
                 y0 = h.floor + o["bottom"]
                 quad("+x" if axis == 0 else "+z", w["fixed"] + (1 if end > 0 else 0), o["at"], o["at"] + o["width"],
-                     y0, y0 + o["height"], KIND_COLORS[o["kind"]])
+                     y0, y0 + o["height"], kind_color(o))
     for o in others:
-        quad(o["side"], o["fixed"] + 1, o["along"][0], o["along"][1], o["rows"][0], o["rows"][1], KIND_COLORS[o["kind"]])
+        quad(o["side"], o["fixed"] + 1, o["along"][0], o["along"][1], o["rows"][0], o["rows"][1], kind_color(o))
     for f in flights:
         # The flight's sloped surface from its low edge to its high edge, and an arrow up its middle.
         a0, a1 = f["along"]; c0, c1 = f["across"]
@@ -683,8 +744,9 @@ def model_cmd(scenes):
     for n in map(int, scenes):
         s = Scene(n)
         found, others, flights = find_model(s)
-        kinds = collections.Counter(o["kind"] for h in found for w in h.walls.values() for o in w["openings"])
-        kinds.update(o["kind"] for o in others)
+        kinds = collections.Counter("%s (%s)" % (o["part"], o["style"]) for h in found for w in h.walls.values()
+                                    for o in w["openings"])
+        kinds.update("%s (%s)" % (o["part"], o["style"]) for o in others)
         path = os.path.join(OUT, "model_%d.png" % n)
         draw_model(s, found, others, flights, path)
         print("%s: %d houses, %s, %d flights" % (path, len(found), dict(kinds), len(flights)))
@@ -734,6 +796,54 @@ def houses(scenes):
         path = os.path.join(OUT, "houses_%d.png" % n); img.save(path); print(path)
 
 
+def piece_key(lib, li):
+    """A layout's identity across scenes (libraries differ per island; pieces.json keys pieces the same way)."""
+    L = lib[li]
+    return (tuple(L["size"]), tuple(br for _, _, br in L["blocks"]))
+
+
+def pieces_cmd(scenes):
+    """Every piece the model uses in an opening, over the scenes (all towns when none given): how often, in what role
+    (frame of an air hole, or alone in a wall: closed door / wall piece), the kinds it got. Sheet pieces_openings.png
+    (composed layouts labelled #n example size count role) and pieces_openings.txt."""
+    os.makedirs(OUT, exist_ok=True)
+    scenes = list(map(int, scenes)) or survey.SCENES
+    stats = {}
+    for n in scenes:
+        s = Scene(n)
+        found, others, _ = find_model(s)
+        uses = []
+        for h in found:
+            for w in h.walls.values():
+                for o in w["openings"]:
+                    uses += [(li, o["kind"]) for li in o["pieces"]]
+        for o in others:
+            uses += [(li, o["kind"]) for li in o["frame"]]
+        for li, kind in uses:
+            k = piece_key(s.lib, li)
+            st = stats.setdefault(k, dict(example="%d:%d" % (n, li), lib=s.lib, li=li, count=0, kinds=collections.Counter(),
+                                          scenes=set()))
+            st["count"] += 1; st["kinds"][kind] += 1; st["scenes"].add(n)
+    ranked = sorted(stats.values(), key=lambda st: -st["count"])
+    lines = []
+    for i, st in enumerate(ranked):
+        size = st["lib"][st["li"]]["size"]
+        lines.append("#%d %s %s x%d %s scenes %s" % (i, st["example"], "x".join(map(str, size)), st["count"],
+                                                       dict(st["kinds"]), sorted(st["scenes"])))
+    open(os.path.join(OUT, "pieces_openings.txt"), "w").write("\n".join(lines) + "\n")
+    print("\n".join(lines))
+    tiles = [(compose(st["lib"], st["li"]), "#%d %s %s x%d" % (i, st["example"], "x".join(map(str, st["lib"][st["li"]]["size"])),
+                                                               st["count"])) for i, st in enumerate(ranked)]
+    cw, ch, cols = 200, 240, 10
+    sheet = Image.new("RGB", (cw * cols, ch * ((len(tiles) + cols - 1) // cols)), (40, 40, 48))
+    d = ImageDraw.Draw(sheet)
+    for i, (t, label) in enumerate(tiles):
+        t.thumbnail((cw - 8, ch - 22))
+        at = (i % cols * cw, i // cols * ch)
+        sheet.paste(t, (at[0] + 4, at[1] + 18), t); d.text((at[0] + 2, at[1] + 2), label, fill=(255, 255, 255))
+    path = os.path.join(OUT, "pieces_openings.png"); sheet.save(path); print(path)
+
+
 def compose(lib, li):
     """A layout drawn as the iso camera saw it (RGBA)."""
     sx, sy, sz = lib[li]["size"]
@@ -771,4 +881,4 @@ def layouts(n, ids):
 
 if __name__ == "__main__":
     command, args = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else ("", [])
-    {"explore": lambda: explore(args), "houses": lambda: houses(args), "openings": lambda: openings_cmd(args), "model": lambda: model_cmd(args), "layouts": lambda: layouts(args[0], args[1:])}.get(command, lambda: print(__doc__))()
+    {"explore": lambda: explore(args), "houses": lambda: houses(args), "openings": lambda: openings_cmd(args), "model": lambda: model_cmd(args), "pieces": lambda: pieces_cmd(args), "layouts": lambda: layouts(args[0], args[1:])}.get(command, lambda: print(__doc__))()
