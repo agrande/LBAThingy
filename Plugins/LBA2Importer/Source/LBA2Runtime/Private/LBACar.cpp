@@ -57,7 +57,7 @@ namespace
 		}));
 
 	/** Normals steeper than this are ground Twinsen can get out onto. */
-	constexpr float GroundNormalZ = 0.7f;
+	constexpr float CarGroundNormalZ = 0.7f;
 	/** Placed with nothing under it: it keeps looking this long (s), then simulates anyway. */
 	constexpr double MaxSettleTime = 10.0;
 	/** Free look eases back behind the car this long after the last look input (s). */
@@ -796,7 +796,7 @@ bool ALBACar::FindExitSpot(FVector& OutLocation) const
 			const FVector Point = Center + Side.Direction * (Side.Edge + Radius + Gap);
 			FHitResult Ground;
 			if (!World->LineTraceSingleByChannel(Ground, Point + FVector(0.0, 0.0, 150.0), Point - FVector(0.0, 0.0, 250.0), ECC_Visibility, Params)
-				|| Ground.ImpactNormal.Z < GroundNormalZ || Cast<AWaterBody>(Ground.GetActor()))
+				|| Ground.ImpactNormal.Z < CarGroundNormalZ || Cast<AWaterBody>(Ground.GetActor()))
 			{
 				continue;
 			}
