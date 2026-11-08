@@ -390,6 +390,9 @@ UStaticMesh* FLBAImportContext::CreateStaticMesh(const FString& Folder, const FS
 	}
 
 	Mesh->PreEditChange(nullptr);
+	// A reused asset keeps these from its last import; who wants them sets them after this.
+	Mesh->SetNegativeBoundsExtension(FVector::ZeroVector);
+	Mesh->SetPositiveBoundsExtension(FVector::ZeroVector);
 	Mesh->GetStaticMaterials().Reset();
 	for (int32 Index = 0; Index < InMaterials.Num(); ++Index)
 	{

@@ -8,7 +8,6 @@
 #include "Import/LBAMeshBuilder.h"
 #include "Import/LBAPlanetDistricts.h"
 #include "Import/LBARemakeAssets.h"
-#include "Components/InstancedStaticMeshComponent.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
 #include "LBACar.h"
@@ -1720,21 +1719,19 @@ void LBAPlanetSites::FSites::SpawnProps(FLBAImportContext& Context, UWorld* Worl
 		}
 		const FBox Box = Column->GetBoundingBox();
 		const double Scale = (PillarTop + 15.0) / FMath::Max(Box.GetSize().Z, 1.0);
-		if (AActor* Actor = Context.SpawnGeneratedActor<AActor>(World, FTransform::Identity, FString::Printf(TEXT("Site_%s_Columns"), *FLBAImportContext::SanitizeName(Site.Name)), TEXT("Stubs/Sites")))
+		// One mesh per column, not instances: the GPU's second view test on instances knows nothing of the bend (see LBAPlanetTowns).
+		const FQuat Turn(FVector::UpVector, FMath::Atan2(Site.Dir.Y, Site.Dir.X));
+		int32 ColumnIndex = 0;
+		for (const FVector2D& Pillar : BorePillars())
 		{
-			UInstancedStaticMeshComponent* Component = NewObject<UInstancedStaticMeshComponent>(Actor, TEXT("Instances"));
-			Component->SetStaticMesh(Column);
-			Actor->SetRootComponent(Component);
-			Actor->AddInstanceComponent(Component);
-			Component->RegisterComponent();
-			Actor->Tags.Add(ULBAPlanetAsset::StubTag);
-			const FQuat Turn(FVector::UpVector, FMath::Atan2(Site.Dir.Y, Site.Dir.X));
-			for (const FVector2D& Pillar : BorePillars())
+			const FVector2D At = Site.Tip + Site.Dir * Pillar.X + Side(Site.Dir) * Pillar.Y;
+			const FVector Foot(At, RidgeFloor(Pillar.X, Site) - 5.0);
+			const FVector Center = Box.GetCenter();
+			const FTransform Transform(Turn, Foot - Turn.RotateVector(FVector(Center.X, Center.Y, Box.Min.Z) * Scale), FVector(Scale));
+			if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, Transform, FString::Printf(TEXT("Site_%s_Column_%02d"), *FLBAImportContext::SanitizeName(Site.Name), ColumnIndex++), TEXT("Stubs/Sites")))
 			{
-				const FVector2D At = Site.Tip + Site.Dir * Pillar.X + Side(Site.Dir) * Pillar.Y;
-				const FVector Foot(At, RidgeFloor(Pillar.X, Site) - 5.0);
-				const FVector Center = Box.GetCenter();
-				Component->AddInstance(FTransform(Turn, Foot - Turn.RotateVector(FVector(Center.X, Center.Y, Box.Min.Z) * Scale), FVector(Scale)), true);
+				Actor->GetStaticMeshComponent()->SetStaticMesh(Column);
+				Actor->Tags.Add(ULBAPlanetAsset::StubTag);
 			}
 		}
 	}

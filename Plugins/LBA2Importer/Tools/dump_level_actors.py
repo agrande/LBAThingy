@@ -4,7 +4,7 @@ Run headless (env LBA2_DUMP_MAP, LBA2_DUMP_PREFIX, LBA2_DUMP_OUT; defaults: L_TW
   UnrealEditor-Cmd <uproject> -EnablePlugins=PythonScriptPlugin -run=pythonscript "-script=<this file>" -unattended -nop4 -nosplash
 The LBA1 town actors' bound centers (Town_<Island>_Scene_NNN) are good aim points: their location is the town's frame origin,
 often off the town. Bent meshes have a large negative Z bounds extension, so only the center's x and y mean much.
-Instanced actors (the kit's Kit_<Island>_<model>) also list their instances' locations ("instances"): aim points for one piece.
+Instanced actors also list their instances' locations ("instances"). The kit's props are one actor per copy (Kit_<Island>_<model>_NNN).
 """
 import json
 import os

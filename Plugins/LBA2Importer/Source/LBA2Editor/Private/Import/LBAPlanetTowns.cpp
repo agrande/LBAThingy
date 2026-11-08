@@ -1,6 +1,5 @@
 #include "Import/LBAPlanetTowns.h"
 
-#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
@@ -748,11 +747,13 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 	}
 	UE_LOG(LogLBA2, Display, TEXT("LBA1 towns on %s: %d wall styles, %d wall triangles"), *Island, WallMaterials.Num(), WallTriangles);
 
-	// The kit's models, instanced per model over the island's towns.
+	// The kit's models, one mesh per copy as the islands' decors: the renderer tests instances again on the GPU, against
+	// the flat world, which the bent culling (FLBAPlanetViewExtension) can't reach. A lone mesh isn't tested again.
 	FLBARemakeAssets Remake(Context);
 	bool bRemakeTried = false;
 	bool bRemake = false;
-	TMap<int32, UInstancedStaticMeshComponent*> Instancers;
+	TMap<int32, UStaticMesh*> KitMeshes;
+	TMap<int32, int32> KitCopies;
 	for (int32 TownIndex = 0; TownIndex < Towns.Num(); ++TownIndex)
 	{
 		const LBAPlanetDistricts::FTown& Town = Towns[TownIndex];
@@ -760,8 +761,8 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 		for (const LBAPlanetDistricts::FTown::FPiece& Piece : Town.Pieces)
 		{
 			const LBAPlanetKit::FModel& Model = Kit.GetModel(Piece.Model);
-			UInstancedStaticMeshComponent** Instancer = Instancers.Find(Piece.Model);
-			if (!Instancer)
+			UStaticMesh** KnownMesh = KitMeshes.Find(Piece.Model);
+			if (!KnownMesh)
 			{
 				UStaticMesh* Mesh = nullptr;
 				if (!Model.Primitive.IsEmpty())
@@ -783,8 +784,6 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 							MoveTemp(Description), Materials, Slots, Options);
 						if (Mesh)
 						{
-							Mesh->SetNegativeBoundsExtension(FVector(0.0, 0.0, 2.0 * Radius));
-							Mesh->CalculateExtendedBounds();
 							Context.MarkForSave(Mesh);
 						}
 					}
@@ -802,32 +801,21 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 					}
 					Mesh = bRemake ? Remake.GetModelMesh(FPaths::GetPath(Model.RemakeFile), FPaths::GetCleanFilename(Model.RemakeFile)) : nullptr;
 				}
-				UInstancedStaticMeshComponent* Component = nullptr;
 				if (!Mesh)
 				{
 					Context.Warn(FString::Printf(TEXT("LBA1 kit on %s: no mesh for %s (%s), it stays bricks"), *Island, *Model.Name,
 						!Model.Primitive.IsEmpty() ? *FString::Printf(TEXT("a generated %s"), *Model.Primitive)
 						: Model.Body != INDEX_NONE ? *FString::Printf(TEXT("%s decor %d: import the island first"), *Model.Island, Model.Body) : *Model.RemakeFile));
 				}
-				else if (AActor* Actor = Context.SpawnGeneratedActor<AActor>(World, FTransform::Identity,
-					FString::Printf(TEXT("Kit_%s_%s"), *Island, *FLBAImportContext::SanitizeName(Model.Name)), TEXT("Stubs/Kit")))
-				{
-					Component = NewObject<UInstancedStaticMeshComponent>(Actor, TEXT("Instances"));
-					Component->SetStaticMesh(Mesh);
-					Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					Actor->SetRootComponent(Component);
-					Actor->AddInstanceComponent(Component);
-					Component->RegisterComponent();
-					Actor->Tags.Add(ULBAPlanetAsset::StubTag);
-				}
-				Instancer = &Instancers.Add(Piece.Model, Component);
+				KnownMesh = &KitMeshes.Add(Piece.Model, Mesh);
 			}
-			if (!*Instancer)
+			UStaticMesh* const KitMesh = *KnownMesh;
+			if (!KitMesh)
 			{
 				continue;
 			}
 			// On the footprint's center and the piece's lowest cell; copies spread along its longer side.
-			const FBox Box = (*Instancer)->GetStaticMesh()->GetBoundingBox();
+			const FBox Box = KitMesh->GetBoundingBox();
 			const double Size = Model.Scale * (Model.bFitHeight ? Piece.Size.Y * StepCm / FMath::Max(Box.GetSize().Z, 1.0) : 1.0);
 			const bool bAlongX = Piece.Size.X >= Piece.Size.Z;
 			const int32 Copies = Model.Every > 0.0 ? FMath::Max(1, FMath::RoundToInt(FMath::Max(Piece.Size.X, Piece.Size.Z) / Model.Every)) : 1;
@@ -839,16 +827,22 @@ int32 LBAPlanetTowns::Build(FLBAImportContext& Context, UWorld* World, const FSt
 				const FVector Frame = Town.GetOrigin() + FVector((Piece.Low.X + Piece.Size.X * (bAlongX ? Along : 0.5)) * CellCm,
 					(Piece.Low.Z + Piece.Size.Z * (bAlongX ? 0.5 : Along)) * CellCm, Piece.Low.Y * StepCm - (Model.bFitHeight ? Box.Min.Z * Size : 0.0));
 				const double Yaw = Model.Yaw + (Model.bRandomTurn ? Random.FRandRange(0.0, 360.0) : 0.0);
-				(*Instancer)->AddInstance(FTransform(FRotator(0.0, Yaw, 0.0), Frame, FVector(Size)) * District.FrameToMap, true);
+				int32& Spawned = KitCopies.FindOrAdd(Piece.Model);
+				if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform(FRotator(0.0, Yaw, 0.0), Frame, FVector(Size)) * District.FrameToMap,
+					FString::Printf(TEXT("Kit_%s_%s_%03d"), *Island, *FLBAImportContext::SanitizeName(Model.Name), Spawned), TEXT("Stubs/Kit")))
+				{
+					UStaticMeshComponent* Component = Actor->GetStaticMeshComponent();
+					Component->SetStaticMesh(KitMesh);
+					Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					Actor->Tags.Add(ULBAPlanetAsset::StubTag);
+					++Spawned;
+				}
 			}
 		}
 	}
-	for (const TPair<int32, UInstancedStaticMeshComponent*>& Pair : Instancers)
+	for (const TPair<int32, int32>& Pair : KitCopies)
 	{
-		if (Pair.Value)
-		{
-			UE_LOG(LogLBA2, Display, TEXT("LBA1 kit on %s: %s, %d copies"), *Island, *Kit.GetModel(Pair.Key).Name, Pair.Value->GetInstanceCount());
-		}
+		UE_LOG(LogLBA2, Display, TEXT("LBA1 kit on %s: %s, %d copies"), *Island, *Kit.GetModel(Pair.Key).Name, Pair.Value);
 	}
 	Context.Flush();
 	return Built;

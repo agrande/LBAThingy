@@ -745,10 +745,10 @@ How it holds together (the world is flat and still; only the view is round):
   names one example of each piece (`scene:layout`, as `Tools/lba1_kit_survey.py` labels `pieces_big.png`) and its model:
   an LBA2 island's decor (`SM_<ISLAND>_Decor_NNN`, `Tools/lba2_decor_sheet.py` draws them) or a remake model; the
   remake's own LBA1 replacements (`www/metadata/lba1/layouts.json`: barrel, box) apply wherever their piece is. Models
-  stand on the piece's footprint center and lowest cell, instanced per island (`Kit_<island>_<model>`, folder
-  `Stubs/Kit`); the piece's bricks aren't drawn but stay as collision, and the ground under it is terrain again. Today:
+  stand on the piece's footprint center and lowest cell, one mesh per copy (`Kit_<island>_<model>_NNN`, folder
+  `Stubs/Kit`; instanced meshes would get a GPU view test against the flat world, and vanish on the globe); the piece's bricks aren't drawn but stay as collision, and the ground under it is terrain again. Today:
   Citadel's lampposts, trees for LBA1's pines, the harbour's bollard rails, sign boards, the remake's barrels and crates
-  (304 instances).
+  (304 copies).
 
 Tests: `-LBA2Shots=globe` on Citadel (open the level with `?Globe`): the Dinofly flies out to sea and back, floats,
 shots from 500 m and 1.5 km up (the whole planet, both islands on it). 102 fps on average in standalone game (123

@@ -209,7 +209,9 @@ Citabau too: not a stub island matter. The bricks' collision is still what Twins
 4. **The brown lattice** (Proxim City, Rebellion, rune stones): probably the x71 palisade or cliff piece, 5x4x1, used in
    scenes 24, 44 and 47. Its sprite covers only part of each cell, so the extrusion leaves gaps. Unconfirmed: check first.
    If so, treat it as `terrain:cliff` or a cube.
-5. **Instancing:** use instanced meshes per kit model. Keep the negative bounds extension the bent culling needs.
+5. **No instancing (changed 2026-11-08):** one `AStaticMeshActor` per copy, no negative bounds extension. The renderer tests
+   instances a second time on the GPU against the flat world, which the bent culling can't reach, so instanced props vanished
+   on the globe, and the tall bounds that protected some of them overflowed the VSM marking queue. A lone mesh isn't tested again.
 6. **Collision:** keep it from the bricks' shapes in this iteration, and check Twinsen against the visuals.
 
 ### What was built (2026-11-07): 3a, the props
@@ -217,7 +219,7 @@ Citabau too: not a stub island matter. The bricks' collision is still what Twins
 - `Import/LBAPlanetKit` reads the table, `Resources/Models/lba1_kit.json` (not `Tools/`: the importer reads it), and the remake's
   own LBA1 replacements (`www/metadata/lba1/layouts.json`: barrel, box, cloth bench), keyed by size + bricks.
   `FDistricts::MakeTown` finds whole layouts with a model (`FTown::Pieces`, `Replaced`); `LBAPlanetTowns` skips their bricks when
-  drawing (collision kept), lays terrain under them, and instances the models per island (`Kit_<island>_<model>`).
+  drawing (collision kept), lays terrain under them, and places one mesh per copy (`Kit_<island>_<model>_NNN`).
 - Table entries: Citadel's lamppost (26), tree (1) for both pines, the harbour's bollard rail (50, x and z), sign board (5).
   304 instances. Orientation: LBA2 bodies at yaw 0 in a district's frame face as on their island; the rail runs along x.
 - `Tools/lba2_decor_sheet.py` draws an island's decor bodies (`decor_<ISLAND>.png`); pieces_big.png labels now give each piece's
@@ -386,8 +388,8 @@ a torus for buoys), with colors from their sprites.
 - **A generated kind in the kit table:** `"primitive": "fence" | "railing" | "sack" | "buoy"` in `lba1_kit.json`.
   `LBAPlanetKit::BuildPrimitive` builds it in the piece's frame (centered on its footprint, floor at 0, along its longer side;
   a piece along z is the same shape mirrored across x = y), sized from the example piece's cells. `LBAPlanetTowns` makes one
-  mesh per island and model (`Towns/Kit/SM_LBA1_<ISLAND>_Kit_<name>`, the vertex-color master, no collision, bent bounds) and
-  instances it like the other kit models.
+  mesh per island and model (`Towns/Kit/SM_LBA1_<ISLAND>_Kit_<name>`, the vertex-color master, no collision) and
+  places it like the other kit models.
 - **Colors from the bricks:** Main is the LBA1 ramp with the most pixels weighted by step (so the lit cloth of a sack seen
   along its length wins over its shadow ramp); Accent the other ramp with at least 8 % of the pixels whose color is
   furthest from Main (the buoy's teal bands, not the grey shading its white), else Main. Each at the step 80 % of that
@@ -430,7 +432,7 @@ before/after sheet before the next. (Simple objects were done as 3c, above: what
 
 **Where the code is.** `Import/LBAPlanetDistricts` builds a town's cells (`FDistricts::MakeTown`: bricks, shapes, kit pieces
 `Pieces`/`Replaced`, wall styles). `Import/LBAPlanetTowns` draws them per scene: `EmitVisual` (cubes, from `LBABrickMesh`),
-`EmitWalls`, `EmitSlopes`, `EmitGround` (terrain), and instances kit models (`Kit_<island>_<model>`). `Import/LBAPlanetKit` reads
+`EmitWalls`, `EmitSlopes`, `EmitGround` (terrain), and places kit models (`Kit_<island>_<model>_NNN`). `Import/LBAPlanetKit` reads
 `Resources/Models/lba1_kit.json` (a piece by example `scene:layout` to an LBA2 decor body or a remake GLB). A cell drawn by
 something else keeps its brick for collision; hide it from `CellsOf(Town, true)` (as `Replaced` does) or skip its faces in
 `EmitVisual`'s KeepFace (as walls and ramps do), not both blindly: a brick left in the visual cells still hides its neighbors'
@@ -438,7 +440,7 @@ faces against it.
 
 **Simple objects as primitives** (suggested route):
 1. Add a generated model kind to the kit: e.g. `"primitive": "fence" | "railing" | "box" | "torus"` in `lba1_kit.json`, a
-   field in `LBAPlanetKit::FModel`, and in `LBAPlanetTowns`' instancer build its `UStaticMesh` once per model with
+   field in `LBAPlanetKit::FModel`, and in `LBAPlanetTowns`' kit loop build its `UStaticMesh` once per model with
    `FLBAMeshBuilder` (`Towns/SM_LBA1_Kit_<name>`, the color material with vertex colors) instead of finding an asset. The
    placement code (footprint center, `every`, `yaw`, `fit`) already works for any mesh.
 2. Shapes from the piece's size (posts at each cell along the long side, two rails; a box the piece's size; a torus 1 cell
