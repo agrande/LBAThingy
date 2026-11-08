@@ -24,6 +24,7 @@
 #include "LBA2Runtime.h"
 #include "LBA2Settings.h"
 #include "LBABoat.h"
+#include "LBACar.h"
 #include "LBAEntityAsset.h"
 #include "LBATypes.h"
 #include "Materials/MaterialInstanceConstant.h"
@@ -749,24 +750,25 @@ bool FLBAIslandImporter::ImportIsland(const FString& IslandName)
 
 	if (Context.GetProjectSettings().bCreateIslandLevels)
 	{
-		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes, Glow, FindBoatBodies(Island));
+		const ULBA2Settings* Settings = GetDefault<ULBA2Settings>();
+		BuildLevel(Island, IslandFolder, GroundMeshes, DecorMeshes, Glow, FindBodiesLike(Island, Settings->Boat.LoadSynchronous(), TEXT("boat")),
+			FindBodiesLike(Island, Settings->Car.LoadSynchronous(), TEXT("car")));
 	}
 	return true;
 }
 
-TSet<int32> FLBAIslandImporter::FindBoatBodies(const FLBAIsland& Island) const
+TSet<int32> FLBAIslandImporter::FindBodiesLike(const FLBAIsland& Island, const ULBAEntityAsset* Entity, const TCHAR* What) const
 {
 	TSet<int32> Found;
-	const ULBAEntityAsset* Boat = GetDefault<ULBA2Settings>()->Boat.LoadSynchronous();
-	const FLBAEntityBody* BoatBody = Boat ? Boat->Bodies.Find(0) : nullptr;
+	const FLBAEntityBody* EntityBody = Entity ? Entity->Bodies.Find(0) : nullptr;
 	const FLBAHqrFile* BodyHqr = Context.GetHqr(TEXT("BODY.HQR"));
 	const FLBAHqrFile* Obl = Context.GetHqr(Island.Name + TEXT(".OBL"));
 	FLBABody Reference;
-	if (!BoatBody || BoatBody->SourceBody == INDEX_NONE || !BodyHqr || !Obl || !Reference.Parse(BodyHqr->GetEntry(BoatBody->SourceBody)))
+	if (!EntityBody || EntityBody->SourceBody == INDEX_NONE || !BodyHqr || !Obl || !Reference.Parse(BodyHqr->GetEntry(EntityBody->SourceBody)))
 	{
-		if (!Boat)
+		if (!Entity)
 		{
-			Context.Warn(FString::Printf(TEXT("Island %s: no boat entity (import the Characters layer first), no boats moored"), *Island.Name));
+			Context.Warn(FString::Printf(TEXT("Island %s: no %s entity (import the Characters layer first), none placed"), *Island.Name, What));
 		}
 		return Found;
 	}
@@ -1128,7 +1130,7 @@ UStaticMesh* FLBAIslandImporter::BuildGroundMesh(const FLBAIsland& Island, const
 }
 
 void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& IslandFolder, const TArray<UStaticMesh*>& GroundMeshes,
-	const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow, const TSet<int32>& BoatBodies)
+	const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow, const TSet<int32>& BoatBodies, const TSet<int32>& CarBodies)
 {
 	UWorld* World = Context.BeginLevel(IslandFolder, TEXT("L_") + Island.Name);
 	if (!World)
@@ -1186,6 +1188,16 @@ void FLBAIslandImporter::BuildLevel(const FLBAIsland& Island, const FString& Isl
 				if (Context.SpawnGeneratedActor<ALBABoat>(World, Mooring, TEXT("Boat"), TEXT("Boats")))
 				{
 					UE_LOG(LogLBA2, Display, TEXT("Island %s: decor %d is the boat's body, a boat moored at %s"), *Island.Name, Decor.Body, *Mooring.GetLocation().ToCompactString());
+				}
+				continue;
+			}
+			if (CarBodies.Contains(Decor.Body))
+			{
+				// The island's parked buggy: a car Twinsen can drive, facing the same way (its front is +X, bodies face +Y).
+				const FTransform Parked(LBA::BetaToRotator(Decor.Beta) + FRotator(0.f, 90.f, 0.f), Transform.GetLocation() + FVector(0.0, 0.0, 60.0));
+				if (Context.SpawnGeneratedActor<ALBACar>(World, Parked, TEXT("Car"), TEXT("Cars")))
+				{
+					UE_LOG(LogLBA2, Display, TEXT("Island %s: decor %d is the car's body, a car parked at %s"), *Island.Name, Decor.Body, *Parked.GetLocation().ToCompactString());
 				}
 				continue;
 			}

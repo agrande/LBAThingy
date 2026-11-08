@@ -49,6 +49,7 @@ private:
 	bool TickMenu(UWorld* World, float DeltaTime);
 	bool TickGlobe(UWorld* World, float DeltaTime);
 	bool TickBoat(UWorld* World, float DeltaTime);
+	bool TickCar(UWorld* World, float DeltaTime);
 	bool TickBelt(UWorld* World, float DeltaTime);
 	void BuildAutoPoses(UWorld* World);
 	/** -LBA2HeroAt: stands the pawn on the first surface below the point, facing its yaw. */
@@ -96,6 +97,21 @@ private:
 	double BoatNextReport = 0.0;
 	float BoatTopSpeed = 0.f;
 	TWeakObjectPtr<class ALBABoat> TestBoat;
+	/**
+	 * -LBA2Shots=car: Twinsen drives the car nearest to him (-LBA2Car=scooter: the nearest scooter; -LBA2Car=spawn or
+	 * none found: one put in front of him): full throttle, a slalom, full lock, braking, backing up, getting out. Logs
+	 * every car in the level and where it settled, then speeds, gears and times.
+	 */
+	bool bCar = false;
+	int32 CarStep = -1;
+	double CarStepStart = 0.0;
+	int32 CarFrame = 0;
+	double CarNextReport = 0.0;
+	float CarTopSpeed = 0.f;
+	double CarBrakeFrom = -1.0;
+	FVector CarBrakeStart = FVector::ZeroVector;
+	float CarBrakeSpeed = 0.f;
+	TWeakObjectPtr<class ALBACar> TestCar;
 	/**
 	 * -LBA2Shots=belt (globe mode): the Dinofly flies out to the planet's belt and over it, looks at it from above, comes
 	 * back and lands on its flank; Twinsen gets off and walks, then jumps, up it. Logs how high and how far past the

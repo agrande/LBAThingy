@@ -21,6 +21,7 @@
 #include "Import/LBARemakeAssets.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
+#include "LBACar.h"
 #include "LBAEntityAsset.h"
 #include "LBASceneActor.h"
 #include "LBASceneAsset.h"
@@ -751,6 +752,41 @@ void FLBASceneImporter::PopulateLevel(UWorld* World, const FLBAScene& Scene, ULB
 		{
 			UE_LOG(LogLBA2, Verbose, TEXT("Scene %d object %d: entity %d has no body %d"), Scene.Index, Index, Object.Entity, Object.Body);
 			++NumMissingBodies;
+		}
+	}
+
+	// Drivable cars (ALBACar) where the scripts park them; the scenes' own copies are hidden (ULBA2Settings::
+	// HiddenSceneEntities). The Desert's buggy: one for the whole island, at the Racetrack where its script first puts it
+	// (life: POS_POINT 42, BETA 2048, INIT_BUGGY 2), not its 18 scene copies. Citadel's scooter (the Rabibunny's taxi):
+	// one at each stand, where its track lands (GOTO_POINT) or where it waits; its scripted flights left copies in the sky.
+	struct FVehicleStand { int32 Scene; int32 Object; int32 Point; int32 Beta; bool bScooter; double Side = 0.0; };
+	static const FVehicleStand Stands[] =
+	{
+		// Racetrack: a metre left of the start line's middle, where the race opponent's kart stands (a scene object).
+		{ 57, 3, 42, 2048, false, -100.0 },
+		{ 42, 3, INDEX_NONE, INDEX_NONE, true },	// Lupin-Bourg, the landing zone
+		{ 45, 3, 1, INDEX_NONE, true },	// The wizard's tent
+		{ 46, 3, 0, INDEX_NONE, true },	// The lighthouse
+		{ 48, 13, INDEX_NONE, INDEX_NONE, true },	// Lupin-Bourg, the statue (it laps round it)
+		{ 50, 3, 0, INDEX_NONE, true },	// Woodbridge
+	};
+	for (const FVehicleStand& Stand : Stands)
+	{
+		if (Stand.Scene != Scene.Index || !Scene.Objects.IsValidIndex(Stand.Object) || (Stand.Point != INDEX_NONE && !Scene.Points.IsValidIndex(Stand.Point)))
+		{
+			continue;
+		}
+		const FLBASceneObjectData& Object = Scene.Objects[Stand.Object];
+		const FVector At = Asset->ToWorld(Stand.Point != INDEX_NONE ? Scene.Points[Stand.Point] : Object.Position);
+		const FRotator Facing(0.0, ULBASceneAsset::BetaToActorYaw(Stand.Beta != INDEX_NONE ? Stand.Beta : Object.Beta), 0.0);
+		// Placed a little above the stand: the car sets itself down on the ground when the level starts.
+		const FTransform Transform(Facing, At + Facing.RotateVector(FVector(0.0, Stand.Side, 0.0)) + FVector(0.0, 0.0, 60.0));
+		const FString Label = FString::Printf(TEXT("%02d_%s"), Stand.Object, Stand.bScooter ? TEXT("Scooter") : TEXT("Car"));
+		ALBACar* Car = Stand.bScooter ? Context.SpawnGeneratedActor<ALBAScooter>(World, Transform, Label, TEXT("Scene/Cars"))
+			: Context.SpawnGeneratedActor<ALBACar>(World, Transform, Label, TEXT("Scene/Cars"));
+		if (Car)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("Scene %d: %s parked at %s"), Scene.Index, *Label, *At.ToCompactString());
 		}
 	}
 

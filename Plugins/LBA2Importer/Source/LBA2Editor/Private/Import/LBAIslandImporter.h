@@ -57,12 +57,12 @@ private:
 	/** Also returns what glows on them (lit decor, glowing texels). */
 	TArray<UStaticMesh*> BuildDecorMeshes(const FLBAIsland& Island, const FString& IslandFolder, FLBADecorGlow& OutGlow);
 	/**
-	 * Decor bodies shaped like the boat's (Project Settings > LBA2 > Mounts > Boat, the ferry): the island's own copies
-	 * of it, where boats are moored instead.
+	 * Decor bodies shaped like an entity's body 0: the island's own copies of it. The boat's (Project Settings > LBA2 >
+	 * Mounts > Boat, the ferry) are moored boats instead; the car's (Mounts > Car, the buggy) parked cars.
 	 */
-	TSet<int32> FindBoatBodies(const FLBAIsland& Island) const;
+	TSet<int32> FindBodiesLike(const FLBAIsland& Island, const class ULBAEntityAsset* Entity, const TCHAR* What) const;
 	void BuildLevel(const FLBAIsland& Island, const FString& IslandFolder, const TArray<UStaticMesh*>& GroundMeshes,
-		const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow, const TSet<int32>& BoatBodies);
+		const TArray<UStaticMesh*>& DecorMeshes, const FLBADecorGlow& Glow, const TSet<int32>& BoatBodies, const TSet<int32>& CarBodies);
 
 	FLBAImportContext& Context;
 };

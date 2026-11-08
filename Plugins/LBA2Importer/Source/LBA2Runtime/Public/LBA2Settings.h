@@ -59,6 +59,22 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
 	TSoftObjectPtr<class ULBAEntityAsset> Boat;
 
+	/**
+	 * Entity of the cars Twinsen drives (ALBACar) while parked: the buggy. The island layer turns the islands' copies of
+	 * its body (decor) into cars; the scene layer parks one where the Desert's scripts first put it, and hides the
+	 * scenes' own copies (HiddenSceneEntities).
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
+	TSoftObjectPtr<class ULBAEntityAsset> Car;
+
+	/** The buggy with Twinsen at the wheel (ALBACar while driven). */
+	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
+	TSoftObjectPtr<class ULBAEntityAsset> CarDriven;
+
+	/** The Rabibunny's scooter (ALBAScooter): Citadel's taxi, with Twinsen behind its driver while ridden. */
+	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
+	TSoftObjectPtr<class ULBAEntityAsset> Scooter;
+
 	/** Niagara system drawing the airflow strokes around flyers (ULBAAirflowComponent), e.g. the Dinofly. */
 	UPROPERTY(Config, EditAnywhere, Category = "Mounts")
 	TSoftObjectPtr<class UNiagaraSystem> AirflowTrail = TSoftObjectPtr<UNiagaraSystem>(FSoftObjectPath(TEXT("/LBA2Importer/Effects/NS_LBA_Airflow.NS_LBA_Airflow")));

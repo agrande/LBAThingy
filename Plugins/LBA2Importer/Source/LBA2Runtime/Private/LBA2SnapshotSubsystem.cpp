@@ -25,6 +25,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "LBAAnimInstance.h"
 #include "LBABoat.h"
+#include "LBACar.h"
 #include "LBACharacter.h"
 #include "LBADeathScreen.h"
 #include "LBADinofly.h"
@@ -93,6 +94,11 @@ void ULBA2SnapshotSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	else if (Spec.Equals(TEXT("boat"), ESearchCase::IgnoreCase))
 	{
 		bBoat = true;
+		bPosesReady = true;
+	}
+	else if (Spec.Equals(TEXT("car"), ESearchCase::IgnoreCase))
+	{
+		bCar = true;
 		bPosesReady = true;
 	}
 	else if (Spec.Equals(TEXT("belt"), ESearchCase::IgnoreCase))
@@ -1115,6 +1121,272 @@ bool ULBA2SnapshotSubsystem::TickBoat(UWorld* World, float DeltaTime)
 	}
 	return true;
 }
+
+bool ULBA2SnapshotSubsystem::TickCar(UWorld* World, float DeltaTime)
+{
+	enum class ECarStep : uint8 { Settle, Approach, Board, Drive, Brake, Leave };
+	struct FStep
+	{
+		const TCHAR* Name;
+		float Duration;
+		ECarStep Kind;
+		float Throttle;
+		float Steer;
+		/** Flips the steering every this many seconds (slalom). */
+		float SteerPeriod = 0.f;
+		bool bHandbrake = false;
+	};
+	static const FStep Steps[] =
+	{
+		{ TEXT("settle"), 12.f, ECarStep::Settle, 0.f, 0.f },
+		{ TEXT("next_to_it"), 1.5f, ECarStep::Approach, 0.f, 0.f },
+		{ TEXT("in"), 1.5f, ECarStep::Board, 0.f, 0.f },
+		{ TEXT("full_throttle"), 5.f, ECarStep::Drive, 1.f, 0.f },
+		{ TEXT("slalom"), 4.f, ECarStep::Drive, 1.f, 1.f, 1.f },
+		{ TEXT("full_lock"), 3.f, ECarStep::Drive, 1.f, 1.f },
+		{ TEXT("straight"), 2.f, ECarStep::Drive, 1.f, 0.f },
+		{ TEXT("coast"), 2.f, ECarStep::Drive, 0.f, 0.f },
+		{ TEXT("speed_up"), 3.f, ECarStep::Drive, 1.f, 0.f },
+		{ TEXT("brake"), 4.f, ECarStep::Brake, -1.f, 0.f },
+		{ TEXT("reverse"), 3.f, ECarStep::Drive, -1.f, 0.f },
+		{ TEXT("handbrake"), 2.f, ECarStep::Drive, 0.f, 0.f, 0.f, true },
+		{ TEXT("out"), 1.5f, ECarStep::Leave, 0.f, 0.f },
+	};
+	const int32 NumSteps = UE_ARRAY_COUNT(Steps);
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+
+	if (CarStep < 0)
+	{
+		ALBACharacter* Hero = Cast<ALBACharacter>(Pawn);
+		if (!Hero)
+		{
+			return true;
+		}
+		// -LBA2HeroAt: Twinsen (and a car put in front of him) somewhere else first.
+		if (CarFrame++ == 0)
+		{
+			PlaceHero(World, Hero);
+			return true;
+		}
+		FString Which;
+		FParse::Value(FCommandLine::Get(), TEXT("LBA2Car="), Which);
+		const bool bScooter = Which.Equals(TEXT("scooter"), ESearchCase::IgnoreCase);
+		ALBACar* Car = nullptr;
+		int32 Count = 0;
+		for (TActorIterator<ALBACar> It(World); It; ++It)
+		{
+			++Count;
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: %s (%s) at %s, %s, %.0f m from Twinsen"), *It->GetName(), *It->GetClass()->GetName(),
+				*It->GetActorLocation().ToCompactString(), It->IsSettled() ? TEXT("settled") : TEXT("settling"),
+				FVector::Dist(It->GetActorLocation(), Hero->GetActorLocation()) / 100.0);
+			if (It->IsA<ALBAScooter>() != bScooter)
+			{
+				continue;
+			}
+			if (!Car || FVector::Dist(It->GetActorLocation(), Hero->GetActorLocation()) < FVector::Dist(Car->GetActorLocation(), Hero->GetActorLocation()))
+			{
+				Car = *It;
+			}
+		}
+		if (!Car || Which.Equals(TEXT("spawn"), ESearchCase::IgnoreCase))
+		{
+			const FVector Forward = Hero->GetActorForwardVector().GetSafeNormal2D();
+			// -LBA2CarYaw=degrees: the way it faces (default: across Twinsen's view).
+			float Yaw = float(Forward.Rotation().Yaw + 90.0);
+			FParse::Value(FCommandLine::Get(), TEXT("LBA2CarYaw="), Yaw);
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			Car = World->SpawnActor<ALBACar>(bScooter ? ALBAScooter::StaticClass() : ALBACar::StaticClass(),
+				Hero->GetActorLocation() + Forward * 500.f, FRotator(0.f, Yaw, 0.f), Params);
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: %d cars in the level, put %s in front of Twinsen"), Count, Car ? *Car->GetName() : TEXT("none"));
+		}
+		if (!Car)
+		{
+			FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+			return false;
+		}
+		TestCar = Car;
+		CarStep = 0;
+		CarStepStart = Elapsed;
+		CarFrame = 0;
+		CarNextReport = Elapsed;
+		return true;
+	}
+	ALBACar* Car = TestCar.Get();
+	if (CarStep >= NumSteps || !Car)
+	{
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car done: top speed %.1f m/s"), CarTopSpeed / 100.f);
+		FPlatformMisc::RequestExit(false, TEXT("LBA2Shots"));
+		return false;
+	}
+	const FStep& Step = Steps[CarStep];
+	const double StepTime = Elapsed - CarStepStart;
+	auto Shoot = [&](const FString& Name)
+	{
+		FScreenshotRequest::RequestScreenshot(ShotDirectory / FString::Printf(TEXT("Car_%02d_%s.png"), CarStep, *Name), false, false);
+	};
+	auto NextStep = [&]()
+	{
+		++CarStep;
+		CarStepStart = Elapsed;
+		CarFrame = 0;
+	};
+	ALBACharacter* Hero = Car->GetDriver() ? Car->GetDriver() : Cast<ALBACharacter>(Pawn);
+	ULBACarMovementComponent* Vehicle = Car->GetVehicleMovement();
+	const float Speed = Car->GetForwardSpeed();
+	auto Report = [&](bool bForce)
+	{
+		if (!bForce && Elapsed < CarNextReport)
+		{
+			return;
+		}
+		CarNextReport = Elapsed + 0.5;
+		int32 OnGround = 0;
+		for (int32 Index = 0; Index < Vehicle->Wheels.Num(); ++Index)
+		{
+			OnGround += Vehicle->GetWheelState(Index).bInContact ? 1 : 0;
+		}
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car %s t=%.1f: %.2f m/s, gear %d, %.0f rpm, wheels %d/4, up %.2f, yaw %.0f, steer %.1f deg, at %s"),
+			Step.Name, StepTime, Speed / 100.f, Vehicle->GetCurrentGear(), Vehicle->GetEngineRotationSpeed(), OnGround, Car->GetActorUpVector().Z,
+			Car->GetActorRotation().Yaw, Vehicle->Wheels.Num() > 0 ? Vehicle->Wheels[0]->GetSteerAngle() : 0.f, *Car->GetActorLocation().ToCompactString());
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car   %s"), *Vehicle->DescribeInputs());
+		FString Wheels;
+		for (int32 Index = 0; Index < Vehicle->Wheels.Num(); ++Index)
+		{
+			const FWheelStatus& Wheel = Vehicle->GetWheelState(Index);
+			Wheels += FString::Printf(TEXT(" [%d: contact %d, length %.2f, spring %.0f, offset %.1f, at %s]"), Index, Wheel.bInContact ? 1 : 0,
+				Wheel.NormalizedSuspensionLength, Wheel.SpringForce, Vehicle->GetSuspensionOffset(Index),
+				*Vehicle->Wheels[Index]->Location.ToCompactString());
+		}
+		FHitResult Floor;
+		FCollisionQueryParams FloorParams(SCENE_QUERY_STAT(LBACarTestFloor), true, Car);
+		const bool bFloor = World->LineTraceSingleByChannel(Floor, Car->GetActorLocation(), Car->GetActorLocation() - FVector(0.0, 0.0, 500.0), ECC_WorldStatic, FloorParams);
+		UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car   chassis center %.1f cm above the floor (%s);%s"), bFloor ? Floor.Distance : -1.f,
+			bFloor ? *GetNameSafe(Floor.GetActor()) : TEXT("none"), *Wheels);
+	};
+
+	switch (Step.Kind)
+	{
+	case ECarStep::Settle:
+		if (Car->IsSettled() && StepTime > 2.0)
+		{
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: %s settled at %s, mass %.0f kg"), *Car->GetName(), *Car->GetActorLocation().ToCompactString(),
+				Cast<UPrimitiveComponent>(Car->GetRootComponent())->GetMass());
+			Report(true);
+			Shoot(Step.Name);
+			NextStep();
+			return true;
+		}
+		break;
+	case ECarStep::Approach:
+		if (CarFrame == 0)
+		{
+			FVector Spot;
+			if (!Hero || !Car->FindExitSpot(Spot))
+			{
+				UE_LOG(LogLBA2, Error, TEXT("LBA2Shots car: no room next to the car"));
+				NextStep();
+				return true;
+			}
+			const FVector ToCar = Car->GetActorLocation() - Spot;
+			Hero->TeleportTo(Spot, FRotator(0.f, ToCar.Rotation().Yaw, 0.f));
+			if (PC)
+			{
+				PC->SetControlRotation(FRotator(-20.f, ToCar.Rotation().Yaw, 0.f));
+			}
+		}
+		break;
+	case ECarStep::Board:
+		if (CarFrame == 0)
+		{
+			if (Hero && !Hero->IsRiding())
+			{
+				Hero->SetActorRotation(FRotator(0.f, (Car->GetActorLocation() - Hero->GetActorLocation()).Rotation().Yaw, 0.f));
+			}
+			const bool bUsed = Hero && Hero->TryInteract();
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: use %s, pawn now %s"), bUsed ? TEXT("ok") : TEXT("found nothing"),
+				PC && PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"));
+		}
+		break;
+	case ECarStep::Leave:
+		if (CarFrame == 0)
+		{
+			const bool bOut = Car->Leave();
+			UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: leave %s, pawn now %s"), bOut ? TEXT("ok") : TEXT("refused"),
+				PC && PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"));
+		}
+		break;
+	case ECarStep::Drive:
+	case ECarStep::Brake:
+	{
+		if (PC && PC->GetPawn() != Car)
+		{
+			UE_LOG(LogLBA2, Error, TEXT("LBA2Shots car: the player isn't driving (%s)"), PC->GetPawn() ? *PC->GetPawn()->GetName() : TEXT("none"));
+			CarStep = NumSteps;
+			return true;
+		}
+		Car->DisableInput(PC);
+		float Steer = Step.Steer;
+		if (Step.SteerPeriod > 0.f && FMath::FloorToInt(StepTime / Step.SteerPeriod) % 2 == 1)
+		{
+			Steer = -Steer;
+		}
+		float Throttle = Step.Throttle;
+		if (Step.Kind == ECarStep::Brake)
+		{
+			if (CarFrame == 0)
+			{
+				CarBrakeFrom = Elapsed;
+				CarBrakeStart = Car->GetActorLocation();
+				CarBrakeSpeed = Speed;
+			}
+			if (Speed < 10.f)
+			{
+				Throttle = 0.f;
+				if (CarBrakeFrom >= 0.0)
+				{
+					UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: stopped from %.1f m/s in %.2f s, %.1f m"), CarBrakeSpeed / 100.f,
+						Elapsed - CarBrakeFrom, FVector::Dist2D(Car->GetActorLocation(), CarBrakeStart) / 100.0);
+					CarBrakeFrom = -1.0;
+				}
+			}
+		}
+		Car->SetDriveInput(FVector2D(Steer, Throttle));
+		Car->SetHandbrake(Step.bHandbrake);
+		if (Step.Kind == ECarStep::Drive && Step.Throttle > 0.f && Speed > CarTopSpeed + 1.f)
+		{
+			// Times to half and 90% of the top speed in the settings (first time only).
+			const float Top = Car->GetTuning().TopSpeed;
+			if (CarTopSpeed < 0.5f * Top && Speed >= 0.5f * Top)
+			{
+				UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: half the top speed after %.2f s"), StepTime);
+			}
+			if (CarTopSpeed < 0.9f * Top && Speed >= 0.9f * Top)
+			{
+				UE_LOG(LogLBA2, Display, TEXT("LBA2Shots car: 90%% of the top speed after %.2f s"), StepTime);
+			}
+		}
+		CarTopSpeed = FMath::Max(CarTopSpeed, Speed);
+		Report(false);
+		if (CarFrame > 0 && StepTime >= Step.Duration * 0.5 && StepTime - DeltaTime < Step.Duration * 0.5)
+		{
+			Shoot(FString(Step.Name) + TEXT("_mid"));
+		}
+		break;
+	}
+	}
+	++CarFrame;
+	if (StepTime >= Step.Duration)
+	{
+		Report(true);
+		Shoot(Step.Name);
+		Car->SetDriveInput(FVector2D::ZeroVector);
+		NextStep();
+	}
+	return true;
+}
+
 
 bool ULBA2SnapshotSubsystem::TickGlobe(UWorld* World, float DeltaTime)
 {
@@ -2393,6 +2665,10 @@ bool ULBA2SnapshotSubsystem::Tick(float DeltaTime)
 	if (bBoat)
 	{
 		return TickBoat(World, DeltaTime);
+	}
+	if (bCar)
+	{
+		return TickCar(World, DeltaTime);
 	}
 	if (bBelt)
 	{

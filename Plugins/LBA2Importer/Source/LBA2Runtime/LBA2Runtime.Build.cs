@@ -21,6 +21,11 @@ public class LBA2Runtime : ModuleRules
 			"UMG",
 			"Slate",
 			"SlateCore",
+			// Drivable cars (ALBACar): Chaos Vehicles.
+			"ChaosVehicles",
+			"ChaosVehiclesCore",
+			"PhysicsCore",
+			"Chaos",
 		});
 
 		// Globe mode's debug command reading material compile errors (lba.Globe.SeaErrors).

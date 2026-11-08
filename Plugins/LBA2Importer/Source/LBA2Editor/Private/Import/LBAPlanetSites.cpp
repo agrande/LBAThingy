@@ -11,6 +11,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "LBA2ImporterSettings.h"
 #include "LBA2Runtime.h"
+#include "LBACar.h"
 #include "LBAPlanet.h"
 
 namespace LBAPlanetSitesPrivate
@@ -108,9 +109,6 @@ namespace LBAPlanetSitesPrivate
 	constexpr double StoneThick = 50.0;
 	constexpr double StoneShoulder = 190.0;
 	constexpr double StoneSink = 20.0;
-	/** The parked buggy: LBA2 decor (island, body). */
-	const TCHAR* const BuggyIsland = TEXT("CITADEL");
-	constexpr int32 BuggyBody = 85;
 
 
 	/** Squared distance transform along one line (Felzenszwalb and Huttenlocher): F in, D out. */
@@ -1405,37 +1403,7 @@ void LBAPlanetSites::FSites::EmitStones(const TArray<float>& Heights, const FVec
 void LBAPlanetSites::FSites::SpawnProps(FLBAImportContext& Context, UWorld* World, const TArray<float>& Heights) const
 {
 	using namespace LBAPlanetSitesPrivate;
-	auto Find = [&](const TCHAR* Island, int32 Body)
-	{
-		UStaticMesh* Mesh = Context.FindAsset<UStaticMesh>(Context.GetContentPath(FString(TEXT("Islands")) / Island / TEXT("Decor")), FString::Printf(TEXT("SM_%s_Decor_%03d"), Island, Body));
-		if (!Mesh)
-		{
-			Context.Warn(FString::Printf(TEXT("LBA1 sites: no %s decor %d (import the island first)"), Island, Body));
-		}
-		return Mesh;
-	};
-	// Stands a mesh on the ground at Map, its footprint centered there, Facing (a unit vector on the map) along its thin side, or its long one when bAlong.
-	auto Place = [&](UStaticMesh* Mesh, const FVector2D& Map, const FVector2D& Facing, bool bAlong, double Scale, const FString& Label)
-	{
-		if (!Mesh)
-		{
-			return;
-		}
-		const FBox Box = Mesh->GetBoundingBox();
-		const FVector Size = Box.GetSize();
-		const bool bThinX = Size.X < Size.Y;
-		// The mesh's axis to turn onto Facing.
-		const double Axis = (bThinX != bAlong) ? 0.0 : 90.0;
-		const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(Facing.Y, Facing.X)) - Axis;
-		const FQuat Rotation(FVector::UpVector, FMath::DegreesToRadians(Yaw));
-		const FVector Center = Box.GetCenter();
-		const FVector Location = FVector(Map, SampleHeight(Heights, Map)) - Rotation.RotateVector(FVector(Center.X, Center.Y, Box.Min.Z) * Scale);
-		if (AStaticMeshActor* Actor = Context.SpawnGeneratedActor<AStaticMeshActor>(World, FTransform(Rotation, Location, FVector(Scale)), Label, TEXT("Stubs/Sites")))
-		{
-			Actor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
-			Actor->Tags.Add(ULBAPlanetAsset::StubTag);
-		}
-	};
+
 	// The bores' columns: the Temple of Bu's own, from the remake, each its pillar's height, its foot on the floor.
 	FLBARemakeAssets Remake(Context);
 	UStaticMesh* Column = nullptr;
@@ -1473,17 +1441,21 @@ void LBAPlanetSites::FSites::SpawnProps(FLBAImportContext& Context, UWorld* Worl
 			}
 		}
 	}
-	UStaticMesh* Buggy = nullptr;
 	for (const FSite& Site : Sites)
 	{
 		if (Site.bRock && Site.Road.Num() > 8)
 		{
-			// The buggy, parked along the road a little before it ends at the rock, the hole left in view.
-			Buggy = Buggy ? Buggy : Find(BuggyIsland, BuggyBody);
+			// The buggy, parked along the road a little before it ends at the rock, the hole left in view: a car Twinsen can
+			// drive (it sets itself down on the ground when the level starts).
 			const FVector2D A(Site.Road[Site.Road.Num() - 8]);
 			const FVector2D B(Site.Road.Last());
 			const FVector2D Along = (B - A).GetSafeNormal();
-			Place(Buggy, B - Along * 500.0 + Side(Along) * 70.0, Along, true, 1.0, FString::Printf(TEXT("Site_%s_Buggy"), *FLBAImportContext::SanitizeName(Site.Name)));
+			const FVector2D Map = B - Along * 500.0 + Side(Along) * 70.0;
+			const FTransform Parked(FRotator(0.0, FMath::RadiansToDegrees(FMath::Atan2(Along.Y, Along.X)), 0.0), FVector(Map, SampleHeight(Heights, Map) + 60.0));
+			if (ALBACar* Car = Context.SpawnGeneratedActor<ALBACar>(World, Parked, FString::Printf(TEXT("Site_%s_Buggy"), *FLBAImportContext::SanitizeName(Site.Name)), TEXT("Stubs/Sites")))
+			{
+				Car->Tags.Add(ULBAPlanetAsset::StubTag);
+			}
 		}
 	}
 }
