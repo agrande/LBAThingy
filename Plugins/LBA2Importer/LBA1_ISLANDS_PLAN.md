@@ -16,10 +16,10 @@ for what isn't replaced yet.
 
 | Phase | What | Status |
 |---|---|---|
-| 0 | Remove the two duplicate islets | done (1378cba); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
-| 1 | Textured terrain, with LBA1 tiles where they fit | done (1378cba), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
-| 2 | The color system, and town ground becoming terrain | committed 7546de2; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
-| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (72f2d74, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). 3c simple objects: generated fences, railings, sandbags, buoys + remake oil drums (shots `phase3c_objects_before_after.png`, `phase3c_objects_close.png`). Next: Phase 3 extended (houses as buildings with openings and frames, stairs as steps, roofs per house, palms), see that section |
+| 0 | Remove the two duplicate islets | done (93d6149); re-imported, stale assets deleted, shots `Saved/LookDev/lba1_review/islets_gone_sheet.png` (2026-11-07) |
+| 1 | Textured terrain, with LBA1 tiles where they fit | done (93d6149), the palette answer for Phase 2 still open; shots `Saved/LookDev/lba1_review/phase1_before_after.png` (2026-11-07) |
+| 2 | The color system, and town ground becoming terrain | committed fdda928; shots `Saved/LookDev/lba1_review/phase2_before_after.png` (2026-11-07) |
+| 3 | Kit: recurring pieces and simple houses as models | 3a props built (kit machinery, lamps, trees, bollards, signs, barrels, crates); shots `Saved/LookDev/lba1_review/phase3_props_before_after.png` (2026-11-07). 3b walls: tiling wall faces (12dbc63, shots `phase3b_walls_before_after.png`); 3b roofs: ramps drawn as slopes (Old Burg; shots `phase3b_roofs_before_after.png`). Proxim City's roofs not solved (see there). 3c simple objects: generated fences, railings, sandbags, buoys + remake oil drums (shots `phase3c_objects_before_after.png`, `phase3c_objects_close.png`). Next: Phase 3 extended (houses as buildings with openings and frames, stairs as steps, roofs per house, palms), see that section |
 | 4 | Trees, rocks and paths | not started |
 | 5 | Rune stones: two road trips out of Proxim City | built (2026-11-07, `LBAPlanetSites`); also the ferry's way into LBA1's harbours. Shots `Saved/LookDev/lba1_review/phase5_runestones_sheet.png`, `phase5_harbour_before_after.png` (before: `phase5_before.png`) |
 
